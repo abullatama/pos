@@ -3,13 +3,13 @@ package id.a3.pos.printer
 object TestReceiptGenerator {
 
     /**
-     * Menghasilkan byte cetak untuk pengujian spike iWare C58BT:
+     * Menghasilkan byte cetak untuk pengujian spike iWare C58BT / RPP02N:
      * - Header toko
-     * - Teks batas 32 karakter (untuk verifikasi lebar fisik kertas 58 mm)
+     * - Teks batas 32 karakter (verifikasi fisik lebar kertas 58 mm)
      * - Item transaksi tiruan (2 kolom rapi)
      * - Total & metode bayar
-     * - QR Code (order ID / verifikasi scan)
-     * - Perintah Feed & Cut
+     * - QR Code via Raster Bitmap (GS v 0) agar kompatibel penuh dengan printer 58mm murah
+     * - Feed baris yang cukup agar melewati cutter / tear-bar
      */
     fun createSpikeReceipt(
         charsPerLine: Int = 32,
@@ -25,7 +25,7 @@ object TestReceiptGenerator {
             builder.openCashDrawer()
         }
 
-        // Header
+        // Header Toko
         builder.alignCenter()
             .boldOn()
             .textSize(widthMultiplier = 2, heightMultiplier = 2)
@@ -64,18 +64,21 @@ object TestReceiptGenerator {
             .textLine("12345678901234567890123456789012")
             .divider('-')
 
-        // QR Code untuk uji scan
+        // QR Code untuk uji scan laundry & order (via Raster Bitmap GS v 0)
         if (includeQr) {
-            builder.textLine("Pindai QR Verifikasi Order:")
-            builder.feed(1)
-            builder.qrCode("ORD-20261012-C1-0001", moduleSize = 6)
-            builder.feed(1)
+            builder.alignCenter()
+                .textLine("Pindai QR Verifikasi Order:")
+                .qrCodeBitmap("ORD-20261012-C1-0001", size = 180)
+                .textLine()
         }
 
         // Footer
-        builder.textLine("Terima Kasih atas Kunjungan Anda")
-        builder.textLine("Simpan struk sebagai bukti")
-        builder.feed(3)
+        builder.alignCenter()
+            .textLine("Terima Kasih atas Kunjungan Anda")
+            .textLine("Simpan struk sebagai bukti")
+
+        // Feed kertas ekstra (6 baris) agar seluruh teks dan QR keluar melewati gigi perobek kertas
+        builder.feed(6)
 
         if (includeCut) {
             builder.cut(partial = true)

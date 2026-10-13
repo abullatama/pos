@@ -1,10 +1,14 @@
 package id.a3.pos.printer
 
+import android.graphics.Bitmap
+import android.graphics.Color
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
 
 /**
- * ESC/POS command builder for 58mm thermal printers (e.g. iWare C58BT).
+ * ESC/POS command builder for 58mm thermal printers (e.g. iWare C58BT / RPP02N).
  * Standard 58mm printer has 384 dots per line = 32 standard characters per line (Font A 12x24).
  */
 class EscPosBuilder(
@@ -70,53 +74,71 @@ class EscPosBuilder(
     }
 
     /**
-     * Standard ESC/POS QR code printing commands (GS ( k).
-     * @param data Content to encode in QR
-     * @param moduleSize dot width per module (1..16, typically 4 to 8 for 58mm)
-     * @param errorCorrection 48=L (7%), 49=M (15%), 50=Q (25%), 51=H (30%)
+     * Print QR code as thermal raster bitmap (GS v 0).
+     * This is universally supported by 58mm printers like iWare C58BT/RPP02N
+     * where native GS ( k command is ignored or causes a freeze.
      */
-    fun qrCode(data: String, moduleSize: Int = 6, errorCorrection: Int = 49): EscPosBuilder = apply {
-        val bytes = data.toByteArray(charset)
-        val len = bytes.size + 3
-        val pL = (len and 0xFF).toByte()
-        val pH = ((len shr 8) and 0xFF).toByte()
+    fun qrCodeBitmap(data: String, size: Int = 200): EscPosBuilder = apply {
+        val writer = QRCodeWriter()
+        val bitMatrix = writer.encode(data, BarcodeFormat.QR_CODE, size, size)
+        val width = bitMatrix.width
+        val height = bitMatrix.height
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                bitmap.setPixel(x, y, if (bitMatrix.get(x, y)) Color.BLACK else Color.WHITE)
+            }
+        }
+        rasterBitmap(bitmap)
+    }
 
-        // 1. Model: Model 2 (49)
-        buffer.write(byteArrayOf(0x1D, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00))
+    /**
+     * Print Bitmap using GS v 0 raster bit image command.
+     */
+    fun rasterBitmap(bitmap: Bitmap): EscPosBuilder = apply {
+        val width = bitmap.width
+        val height = bitmap.height
+        val widthBytes = (width + 7) / 8
 
-        // 2. Size: moduleSize (1..16)
-        val sizeByte = moduleSize.coerceIn(1, 16).toByte()
-        buffer.write(byteArrayOf(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, sizeByte))
+        // GS v 0 0 xL xH yL yH d1...dk
+        val xL = (widthBytes and 0xFF).toByte()
+        val xH = ((widthBytes shr 8) and 0xFF).toByte()
+        val yL = (height and 0xFF).toByte()
+        val yH = ((height shr 8) and 0xFF).toByte()
 
-        // 3. Error correction level
-        val ecByte = errorCorrection.coerceIn(48, 51).toByte()
-        buffer.write(byteArrayOf(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, ecByte))
+        buffer.write(byteArrayOf(0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH))
 
-        // 4. Store data into symbol storage area: GS ( k pL pH cn fn m d1...dk
-        buffer.write(byteArrayOf(0x1D, 0x28, 0x6B, pL, pH, 0x31, 0x50, 0x30))
-        buffer.write(bytes)
-
-        // 5. Print the symbol data: GS ( k pL pH cn fn m
-        buffer.write(byteArrayOf(0x1D, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30))
+        for (y in 0 until height) {
+            for (xByte in 0 until widthBytes) {
+                var byteVal = 0
+                for (bit in 0 until 8) {
+                    val x = xByte * 8 + bit
+                    if (x < width) {
+                        val pixel = bitmap.getPixel(x, y)
+                        val r = (pixel shr 16) and 0xFF
+                        val g = (pixel shr 8) and 0xFF
+                        val b = pixel and 0xFF
+                        // Luminance threshold for monochrome
+                        val gray = (r * 30 + g * 59 + b * 11) / 100
+                        if (gray < 128) {
+                            byteVal = byteVal or (1 shl (7 - bit))
+                        }
+                    }
+                }
+                buffer.write(byteVal)
+            }
+        }
     }
 
     fun feed(lines: Int = 3): EscPosBuilder = apply {
         buffer.write(byteArrayOf(0x1B, 0x64, lines.coerceIn(1, 255).toByte())) // ESC d n
     }
 
-    /**
-     * Paper cut command (GS V m).
-     * Note: iWare C58BT usually has manual tear bar, but if cutter hardware is present:
-     * 0x00 = Full cut, 0x01 = Partial cut, 0x42 = Partial cut with feed
-     */
     fun cut(partial: Boolean = true): EscPosBuilder = apply {
         val m = if (partial) 0x01.toByte() else 0x00.toByte()
         buffer.write(byteArrayOf(0x1D, 0x56, m))
     }
 
-    /**
-     * Cash drawer kick (ESC p m t1 t2) for RJ11 drawer port.
-     */
     fun openCashDrawer(): EscPosBuilder = apply {
         buffer.write(byteArrayOf(0x1B, 0x70, 0x00, 0x19, 0xFA.toByte()))
     }
