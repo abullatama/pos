@@ -68,8 +68,9 @@ object TestReceiptGenerator {
         if (includeQr) {
             builder.alignCenter()
                 .textLine("Pindai QR Verifikasi Order:")
-                .qrCodeBitmap("ORD-20261012-C1-0001", size = 180)
-                .textLine()
+                .feed(1)
+                .qrCodeBitmap("ORD-20261012-C1-0001", size = 128)
+                .feed(1)
         }
 
         // Footer

@@ -75,32 +75,33 @@ class EscPosBuilder(
 
     /**
      * Print QR code as thermal raster bitmap (GS v 0).
-     * This is universally supported by 58mm printers like iWare C58BT/RPP02N
-     * where native GS ( k command is ignored or causes a freeze.
+     * Sized at 128x128 dots (16 bytes wide) to avoid buffer overrun on mini Bluetooth printers.
      */
-    fun qrCodeBitmap(data: String, size: Int = 200): EscPosBuilder = apply {
-        val writer = QRCodeWriter()
-        val bitMatrix = writer.encode(data, BarcodeFormat.QR_CODE, size, size)
-        val width = bitMatrix.width
-        val height = bitMatrix.height
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
-        for (x in 0 until width) {
-            for (y in 0 until height) {
-                bitmap.setPixel(x, y, if (bitMatrix.get(x, y)) Color.BLACK else Color.WHITE)
+    fun qrCodeBitmap(data: String, size: Int = 128): EscPosBuilder = apply {
+        try {
+            val writer = QRCodeWriter()
+            val bitMatrix = writer.encode(data, BarcodeFormat.QR_CODE, size, size)
+            val width = bitMatrix.width
+            val height = bitMatrix.height
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+            for (x in 0 until width) {
+                for (y in 0 until height) {
+                    bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.BLACK else Color.WHITE)
+                }
             }
-        }
-        rasterBitmap(bitmap)
+            rasterBitmap(bitmap)
+        } catch (_: Exception) {}
     }
 
     /**
-     * Print Bitmap using GS v 0 raster bit image command.
+     * Print Bitmap using standard GS v 0 raster bit image command.
      */
     fun rasterBitmap(bitmap: Bitmap): EscPosBuilder = apply {
         val width = bitmap.width
         val height = bitmap.height
         val widthBytes = (width + 7) / 8
 
-        // GS v 0 0 xL xH yL yH d1...dk
+        // GS v 0 0 xL xH yL yH
         val xL = (widthBytes and 0xFF).toByte()
         val xH = ((widthBytes shr 8) and 0xFF).toByte()
         val yL = (height and 0xFF).toByte()
@@ -118,7 +119,6 @@ class EscPosBuilder(
                         val r = (pixel shr 16) and 0xFF
                         val g = (pixel shr 8) and 0xFF
                         val b = pixel and 0xFF
-                        // Luminance threshold for monochrome
                         val gray = (r * 30 + g * 59 + b * 11) / 100
                         if (gray < 128) {
                             byteVal = byteVal or (1 shl (7 - bit))
@@ -130,7 +130,7 @@ class EscPosBuilder(
         }
     }
 
-    fun feed(lines: Int = 3): EscPosBuilder = apply {
+    fun feed(lines: Int = 5): EscPosBuilder = apply {
         buffer.write(byteArrayOf(0x1B, 0x64, lines.coerceIn(1, 255).toByte())) // ESC d n
     }
 

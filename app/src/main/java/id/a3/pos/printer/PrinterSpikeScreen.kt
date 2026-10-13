@@ -364,7 +364,8 @@ fun PrinterSpikeScreen(
                             appendLine("12345678901234567890123456789012")
                             appendLine("-".repeat(charsPerLine))
                             if (testQr) {
-                                appendLine("   [QR CODE: ORD-...-C1-0001]   ")
+                                appendLine(" Pindai QR Verifikasi Order: ")
+                                appendLine("  [QR RASTER: ORD-...-C1-0001]  ")
                             }
                             appendLine(" Terima Kasih atas Kunjungan Anda")
                             appendLine("    Simpan struk sebagai bukti  ")

@@ -12,6 +12,7 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.OutputStream
 import java.util.UUID
@@ -37,7 +38,7 @@ class PrinterManager(private val context: Context) {
     private val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
     private val usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
 
-    // Standard SPP (Serial Port Profile) UUID for Bluetooth printers
+    // Standard SPP UUID
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
     @SuppressLint("MissingPermission")
@@ -50,7 +51,6 @@ class PrinterManager(private val context: Context) {
         val deviceList = usbManager.deviceList
         val printers = mutableListOf<PrinterConnection.Usb>()
         for ((_, device) in deviceList) {
-            // Check if device has PRINTER class or vendor-specific interface
             var isPrinter = device.deviceClass == UsbConstants.USB_CLASS_PRINTER
             for (i in 0 until device.interfaceCount) {
                 val intf = device.getInterface(i)
@@ -74,14 +74,26 @@ class PrinterManager(private val context: Context) {
             var socket: BluetoothSocket? = null
             var outputStream: OutputStream? = null
             try {
-                // Cancel discovery if running to prevent connection slowdown
                 bluetoothAdapter?.cancelDiscovery()
-
                 socket = device.createRfcommSocketToServiceRecord(sppUuid)
                 socket.connect()
                 outputStream = socket.outputStream
-                outputStream.write(data)
-                outputStream.flush()
+
+                // Kirim secara bertahap (chunks 256 bytes) dengan sedikit jeda agar buffer serial printer tidak overflow/drop
+                val chunkSize = 256
+                var offset = 0
+                while (offset < data.size) {
+                    val count = minOf(chunkSize, data.size - offset)
+                    outputStream.write(data, offset, count)
+                    outputStream.flush()
+                    offset += count
+                    if (offset < data.size) {
+                        delay(20) // 20ms breathing time for printer serial processor
+                    }
+                }
+
+                // Beri waktu sejenak sebelum socket ditutup agar data terakhir dicetak tuntas
+                delay(100)
                 Result.success(Unit)
             } catch (e: Exception) {
                 Result.failure(e)
