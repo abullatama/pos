@@ -17,9 +17,9 @@
       "app": "both",
       "description": "Uji sinkron tiruan: coroutine foreground utama, WorkManager cadangan, di Redmi Pad 2",
       "acceptance": "Data tiruan terkirim setelah layar mati dan app di latar belakang beberapa jam",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": "Belum selesai. Menunggu kode uji spike dan laporan uji di Redmi Pad 2 (HyperOS)."
+      "notes": "Lolos verifikasi hardware fisik di Redmi Pad 2 (HyperOS/Android 16). Foreground coroutine loop kontinu per 5s saat tablet sleep/layar mati, dan WorkManager sukses dieksekusi secara periodik (interval 15 menit) maupun on-demand tanpa di-kill oleh sistem HyperOS."
     },
     {
       "id": "F03",

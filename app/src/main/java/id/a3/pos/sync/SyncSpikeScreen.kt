@@ -45,6 +45,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.work.OneTimeWorkRequestBuilder
 
 @Composable
 fun SyncSpikeScreen(modifier: Modifier = Modifier) {
@@ -63,12 +68,16 @@ fun SyncSpikeScreen(modifier: Modifier = Modifier) {
         if (raw.isNotEmpty()) {
             logs.addAll(raw.lines().filter { it.isNotBlank() })
         }
-    }
-
-    LaunchedEffect(Unit) {
         val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
         batteryLevel = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-        refreshLogs()
+    }
+
+    // Auto-refresh log secara real-time setiap 1 detik saat layar aktif
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            refreshLogs()
+            delay(1000)
+        }
     }
 
     // Coroutine foreground loop jika aktif
@@ -150,6 +159,20 @@ fun SyncSpikeScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Jadwalkan WorkManager (15m)")
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val oneTimeWork = OneTimeWorkRequestBuilder<SyncWorker>().build()
+                    WorkManager.getInstance(context).enqueue(oneTimeWork)
+                    val nowStr = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                    val entry = "[$nowStr] Uji Langsung WorkManager (OneTime) dipicu."
+                    val existing = prefs.getString("logs", "") ?: ""
+                    prefs.edit().putString("logs", "$entry\n$existing".take(5000)).apply()
+                    refreshLogs()
+                }
+            ) {
+                Text("Uji Langsung WM")
             }
 
             OutlinedButton(
