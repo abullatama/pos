@@ -7,9 +7,9 @@
       "app": "both",
       "description": "Aplikasi uji cetak ke iWare C58BT lewat Bluetooth dan USB",
       "acceptance": "Teks 32 karakter, QR, dan pemotongan tercetak benar",
-      "passes": true,
+      "passes": false,
       "needs_device": true,
-      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat."
+      "notes": "Belum selesai. Menunggu kode uji dan hasil uji manusia di perangkat fisik (iWare C58BT)."
     },
     {
       "id": "F02",
@@ -17,9 +17,9 @@
       "app": "both",
       "description": "Uji sinkron tiruan: coroutine foreground utama, WorkManager cadangan, di Redmi Pad 2",
       "acceptance": "Data tiruan terkirim setelah layar mati dan app di latar belakang beberapa jam",
-      "passes": true,
+      "passes": false,
       "needs_device": true,
-      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat."
+      "notes": "Belum selesai. Menunggu kode uji spike dan laporan uji di Redmi Pad 2 (HyperOS)."
     },
     {
       "id": "F03",
@@ -27,9 +27,9 @@
       "app": "both",
       "description": "Uji kiosk (device owner, cadangan screen pinning) dan pasang APK senyap",
       "acceptance": "Kasir tidak bisa keluar dari app; update terpasang tanpa akun Google; akun Mi dicatat",
-      "passes": true,
+      "passes": false,
       "needs_device": true,
-      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat."
+      "notes": "Belum selesai. Menunggu uji kiosk & silent install di tablet target."
     },
     {
       "id": "F04",
@@ -37,9 +37,9 @@
       "app": "laundry",
       "description": "Uji pemindaian QR tag dari kertas roll",
       "acceptance": "QR terbaca dari tag normal dan agak pudar atau basah",
-      "passes": true,
+      "passes": false,
       "needs_device": true,
-      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat."
+      "notes": "Belum selesai. Menunggu uji pemindaian tag kertas roll dengan kamera tablet."
     },
     {
       "id": "F05",
@@ -47,9 +47,9 @@
       "app": "both",
       "description": "OpenAPI v0 lolos validator dan mock server berjalan",
       "acceptance": "Semua endpoint di contracts/openapi.yaml dijawab mock server",
-      "passes": true,
+      "passes": false,
       "needs_device": false,
-      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat. Mock server tidak diperiksa di sesi ini."
+      "notes": "Belum selesai. Kontrak v0 perlu divalidasi dan mock server disiapkan/dijalankan."
     },
     {
       "id": "F06",
