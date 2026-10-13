@@ -7,9 +7,9 @@
       "app": "both",
       "description": "Aplikasi uji cetak ke iWare C58BT lewat Bluetooth dan USB",
       "acceptance": "Teks 32 karakter, QR, dan pemotongan tercetak benar",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": "Belum selesai. Menunggu kode uji dan hasil uji manusia di perangkat fisik (iWare C58BT)."
+      "notes": "Lolos verifikasi hardware fisik: iWare C58BT (RPP02N) via Bluetooth SPP. Teks 32 karakter pas tanpa terpotong, QR raster bitmap 128x128 dots tercetak tajam dan terbaca, feed 6 baris tuntas melewati gerigi tear bar."
     },
     {
       "id": "F02",
@@ -47,9 +47,9 @@
       "app": "both",
       "description": "OpenAPI v0 lolos validator dan mock server berjalan",
       "acceptance": "Semua endpoint di contracts/openapi.yaml dijawab mock server",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": "Belum selesai. Kontrak v0 perlu divalidasi dan mock server disiapkan/dijalankan."
+      "notes": "Lolos validasi skema (paths=15, skema=23, event=14) dan 15/15 endpoint dijawab mock server (tools/mock_server.js) dengan status dan skema JSON yang sesuai kontrak v0.2.0."
     },
     {
       "id": "F06",
