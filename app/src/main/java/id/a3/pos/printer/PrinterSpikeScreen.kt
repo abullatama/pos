@@ -92,8 +92,11 @@ fun PrinterSpikeScreen(
         usbPrinters.clear()
         usbPrinters.addAll(printerManager.getConnectedUsbPrinters())
 
+        // Otomatis pilih RPP02N atau printer pertama yang tersedia jika belum dipilih
         if (selectedPrinter == null) {
-            selectedPrinter = bluetoothPrinters.firstOrNull() ?: usbPrinters.firstOrNull()
+            selectedPrinter = bluetoothPrinters.find { it.name.contains("RPP", ignoreCase = true) }
+                ?: bluetoothPrinters.firstOrNull()
+                ?: usbPrinters.firstOrNull()
         }
     }
 

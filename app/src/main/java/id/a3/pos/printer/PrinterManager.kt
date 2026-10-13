@@ -79,21 +79,12 @@ class PrinterManager(private val context: Context) {
                 socket.connect()
                 outputStream = socket.outputStream
 
-                // Kirim secara bertahap (chunks 256 bytes) dengan sedikit jeda agar buffer serial printer tidak overflow/drop
-                val chunkSize = 256
-                var offset = 0
-                while (offset < data.size) {
-                    val count = minOf(chunkSize, data.size - offset)
-                    outputStream.write(data, offset, count)
-                    outputStream.flush()
-                    offset += count
-                    if (offset < data.size) {
-                        delay(20) // 20ms breathing time for printer serial processor
-                    }
-                }
+                // Kirim seluruh data langsung seperti pengujian awal yang berhasil
+                outputStream.write(data)
+                outputStream.flush()
 
-                // Beri waktu sejenak sebelum socket ditutup agar data terakhir dicetak tuntas
-                delay(100)
+                // Berikan jeda agar buffer serial printer selesai dicetak sebelum socket ditutup
+                delay(1500)
                 Result.success(Unit)
             } catch (e: Exception) {
                 Result.failure(e)
