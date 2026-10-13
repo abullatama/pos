@@ -1,0 +1,51 @@
+{
+  "_note": "Contoh untuk pengembangan. Data produksi diisi owner lewat web.",
+  "business_unit": "cafe",
+  "items": [
+    {
+      "id": "menu-latte",
+      "name": "Latte",
+      "category": "Kopi",
+      "price": 34000,
+      "options": [
+        {
+          "kind": "variant",
+          "name": "Dingin",
+          "price_delta": 0
+        },
+        {
+          "kind": "addon",
+          "name": "Shot tambahan",
+          "price_delta": 6000
+        }
+      ]
+    },
+    {
+      "id": "menu-americano",
+      "name": "Americano",
+      "category": "Kopi",
+      "price": 26000,
+      "options": []
+    },
+    {
+      "id": "menu-croissant",
+      "name": "Croissant",
+      "category": "Roti",
+      "price": 28000,
+      "options": []
+    },
+    {
+      "id": "menu-teh",
+      "name": "Teh tarik",
+      "category": "Non-kopi",
+      "price": 22000,
+      "options": [
+        {
+          "kind": "variant",
+          "name": "Panas",
+          "price_delta": 0
+        }
+      ]
+    }
+  ]
+}

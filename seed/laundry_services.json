@@ -1,0 +1,32 @@
+{
+  "_note": "Contoh untuk pengembangan (OQ-09, OQ-10, OQ-11).",
+  "business_unit": "laundry",
+  "services": [
+    {
+      "id": "svc-kiloan",
+      "name": "Kiloan reguler",
+      "unit": "kg",
+      "rate": 7000,
+      "express_rate": 10000,
+      "min_weight": 1.0,
+      "weight_step": 0.5,
+      "default_eta_hours": 48
+    },
+    {
+      "id": "svc-selimut",
+      "name": "Selimut",
+      "unit": "pcs",
+      "rate": 25000,
+      "express_rate": 35000,
+      "default_eta_hours": 72
+    },
+    {
+      "id": "svc-bedcover",
+      "name": "Bed cover",
+      "unit": "pcs",
+      "rate": 40000,
+      "express_rate": 55000,
+      "default_eta_hours": 72
+    }
+  ]
+}

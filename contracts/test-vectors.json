@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "notes": "Uang dalam rupiah bulat. Persentase per komponen dibulatkan ke rupiah terdekat (setengah naik). Pembulatan akhir cafe ke kelipatan 100, setengah naik. status 'proposed' = rumus belum ada di spek, butuh keputusan (OQ-04).",
+  "cafe": [
+    {"id": "C1", "status": "confirmed", "description": "Diskon 10 persen, pajak 10 persen ditambahkan",
+     "input": {"lines": [{"unit_price": 34000, "quantity": 1}, {"unit_price": 28000, "quantity": 1}], "discount": {"type": "percent", "value": 10}, "service_percent": 0, "tax_percent": 10, "tax_mode": "added"},
+     "expected": {"subtotal": 62000, "discount": 6200, "service_charge": 0, "tax": 5580, "rounding": 20, "total": 61400}},
+    {"id": "C2", "status": "confirmed", "description": "Diskon nominal, biaya layanan 5 persen, pajak atas dpp + layanan, pembulatan turun",
+     "input": {"lines": [{"unit_price": 40000, "quantity": 2}], "discount": {"type": "amount", "value": 5000}, "service_percent": 5, "tax_percent": 10, "tax_mode": "added"},
+     "expected": {"subtotal": 80000, "discount": 5000, "service_charge": 3750, "tax": 7875, "rounding": -25, "total": 86600}},
+    {"id": "C3", "status": "confirmed", "description": "Pembulatan setengah naik",
+     "input": {"lines": [{"unit_price": 10050, "quantity": 1}], "discount": null, "service_percent": 0, "tax_percent": 0, "tax_mode": "added"},
+     "expected": {"subtotal": 10050, "discount": 0, "service_charge": 0, "tax": 0, "rounding": 50, "total": 10100}},
+    {"id": "C4", "status": "proposed", "description": "Harga sudah termasuk pajak (OQ-04): pajak = harga x p / (100 + p), total tetap",
+     "input": {"lines": [{"unit_price": 111000, "quantity": 1}], "discount": null, "service_percent": 0, "tax_percent": 10, "tax_mode": "included"},
+     "expected": {"subtotal": 111000, "discount": 0, "service_charge": 0, "tax": 10091, "rounding": 0, "total": 111000}}
+  ],
+  "laundry": [
+    {"id": "L1", "status": "confirmed", "description": "Per kg dibulatkan naik ke kelipatan 0,5 ditambah item per pcs",
+     "input": {"lines": [{"unit": "kg", "weight": 3.7, "rate": 7000, "min_weight": 1.0, "step": 0.5}, {"unit": "pcs", "quantity": 1, "rate": 25000}]},
+     "expected": {"billed_weights": [4.0], "line_totals": [28000, 25000], "total": 53000}},
+    {"id": "L2", "status": "confirmed", "description": "Berat minimum",
+     "input": {"lines": [{"unit": "kg", "weight": 0.3, "rate": 7000, "min_weight": 1.0, "step": 0.5}]},
+     "expected": {"billed_weights": [1.0], "line_totals": [7000], "total": 7000}},
+    {"id": "L3", "status": "confirmed", "description": "Express",
+     "input": {"lines": [{"unit": "kg", "weight": 2.1, "rate": 10000, "min_weight": 1.0, "step": 0.5}]},
+     "expected": {"billed_weights": [2.5], "line_totals": [25000], "total": 25000}},
+    {"id": "L4", "status": "confirmed", "description": "DP lalu pelunasan",
+     "input": {"total": 53000, "payments": [20000]},
+     "expected": {"remaining": 33000, "payment_status": "dp", "after_full_payment": "paid"}}
+  ],
+  "cash": [
+    {"id": "K1", "status": "confirmed", "description": "Kas seharusnya",
+     "input": {"opening_cash": 200000, "cash_sales": 500000, "cash_dp_and_settlement": 100000, "cash_refunds": 25000, "cash_outs": 50000},
+     "expected": {"expected_cash": 725000}},
+    {"id": "K2", "status": "confirmed", "description": "Kembalian tunai",
+     "input": {"total": 61400, "tendered": 70000},
+     "expected": {"change": 8600}}
+  ]
+}

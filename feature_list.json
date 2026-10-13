@@ -1,0 +1,445 @@
+{
+  "_note": "Agent hanya boleh mengubah 'passes' dan 'notes'. Ubah passes menjadi true hanya setelah tes lulus. Fitur needs_device: minta manusia menguji.",
+  "features": [
+    {
+      "id": "F01",
+      "milestone": "M0",
+      "app": "both",
+      "description": "Aplikasi uji cetak ke iWare C58BT lewat Bluetooth dan USB",
+      "acceptance": "Teks 32 karakter, QR, dan pemotongan tercetak benar",
+      "passes": true,
+      "needs_device": true,
+      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat."
+    },
+    {
+      "id": "F02",
+      "milestone": "M0",
+      "app": "both",
+      "description": "Uji sinkron tiruan: coroutine foreground utama, WorkManager cadangan, di Redmi Pad 2",
+      "acceptance": "Data tiruan terkirim setelah layar mati dan app di latar belakang beberapa jam",
+      "passes": true,
+      "needs_device": true,
+      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat."
+    },
+    {
+      "id": "F03",
+      "milestone": "M0",
+      "app": "both",
+      "description": "Uji kiosk (device owner, cadangan screen pinning) dan pasang APK senyap",
+      "acceptance": "Kasir tidak bisa keluar dari app; update terpasang tanpa akun Google; akun Mi dicatat",
+      "passes": true,
+      "needs_device": true,
+      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat."
+    },
+    {
+      "id": "F04",
+      "milestone": "M0",
+      "app": "laundry",
+      "description": "Uji pemindaian QR tag dari kertas roll",
+      "acceptance": "QR terbaca dari tag normal dan agak pudar atau basah",
+      "passes": true,
+      "needs_device": true,
+      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat."
+    },
+    {
+      "id": "F05",
+      "milestone": "M0",
+      "app": "both",
+      "description": "OpenAPI v0 lolos validator dan mock server berjalan",
+      "acceptance": "Semua endpoint di contracts/openapi.yaml dijawab mock server",
+      "passes": true,
+      "needs_device": false,
+      "notes": "Dikonfirmasi selesai oleh pengguna pada 2026-10-12 (diuji manusia di perangkat asli). Hasil rinci belum dicatat. Mock server tidak diperiksa di sesi ini."
+    },
+    {
+      "id": "F06",
+      "milestone": "M1",
+      "app": "both",
+      "description": "Proyek Gradle: build-logic, app-cafe, app-laundry, feature dan core",
+      "acceptance": "Kedua aplikasi terbangun dengan satu perintah",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F07",
+      "milestone": "M1",
+      "app": "both",
+      "description": "Uji dependensi modul di CI",
+      "acceptance": "Build gagal bila feature:cafe memakai feature:laundry atau cangkang berisi logika bisnis",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F08",
+      "milestone": "M1",
+      "app": "both",
+      "description": "core:domain: rumus cafe dan laundry lulus test vector",
+      "acceptance": "Semua kasus di contracts/test-vectors.json berstatus confirmed lulus",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F09",
+      "milestone": "M1",
+      "app": "both",
+      "description": "Room, DAO, outbox, dan pengirim bundel idempoten",
+      "acceptance": "Bundel dikirim dua kali tetap satu transaksi di mock server",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F10",
+      "milestone": "M1",
+      "app": "both",
+      "description": "Pendaftaran perangkat dengan kode sekali pakai",
+      "acceptance": "Tablet berstatus Menunggu lalu Aktif setelah disetujui; DEVICE_REVOKED mengunci layar",
+      "passes": false,
+      "needs_device": true,
+      "notes": ""
+    },
+    {
+      "id": "F11",
+      "milestone": "M1",
+      "app": "both",
+      "description": "Login PIN dengan token terenkripsi (DataStore + Tink)",
+      "acceptance": "Login pertama online, buka kunci offline dengan PIN; token tidak terbaca di penyimpanan biasa",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F12",
+      "milestone": "M1",
+      "app": "both",
+      "description": "Bootstrap dapat dilanjutkan dan delta sync",
+      "acceptance": "Bootstrap terputus dilanjutkan dari bagian terakhir; cursor kedaluwarsa memicu bootstrap ulang",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F13",
+      "milestone": "M1",
+      "app": "both",
+      "description": "AppShell: bilah atas, navigasi bawah mengambang, indikator sinkron",
+      "acceptance": "Sesuai docs/ui/layout-standard.md; navigasi tersembunyi di alur pembayaran dan shift",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F14",
+      "milestone": "M1",
+      "app": "both",
+      "description": "Konfigurasi per aplikasi: package, ikon, nama, keystore, versi, header X-AppId",
+      "acceptance": "Dua APK dengan identitas berbeda; X-AppId terkirim di semua permintaan",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F15",
+      "milestone": "M2",
+      "app": "cafe",
+      "description": "Daftar menu, varian, add-on, dan keranjang",
+      "acceptance": "Total keranjang sama dengan core:domain",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F16",
+      "milestone": "M2",
+      "app": "cafe",
+      "description": "Diskon preset, biaya layanan, pajak, dan pembulatan di layar bayar",
+      "acceptance": "Hasil sama dengan test vector C1 sampai C3",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F17",
+      "milestone": "M2",
+      "app": "cafe",
+      "description": "Dine-in dan takeaway, pindah meja, tanda Habis",
+      "acceptance": "order.table_moved dan menu.sold_out_changed sampai ke server",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F18",
+      "milestone": "M2",
+      "app": "cafe",
+      "description": "Kirim ke dapur dan tambah item pesanan terbuka",
+      "acceptance": "Tiket dapur hanya berisi item baru, tanpa harga",
+      "passes": false,
+      "needs_device": true,
+      "notes": ""
+    },
+    {
+      "id": "F19",
+      "milestone": "M2",
+      "app": "laundry",
+      "description": "Cari atau buat pelanggan",
+      "acceptance": "Pelanggan baru dikirim sebagai customer.created di bundel order",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F20",
+      "milestone": "M2",
+      "app": "laundry",
+      "description": "Order laundry per kg dan per pcs dengan express",
+      "acceptance": "Hasil sama dengan test vector L1 sampai L3",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F21",
+      "milestone": "M2",
+      "app": "laundry",
+      "description": "Tag QR dicetak dan dipindai untuk ubah status",
+      "acceptance": "Status satu arah; staf laundry bisa memindai tanpa shift terbuka",
+      "passes": false,
+      "needs_device": true,
+      "notes": ""
+    },
+    {
+      "id": "F22",
+      "milestone": "M2",
+      "app": "laundry",
+      "description": "Pengambilan sebagian per baris (laundry_pickups)",
+      "acceptance": "Order Diambil hanya setelah semua baris punya pengambilan terakhir",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F23",
+      "milestone": "M2",
+      "app": "laundry",
+      "description": "Cuci ulang dengan alasan dan PIN manager",
+      "acceptance": "Status Siap kembali ke Diproses tanpa tagihan baru",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F24",
+      "milestone": "M2",
+      "app": "laundry",
+      "description": "Ambil cucian belum lunas butuh PIN manager",
+      "acceptance": "Ditolak tanpa PIN; masuk laporan pengecualian",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F25",
+      "milestone": "M2",
+      "app": "both",
+      "description": "Pembayaran Tunai: kembalian dan DP",
+      "acceptance": "Kembalian benar; DP dan pelunasan tercatat terpisah (L4, K2)",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F26",
+      "milestone": "M2",
+      "app": "both",
+      "description": "Pembayaran QRIS Statis dengan konfirmasi manual, juga offline",
+      "acceptance": "Tercatat dengan kasir dan shift; tanpa metode lain",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F27",
+      "milestone": "M2",
+      "app": "both",
+      "description": "Struk, nota, dan antrean cetak dengan cetak ulang SALINAN",
+      "acceptance": "Printer putus lalu tersambung: cetakan antre dan terkirim",
+      "passes": false,
+      "needs_device": true,
+      "notes": ""
+    },
+    {
+      "id": "F28",
+      "milestone": "M2",
+      "app": "both",
+      "description": "Sinkron menerima flag dari server tanpa menganggap bundel gagal",
+      "acceptance": "Hasil ACCEPTED dengan flags[] ditandai selesai, tidak masuk Antrean bermasalah",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F29",
+      "milestone": "M2",
+      "app": "both",
+      "description": "Antrean bermasalah (REJECTED) dengan alasan dan percobaan ulang",
+      "acceptance": "Tidak ada event yang dihapus diam-diam",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F30",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Buka shift dengan kas awal per pecahan",
+      "acceptance": "Satu shift terbuka per tablet; kas awal berbeda dari standar wajib beralasan",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F31",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Tutup shift: hitung kas buta, selisih, alasan, laporan Z",
+      "acceptance": "Kas seharusnya sama dengan K1; laporan Z tercetak",
+      "passes": false,
+      "needs_device": true,
+      "notes": ""
+    },
+    {
+      "id": "F32",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Catatan kas saat tutup shift dengan validasi alokasi",
+      "acceptance": "Kas ditinggal + disetor atau dibawa sama dengan kas dihitung, atau selisih beralasan",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F33",
+      "milestone": "M3",
+      "app": "cafe",
+      "description": "Serah terima pesanan terbuka ke shift berikutnya",
+      "acceptance": "Pembayaran tercatat di shift yang menerima",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F34",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Cek QRIS Statis saat tutup shift",
+      "acceptance": "Daftar ID dibawa di event shift.closed, tidak mengubah pembayaran",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F35",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Void, refund tunai, dan diskon manual dengan PIN manager lokal",
+      "acceptance": "Catatan pembalik tercipta; kas shift terkoreksi; bekerja offline",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F36",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Refund transaksi shift sebelumnya dengan batas nilai dan umur",
+      "acceptance": "Di bawah batas: manager di tablet; di atas: ditolak dan diarahkan ke owner web",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F37",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Kas keluar dengan foto nota dan batas tanpa PIN",
+      "acceptance": "Di atas batas wajib PIN manager",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F38",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Tutup shift offline dan tutup paksa dari tablet",
+      "acceptance": "Tertutup lokal dengan peringatan; shift.force_closed hanya Manager",
+      "passes": false,
+      "needs_device": true,
+      "notes": ""
+    },
+    {
+      "id": "F39",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Mode kios dan pembaruan app",
+      "acceptance": "Update tidak berjalan saat shift aktif atau outbox tidak kosong",
+      "passes": false,
+      "needs_device": true,
+      "notes": ""
+    },
+    {
+      "id": "F40",
+      "milestone": "M3",
+      "app": "both",
+      "description": "Migrasi Room diuji dengan data lama",
+      "acceptance": "Database versi lama berisi outbox bermigrasi tanpa kehilangan data",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F41",
+      "milestone": "M4",
+      "app": "both",
+      "description": "Heartbeat dan Crashlytics",
+      "acceptance": "Status perangkat tampil di web dan galat terlapor",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F42",
+      "milestone": "M4",
+      "app": "laundry",
+      "description": "Tombol Kirim via WA manual dan status notifikasi",
+      "acceptance": "Status none, queued, sent, atau failed tampil dari server",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    },
+    {
+      "id": "F43",
+      "milestone": "M4",
+      "app": "both",
+      "description": "Uji offline 24 jam",
+      "acceptance": "Jumlah dan total transaksi tablet sama dengan server",
+      "passes": false,
+      "needs_device": true,
+      "notes": ""
+    },
+    {
+      "id": "F44",
+      "milestone": "M4",
+      "app": "both",
+      "description": "Paket go-live: nota kertas cadangan dan SOP darurat",
+      "acceptance": "Tercetak dan ditempel sebelum hari pertama",
+      "passes": false,
+      "needs_device": false,
+      "notes": ""
+    }
+  ]
+}

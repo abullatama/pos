@@ -1,0 +1,137 @@
+{
+  "_note": "Satu contoh payload per tipe event. Divalidasi terhadap contracts/openapi.yaml oleh tools/validate_openapi.py.",
+  "examples": {
+    "shift.opened": {
+      "shift_id": "00000000-0000-4000-8000-000000000001",
+      "opening_cash": 200000,
+      "opening_cash_breakdown": {
+        "50000": 2,
+        "20000": 4,
+        "10000": 2
+      }
+    },
+    "shift.closed": {
+      "shift_id": "00000000-0000-4000-8000-000000000001",
+      "counted_cash": 725000,
+      "cash_left": 200000,
+      "cash_deposited": 525000,
+      "cash_taken_by": null,
+      "qris_checked_payment_ids": [
+        "00000000-0000-4000-8000-000000000031"
+      ],
+      "handover_order_ids": [
+        "00000000-0000-4000-8000-000000000011"
+      ]
+    },
+    "shift.force_closed": {
+      "shift_id": "00000000-0000-4000-8000-000000000001",
+      "note": "Kasir pulang mendadak",
+      "approved_by": "u-manager-1"
+    },
+    "customer.created": {
+      "customer_id": "00000000-0000-4000-8000-000000000005",
+      "name": "Budi",
+      "phone": "081234567890"
+    },
+    "menu.sold_out_changed": {
+      "menu_item_id": "menu-croissant",
+      "sold_out": true
+    },
+    "order.created": {
+      "order_id": "00000000-0000-4000-8000-000000000011",
+      "display_number": "C1-0007",
+      "order_type": "dine_in",
+      "table_label": "5",
+      "lines": [
+        {
+          "item_ref_id": "menu-latte",
+          "name": "Latte",
+          "quantity": 1,
+          "unit_price": 34000
+        },
+        {
+          "item_ref_id": "menu-croissant",
+          "name": "Croissant",
+          "quantity": 1,
+          "unit_price": 28000
+        }
+      ],
+      "subtotal": 62000,
+      "discount": 6200,
+      "service_charge": 0,
+      "tax": 5580,
+      "rounding": 20,
+      "total": 61400
+    },
+    "order.sent_to_kitchen": {
+      "order_id": "00000000-0000-4000-8000-000000000011",
+      "line_ids": [
+        "00000000-0000-4000-8000-000000000021",
+        "00000000-0000-4000-8000-000000000022"
+      ]
+    },
+    "order.items_added": {
+      "order_id": "00000000-0000-4000-8000-000000000011",
+      "lines": [
+        {
+          "line_id": "00000000-0000-4000-8000-000000000023",
+          "item_ref_id": "menu-americano",
+          "name": "Americano",
+          "quantity": 1,
+          "unit_price": 26000
+        }
+      ],
+      "subtotal": 88000,
+      "discount": 8800,
+      "service_charge": 0,
+      "tax": 7920,
+      "rounding": -20,
+      "total": 87100
+    },
+    "order.table_moved": {
+      "order_id": "00000000-0000-4000-8000-000000000011",
+      "from_table": "5",
+      "to_table": "7"
+    },
+    "payment.recorded": {
+      "payment_id": "00000000-0000-4000-8000-000000000031",
+      "order_id": "00000000-0000-4000-8000-000000000011",
+      "method": "cash",
+      "amount": 61400,
+      "tendered": 70000,
+      "idempotency_key": "00000000-0000-4000-8000-000000000041"
+    },
+    "laundry.status_changed": {
+      "order_id": "00000000-0000-4000-8000-000000000012",
+      "status": "ready"
+    },
+    "laundry.picked_up": {
+      "order_id": "00000000-0000-4000-8000-000000000012",
+      "order_line_id": "00000000-0000-4000-8000-000000000024",
+      "quantity": 1,
+      "is_final": true,
+      "note": null,
+      "approved_by": null
+    },
+    "correction.recorded": {
+      "correction_id": "00000000-0000-4000-8000-000000000051",
+      "type": "refund",
+      "order_id": "00000000-0000-4000-8000-000000000012",
+      "order_line_ids": [],
+      "original_payment_id": "00000000-0000-4000-8000-000000000032",
+      "amount": 10000,
+      "refund_method": "cash",
+      "reason_code": "quality_complaint",
+      "note": null,
+      "approved_by": "u-manager-1"
+    },
+    "cashout.recorded": {
+      "cashout_id": "00000000-0000-4000-8000-000000000052",
+      "amount": 30000,
+      "category": "Operasional",
+      "reason": "Beli es batu",
+      "receipt_file_id": null,
+      "approved_by": null
+    }
+  }
+}

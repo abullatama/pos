@@ -1,0 +1,732 @@
+openapi: 3.0.3
+info:
+  title: API Kasir Laundry dan Cafe (v0)
+  version: 0.2.0
+  description: |
+    Kontrak v0 untuk app Android. Sumber kebenaran antara app dan backend; spek di docs/spec bagian 11 dan 12 memberi konteks.
+    Semua uang bilangan bulat rupiah. Waktu ISO 8601 UTC. Endpoint tulis idempoten berdasarkan ID dari tablet.
+    Payload event selain order.created dan payment.recorded masih disederhanakan dan dirinci di M0.
+    Hasil bundel: ACCEPTED (dengan flags[] bila ditandai), DUPLICATE, REJECTED. Umur event tidak pernah menolak.
+servers:
+  - url: https://api.example.invalid/v1
+    description: Placeholder, diganti setelah hosting dipilih
+security:
+  - bearerAuth: []
+    deviceCredential: []
+paths:
+  /devices/register:
+    post:
+      summary: Daftarkan tablet dengan kode sekali pakai
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/AppId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [registration_code, device_id, name]
+              properties:
+                registration_code: {type: string}
+                device_id: {type: string}
+                name: {type: string}
+      responses:
+        '202':
+          description: Menunggu persetujuan owner
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [PENDING]}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /devices/me:
+    get:
+      summary: Status perangkat; kredensial dikirim satu kali saat pertama kali Aktif
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/AppId'
+        - name: X-Device-Id
+          in: header
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Status perangkat
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {type: string, enum: [PENDING, ACTIVE, REVOKED]}
+                  business_unit_id: {type: string}
+                  device_credential: {type: string, description: Hanya pada respons pertama setelah Aktif}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /devices/heartbeat:
+    post:
+      summary: Denyut perangkat
+      parameters:
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/AppId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [app_id, app_version]
+              properties:
+                app_id: {type: string, enum: [cafe, laundry]}
+                app_version: {type: string}
+                battery_percent: {type: integer}
+                last_sync_at: {type: string, format: date-time}
+                outbox_pending: {type: integer}
+                outbox_problem: {type: integer}
+                printer_status: {type: string}
+      responses:
+        '204': {description: Diterima}
+        '401': {$ref: '#/components/responses/Error'}
+  /auth/pin-login:
+    post:
+      summary: Login PIN di perangkat Aktif
+      parameters:
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/AppId'
+      security:
+        - deviceCredential: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, pin]
+              properties:
+                user_id: {type: string}
+                pin: {type: string}
+      responses:
+        '200':
+          description: Token
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TokenResponse'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '423':
+          description: Akun terkunci sementara (ACCOUNT_LOCKED), membawa retry_after
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+  /auth/refresh:
+    post:
+      summary: Perpanjang token
+      security:
+        - deviceCredential: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: {type: string}
+      responses:
+        '200':
+          description: Pasangan token baru
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TokenResponse'}
+        '401': {$ref: '#/components/responses/Error'}
+  /bootstrap:
+    get:
+      summary: Paket data awal per halaman (dapat dilanjutkan)
+      parameters:
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/AppId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Satu halaman bootstrap
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  section: {type: string}
+                  records:
+                    type: array
+                    items: {type: object, additionalProperties: true}
+                  next_cursor: {type: string, nullable: true}
+                  done: {type: boolean}
+                  delta_cursor: {type: string, nullable: true}
+        '426': {$ref: '#/components/responses/Error'}
+  /changes:
+    get:
+      summary: Perubahan master data sejak cursor (delta sync)
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Perubahan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  changes:
+                    type: array
+                    items:
+                      type: object
+                      required: [table, op, record]
+                      properties:
+                        table: {type: string}
+                        op: {type: string, enum: [upsert, delete]}
+                        record: {type: object, additionalProperties: true}
+                  next_cursor: {type: string}
+                  has_more: {type: boolean}
+        '410': {$ref: '#/components/responses/Error'}
+        '426': {$ref: '#/components/responses/Error'}
+  /customers/search:
+    get:
+      summary: Cari pelanggan (minimal 3 karakter)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: {type: string, minLength: 3}
+      responses:
+        '200':
+          description: Hasil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customers:
+                    type: array
+                    items: {$ref: '#/components/schemas/Customer'}
+        '429': {$ref: '#/components/responses/Error'}
+  /sync/bundles:
+    post:
+      summary: Kirim bundel transaksi (maksimal 50). Idempoten per bundle_id.
+      parameters:
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/AppId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bundles]
+              properties:
+                bundles:
+                  type: array
+                  maxItems: 50
+                  items: {$ref: '#/components/schemas/Bundle'}
+      responses:
+        '200':
+          description: Hasil per bundel
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [results, server_time]
+                properties:
+                  results:
+                    type: array
+                    items: {$ref: '#/components/schemas/BundleResult'}
+                  server_time: {type: string, format: date-time}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '426': {$ref: '#/components/responses/Error'}
+  /shifts/current:
+    get:
+      summary: Shift terbuka milik tablet ini, atau null
+      responses:
+        '200':
+          description: Shift
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shift:
+                    nullable: true
+                    allOf:
+                      - $ref: '#/components/schemas/Shift'
+        '401': {$ref: '#/components/responses/Error'}
+  /shifts/{id}/force-close:
+    post:
+      summary: Tutup paksa (web atau saat online). Dari tablet memakai event shift.force_closed.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: {type: string}
+      responses:
+        '200':
+          description: Shift berstatus force_closed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Shift'}
+        '403': {$ref: '#/components/responses/Error'}
+  /orders/{id}/notification-status:
+    get:
+      summary: Status notifikasi WhatsApp (hanya laundry)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [none, queued, sent, failed]}
+                  last_error: {type: string, nullable: true}
+                  sent_at: {type: string, format: date-time, nullable: true}
+        '404': {$ref: '#/components/responses/Error'}
+  /config:
+    get:
+      summary: Pengaturan, saklar fitur, versi minimum per app_id
+      parameters:
+        - $ref: '#/components/parameters/AppVersion'
+        - $ref: '#/components/parameters/AppId'
+      responses:
+        '200':
+          description: Konfigurasi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: {type: object, additionalProperties: true}
+                  feature_flags: {type: object, additionalProperties: {type: boolean}}
+                  min_app_version: {type: string}
+                  labels: {type: object, additionalProperties: {type: string}}
+        '401': {$ref: '#/components/responses/Error'}
+  /time:
+    get:
+      summary: Waktu server
+      responses:
+        '200':
+          description: Waktu
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server_time: {type: string, format: date-time}
+  /files:
+    post:
+      summary: Unggah foto nota (JPEG atau PNG)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, file_id, kind]
+              properties:
+                file: {type: string, format: binary}
+                file_id: {type: string, format: uuid}
+                kind: {type: string, enum: [cashout_receipt, expense_receipt]}
+      responses:
+        '201':
+          description: Tersimpan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file_id: {type: string, format: uuid}
+        '413': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+    deviceCredential: {type: apiKey, in: header, name: X-Device-Credential}
+  parameters:
+    AppVersion:
+      name: X-AppVersion
+      in: header
+      required: true
+      schema: {type: string}
+    AppId:
+      name: X-AppId
+      in: header
+      required: true
+      description: Hanya untuk versi dan pemantauan. Tidak pernah untuk otorisasi.
+      schema: {type: string, enum: [cafe, laundry]}
+    Cursor:
+      name: cursor
+      in: query
+      schema: {type: string}
+      description: Opaque, diberikan server
+    Limit:
+      name: limit
+      in: query
+      schema: {type: integer, default: 200, maximum: 200}
+  responses:
+    Error:
+      description: Kesalahan
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+  schemas:
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [UNAUTHENTICATED, FORBIDDEN, DEVICE_REVOKED, ACCOUNT_LOCKED, VALIDATION_FAILED, UPGRADE_REQUIRED, RATE_LIMITED, FEATURE_DISABLED, PIN_INVALID, CODE_INVALID]
+        message: {type: string}
+        details: {type: object, additionalProperties: true}
+        retry_after: {type: integer, description: Detik, untuk ACCOUNT_LOCKED dan RATE_LIMITED}
+        request_id: {type: string}
+    TokenResponse:
+      type: object
+      required: [access_token, refresh_token, expires_in, user, business_unit_id, server_time]
+      properties:
+        access_token: {type: string}
+        refresh_token: {type: string}
+        expires_in: {type: integer}
+        user:
+          type: object
+          required: [id, name, role]
+          properties:
+            id: {type: string}
+            name: {type: string}
+            role: {type: string, enum: [kasir, staf_laundry, manager, owner]}
+        business_unit_id: {type: string}
+        server_time: {type: string, format: date-time}
+    Customer:
+      type: object
+      required: [id, name, phone]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        phone: {type: string}
+    Shift:
+      type: object
+      required: [id, status, opened_at]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [open, closed, force_closed]}
+        opened_at: {type: string, format: date-time}
+        closed_at: {type: string, format: date-time, nullable: true}
+        opening_cash: {type: integer}
+    Bundle:
+      type: object
+      required: [bundle_id, device_id, events]
+      properties:
+        bundle_id: {type: string, format: uuid}
+        device_id: {type: string}
+        shift_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Kosong untuk bundel yang hanya berisi event laundry.* atau customer.created
+        events:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/Event'}
+    Event:
+      type: object
+      required: [event_id, type, occurred_at, payload]
+      properties:
+        event_id: {type: string, format: uuid}
+        type:
+          type: string
+          enum:
+            - shift.opened
+            - shift.closed
+            - shift.force_closed
+            - customer.created
+            - menu.sold_out_changed
+            - order.created
+            - order.sent_to_kitchen
+            - order.items_added
+            - order.table_moved
+            - payment.recorded
+            - laundry.status_changed
+            - laundry.picked_up
+            - correction.recorded
+            - cashout.recorded
+        occurred_at: {type: string, format: date-time}
+        payload:
+          description: |
+            Bentuk bergantung pada type; lihat x-payload-by-type. Setiap type punya tepat satu skema.
+            Diambil (laundry) hanya lewat laundry.picked_up, bukan laundry.status_changed.
+          oneOf:
+            - $ref: '#/components/schemas/ShiftOpened'
+            - $ref: '#/components/schemas/ShiftClosed'
+            - $ref: '#/components/schemas/ShiftForceClosed'
+            - $ref: '#/components/schemas/CustomerCreated'
+            - $ref: '#/components/schemas/MenuSoldOutChanged'
+            - $ref: '#/components/schemas/OrderCreated'
+            - $ref: '#/components/schemas/OrderSentToKitchen'
+            - $ref: '#/components/schemas/OrderItemsAdded'
+            - $ref: '#/components/schemas/OrderTableMoved'
+            - $ref: '#/components/schemas/PaymentRecorded'
+            - $ref: '#/components/schemas/LaundryStatusChanged'
+            - $ref: '#/components/schemas/LaundryPickedUp'
+            - $ref: '#/components/schemas/CorrectionRecorded'
+            - $ref: '#/components/schemas/CashoutRecorded'
+      x-payload-by-type:
+        shift.opened: ShiftOpened
+        shift.closed: ShiftClosed
+        shift.force_closed: ShiftForceClosed
+        customer.created: CustomerCreated
+        menu.sold_out_changed: MenuSoldOutChanged
+        order.created: OrderCreated
+        order.sent_to_kitchen: OrderSentToKitchen
+        order.items_added: OrderItemsAdded
+        order.table_moved: OrderTableMoved
+        payment.recorded: PaymentRecorded
+        laundry.status_changed: LaundryStatusChanged
+        laundry.picked_up: LaundryPickedUp
+        correction.recorded: CorrectionRecorded
+        cashout.recorded: CashoutRecorded
+    OrderCreated:
+      type: object
+      required: [order_id, display_number, order_type, lines, subtotal, discount, service_charge, tax, rounding, total]
+      properties:
+        order_id: {type: string, format: uuid}
+        display_number: {type: string, example: C1-0007}
+        order_type: {type: string, enum: [dine_in, takeaway, laundry]}
+        table_label: {type: string, nullable: true}
+        customer_id: {type: string, format: uuid, nullable: true}
+        lines:
+          type: array
+          items:
+            type: object
+            required: [item_ref_id, name, quantity, unit_price]
+            properties:
+              item_ref_id: {type: string}
+              name: {type: string}
+              quantity: {type: integer}
+              weight: {type: number, nullable: true}
+              unit_price: {type: integer}
+              note: {type: string, nullable: true}
+        subtotal: {type: integer}
+        discount: {type: integer}
+        service_charge: {type: integer}
+        tax: {type: integer}
+        rounding: {type: integer}
+        total: {type: integer}
+    PaymentRecorded:
+      type: object
+      required: [payment_id, order_id, method, amount]
+      properties:
+        payment_id: {type: string, format: uuid}
+        order_id: {type: string, format: uuid}
+        method: {type: string, enum: [cash, qris_static]}
+        amount: {type: integer, minimum: 1}
+        tendered: {type: integer, nullable: true}
+        idempotency_key: {type: string, format: uuid}
+    ShiftClosed:
+      type: object
+      required: [shift_id, counted_cash]
+      properties:
+        shift_id: {type: string, format: uuid}
+        counted_cash: {type: integer}
+        difference_reason: {type: string, nullable: true}
+        cash_left: {type: integer}
+        cash_deposited: {type: integer}
+        cash_taken_by: {type: string, nullable: true}
+        qris_checked_payment_ids:
+          type: array
+          items: {type: string, format: uuid}
+        handover_order_ids:
+          type: array
+          items: {type: string, format: uuid}
+    LaundryPickedUp:
+      type: object
+      required: [order_id, order_line_id, quantity, is_final]
+      properties:
+        order_id: {type: string, format: uuid}
+        order_line_id: {type: string, format: uuid}
+        quantity: {type: integer}
+        is_final: {type: boolean}
+        note: {type: string, nullable: true}
+        approved_by: {type: string, nullable: true}
+    OrderLine:
+      type: object
+      required: [line_id, item_ref_id, name, quantity, unit_price]
+      properties:
+        line_id: {type: string, format: uuid}
+        item_ref_id: {type: string}
+        name: {type: string}
+        quantity: {type: integer, minimum: 1}
+        weight: {type: number, nullable: true, description: kg, untuk layanan per kg}
+        unit_price: {type: integer, description: Snapshot harga satuan termasuk varian dan add-on}
+        options:
+          type: array
+          items:
+            type: object
+            required: [name, price_delta]
+            properties:
+              name: {type: string}
+              price_delta: {type: integer}
+        note: {type: string, nullable: true}
+    OrderTotals:
+      type: object
+      required: [subtotal, discount, service_charge, tax, rounding, total]
+      properties:
+        subtotal: {type: integer}
+        discount: {type: integer}
+        service_charge: {type: integer}
+        tax: {type: integer}
+        rounding: {type: integer}
+        total: {type: integer}
+    ShiftOpened:
+      type: object
+      required: [shift_id, opening_cash]
+      properties:
+        shift_id: {type: string, format: uuid}
+        opening_cash: {type: integer}
+        opening_cash_breakdown:
+          type: object
+          description: Pecahan rupiah ke jumlah lembar atau keping, mis. {"50000":4}
+          additionalProperties: {type: integer}
+        difference_reason: {type: string, nullable: true, description: Wajib bila opening_cash berbeda dari standar}
+        approved_by: {type: string, nullable: true, description: PIN manager bila angka diubah setelah dikonfirmasi}
+    ShiftForceClosed:
+      type: object
+      required: [shift_id, note, approved_by]
+      properties:
+        shift_id: {type: string, format: uuid}
+        note: {type: string}
+        approved_by: {type: string, description: Manager yang menutup paksa}
+    CustomerCreated:
+      type: object
+      required: [customer_id, name, phone]
+      properties:
+        customer_id: {type: string, format: uuid}
+        name: {type: string}
+        phone: {type: string, description: Dinormalisasi server; unik}
+    MenuSoldOutChanged:
+      type: object
+      required: [menu_item_id, sold_out]
+      properties:
+        menu_item_id: {type: string}
+        sold_out: {type: boolean}
+    OrderSentToKitchen:
+      type: object
+      required: [order_id, line_ids]
+      properties:
+        order_id: {type: string, format: uuid}
+        line_ids:
+          type: array
+          description: Baris yang baru dikirim (hanya item baru yang dicetak)
+          items: {type: string, format: uuid}
+    OrderItemsAdded:
+      allOf:
+        - $ref: '#/components/schemas/OrderTotals'
+        - type: object
+          required: [order_id, lines]
+          properties:
+            order_id: {type: string, format: uuid}
+            lines:
+              type: array
+              minItems: 1
+              items: {$ref: '#/components/schemas/OrderLine'}
+          description: Total terbaru seluruh pesanan setelah item ditambahkan
+    OrderTableMoved:
+      type: object
+      required: [order_id, from_table, to_table]
+      properties:
+        order_id: {type: string, format: uuid}
+        from_table: {type: string}
+        to_table: {type: string}
+    LaundryStatusChanged:
+      type: object
+      required: [order_id, status]
+      properties:
+        order_id: {type: string, format: uuid}
+        status:
+          type: string
+          enum: [received, processing, ready]
+          description: Diterima, Diproses, Siap. Diambil hanya lewat laundry.picked_up.
+        rework:
+          type: boolean
+          default: false
+          description: true untuk cuci ulang (ready kembali ke processing); wajib reason dan approved_by
+        reason: {type: string, nullable: true}
+        approved_by: {type: string, nullable: true}
+    CorrectionRecorded:
+      type: object
+      required: [correction_id, type, order_id, amount, reason_code, approved_by]
+      properties:
+        correction_id: {type: string, format: uuid}
+        type: {type: string, enum: [void, refund, manual_discount, comp, weight_adjust, price_adjust]}
+        order_id: {type: string, format: uuid}
+        order_line_ids:
+          type: array
+          items: {type: string, format: uuid}
+          description: Kosong berarti seluruh transaksi
+        original_payment_id: {type: string, format: uuid, nullable: true, description: Pembayaran yang dikembalikan (refund)}
+        amount: {type: integer, minimum: 0, description: Tidak melebihi nilai asal}
+        refund_method:
+          type: string
+          enum: [cash]
+          description: Refund selalu tunai, termasuk atas pembayaran QRIS
+        new_weight: {type: number, nullable: true, description: Hanya weight_adjust}
+        new_unit_price: {type: integer, nullable: true, description: Hanya price_adjust}
+        reason_code: {type: string, enum: [wrong_input, customer_cancelled, quality_complaint, wrong_made, promo, other]}
+        note: {type: string, nullable: true, description: Wajib bila reason_code other}
+        approved_by: {type: string, description: Manager atau owner aktif pada occurred_at}
+    CashoutRecorded:
+      type: object
+      required: [cashout_id, amount, category, reason]
+      properties:
+        cashout_id: {type: string, format: uuid}
+        amount: {type: integer, minimum: 1}
+        category: {type: string}
+        reason: {type: string}
+        receipt_file_id: {type: string, format: uuid, nullable: true, description: Dari POST /files; wajib di atas batas}
+        approved_by: {type: string, nullable: true, description: Wajib di atas batas tanpa PIN}
+    BundleResult:
+      type: object
+      required: [bundle_id, status]
+      properties:
+        bundle_id: {type: string, format: uuid}
+        status: {type: string, enum: [ACCEPTED, DUPLICATE, REJECTED]}
+        flags:
+          type: array
+          description: Hanya pada ACCEPTED. Karantina untuk ditinjau owner.
+          items:
+            type: string
+            enum: [TOTAL_MISMATCH, SHIFT_RANGE, UNKNOWN_ITEM, CASHOUT_UNAPPROVED, CASH_MISMATCH, CASH_ALLOCATION, CLOCK_SKEW, OLD_EVENT]
+        reason_code:
+          type: string
+          description: Hanya pada REJECTED
+          enum: [FORBIDDEN, DEVICE_REVOKED, VALIDATION_FAILED, DEPENDENCY_MISSING]
+        retryable: {type: boolean, description: true hanya untuk DEPENDENCY_MISSING}
+        message: {type: string}
+        server_received_at: {type: string, format: date-time}

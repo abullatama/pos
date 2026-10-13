@@ -1,0 +1,18 @@
+{
+  "_note": "Nilai sementara, lihat docs/open-questions.md.",
+  "settings": {
+    "opening_cash_default": 200000,
+    "cash_tolerance": 2000,
+    "cashout_limit_without_pin": 50000,
+    "tax_percent": 0,
+    "tax_mode": "added",
+    "service_charge_enabled": false,
+    "service_charge_percent": 0,
+    "rounding_step": 100,
+    "laundry_weight_min": 1.0,
+    "laundry_weight_step": 0.5,
+    "sync_event_retention_days": 30,
+    "old_refund_limit": 100000,
+    "old_refund_max_age_days": 14
+  }
+}

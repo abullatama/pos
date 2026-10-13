@@ -1,0 +1,19 @@
+{
+  "presets": [
+    {
+      "name": "Diskon 5%",
+      "type": "percent",
+      "value": 5
+    },
+    {
+      "name": "Diskon 10%",
+      "type": "percent",
+      "value": 10
+    },
+    {
+      "name": "Potongan Rp5.000",
+      "type": "amount",
+      "value": 5000
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# Spesifikasi Terpadu MVP v2.2 (ekspor, dipecah per bagian)
+
+Sumber: dokumen Docs (rev 67). Baca hanya bagian yang relevan.
+
+- [1. Ringkasan, lingkup, dan keputusan](01-ringkasan-lingkup-dan-keputusan.md)
+- [2. Peran dan hak akses](02-peran-dan-hak-akses.md)
+- [3. Kebutuhan fungsional A: perangkat, login, bootstrap, buka shift](03-kebutuhan-fungsional-a-perangkat-login-b.md)
+- [4. Kebutuhan fungsional B: transaksi cafe dan laundry](04-kebutuhan-fungsional-b-transaksi-cafe-da.md)
+- [5. Kebutuhan fungsional C: pembayaran, struk, koreksi, kas keluar](05-kebutuhan-fungsional-c-pembayaran-struk-.md)
+- [6. Kebutuhan fungsional D: tutup shift, sync di tablet, operasional](06-kebutuhan-fungsional-d-tutup-shift-sync-.md)
+- [7. Aturan bisnis dan rumus hitung](07-aturan-bisnis-dan-rumus-hitung.md)
+- [8. Tabel Pengaturan](08-tabel-pengaturan.md)
+- [9. Arsitektur sistem, standar kode, dan aturan agent](09-arsitektur-sistem-standar-kode-dan-atura.md)
+- [10. Model data dan event](10-model-data-dan-event.md)
+- [11. Kontrak API](11-kontrak-api.md)
+- [12. Sinkronisasi dan validasi server](12-sinkronisasi-dan-validasi-server.md)
+- [13. WhatsApp lewat Fonnte dan penjadwal](13-whatsapp-lewat-fonnte-dan-penjadwal.md)
+- [14. Web owner dan laporan](14-web-owner-dan-laporan.md)
+- [15. Keamanan, privasi, dan anti-kecurangan](15-keamanan-privasi-dan-anti-kecurangan.md)
+- [16. Infrastruktur, deployment, backup, dan pemantauan](16-infrastruktur-deployment-backup-dan-pema.md)
+- [17. Skenario uji dan kriteria lulus](17-skenario-uji-dan-kriteria-lulus.md)
+- [18. Milestone, go-live, dan risiko](18-milestone-go-live-dan-risiko.md)
+- [19. Pembagian kerja dan pertanyaan terbuka](19-pembagian-kerja-dan-pertanyaan-terbuka.md)

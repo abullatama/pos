@@ -1,0 +1,38 @@
+{
+  "_note": "HANYA lingkungan pengembangan. Jangan dipakai di produksi. PIN contoh sengaja lemah.",
+  "users": [
+    {
+      "name": "Kasir Cafe",
+      "role": "kasir",
+      "business_units": [
+        "cafe"
+      ],
+      "pin": "1111"
+    },
+    {
+      "name": "Kasir Laundry",
+      "role": "kasir",
+      "business_units": [
+        "laundry"
+      ],
+      "pin": "2222"
+    },
+    {
+      "name": "Staf Laundry",
+      "role": "staf_laundry",
+      "business_units": [
+        "laundry"
+      ],
+      "pin": "3333"
+    },
+    {
+      "name": "Manager",
+      "role": "manager",
+      "business_units": [
+        "cafe",
+        "laundry"
+      ],
+      "pin": "4444"
+    }
+  ]
+}
