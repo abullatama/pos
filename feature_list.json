@@ -57,9 +57,9 @@
       "app": "both",
       "description": "Proyek Gradle: build-logic, app-cafe, app-laundry, feature dan core",
       "acceptance": "Kedua aplikasi terbangun dengan satu perintah",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Struktur multi-modul Gradle (build-logic, app-cafe, app-laundry, core/*, feature/*) berhasil dibuat dan kedua aplikasi (:app-cafe dan :app-laundry) berhasil dibangun bersamaan dengan satu perintah './gradlew :app-cafe:assembleDebug :app-laundry:assembleDebug'."
     },
     {
       "id": "F07",
@@ -67,9 +67,9 @@
       "app": "both",
       "description": "Uji dependensi modul di CI",
       "acceptance": "Build gagal bila feature:cafe memakai feature:laundry atau cangkang berisi logika bisnis",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Task Gradle 'verifyModuleDependencies' dan unit test arsitektur 'ModuleDependencyArchitectureTest' (7 passed) memvalidasi isolasi modul: feature:cafe dan feature:laundry dilarang saling bergantung, shift/payment dilarang bergantung pada feature usaha, core:domain bebas dari Android SDK, dan cangkang app bebas dari logika bisnis."
     },
     {
       "id": "F08",
