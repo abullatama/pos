@@ -77,9 +77,9 @@
       "app": "both",
       "description": "core:domain: rumus cafe dan laundry lulus test vector",
       "acceptance": "Semua kasus di contracts/test-vectors.json berstatus confirmed lulus",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Implementasi rumus uang Long murni di :core:domain (MoneyMath, CafeCalculator, LaundryCalculator, CashCalculator) lolos 100% dari 12 unit test dan memvalidasi seluruh test vector di contracts/test-vectors.json (Cafe C1-C4, Laundry L1-L4, Cash K1-K2) tanpa selisih 1 rupiah pun."
     },
     {
       "id": "F09",
