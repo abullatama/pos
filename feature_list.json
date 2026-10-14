@@ -117,9 +117,9 @@
       "app": "both",
       "description": "Bootstrap dapat dilanjutkan dan delta sync",
       "acceptance": "Bootstrap terputus dilanjutkan dari bagian terakhir; cursor kedaluwarsa memicu bootstrap ulang",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "MasterDataSyncManager, SyncMasterApiService, SyncStateDao, dan MasterDataDao berhasil dibangun di :core:sync dan :core:data. Teruji 100% (unit test Robolectric): bootstrap terputus terbukti melanjutkan dari next_cursor yang tersimpan di Room, delta sync berhasil mengaplikasikan upsert dan delete master data, dan kursor kedaluwarsa (HTTP 410) terbukti memicu pembersihan kursor lama serta menjalankan bootstrap ulang otomatis."
     },
     {
       "id": "F13",

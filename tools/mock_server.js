@@ -71,6 +71,35 @@ const mockResponses = {
 
   // 6. GET /bootstrap
   'GET /bootstrap': (req, res) => {
+    const parsedUrl = url.parse(req.url, true);
+    const cursor = parsedUrl.query.cursor;
+
+    if (cursor === 'page-2') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        section: 'laundry_services',
+        records: [
+          { id: 'ls-reguler', name: 'Cuci Setrika Reguler', unit: 'kg', rate: 7000, active: true }
+        ],
+        next_cursor: null,
+        done: true,
+        delta_cursor: 'delta-100'
+      }));
+    }
+
+    if (cursor === 'page-1' || parsedUrl.query.multipage === 'true') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        section: 'menu_items',
+        records: [
+          { id: 'menu-latte', name: 'Latte', price: 34000, category: 'Coffee', active: true }
+        ],
+        next_cursor: 'page-2',
+        done: false,
+        delta_cursor: null
+      }));
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       section: 'menu_items',
@@ -86,10 +115,27 @@ const mockResponses = {
 
   // 7. GET /changes
   'GET /changes': (req, res) => {
+    const parsedUrl = url.parse(req.url, true);
+    const cursor = parsedUrl.query.cursor;
+
+    if (cursor === 'expired-cursor') {
+      res.writeHead(410, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        code: 'CURSOR_EXPIRED',
+        message: 'Cursor kedaluwarsa, silakan lakukan bootstrap ulang'
+      }));
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      changes: [],
-      next_cursor: 'seq-100',
+      changes: [
+        {
+          table: 'menu_items',
+          op: 'upsert',
+          record: { id: 'menu-espresso', name: 'Espresso Single', price: 18000, category: 'Coffee', active: true }
+        }
+      ],
+      next_cursor: 'delta-101',
       has_more: false
     }));
   },
