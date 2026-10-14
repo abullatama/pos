@@ -137,9 +137,9 @@
       "app": "both",
       "description": "Konfigurasi per aplikasi: package, ikon, nama, keystore, versi, header X-AppId",
       "acceptance": "Dua APK dengan identitas berbeda; X-AppId terkirim di semua permintaan",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Dua APK mandiri berhasil dikonfigurasi dan dibangun: AA Coffeeshop (id.tenang.kasir.cafe) dan Athia Laundry House (id.tenang.kasir.laundry) dengan nama, ikon adaptif (cangkir/amber vs mesin cuci/mawar), versi, dan tema masing-masing. AppHeaderInterceptor di :core:sync teruji 100% otomatis menyisipkan header X-AppId ('cafe' atau 'laundry'), X-AppVersion, dan X-Request-Id (UUID unik) pada setiap permintaan HTTP."
     },
     {
       "id": "F15",

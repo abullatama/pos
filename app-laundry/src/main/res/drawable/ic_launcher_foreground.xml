@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Washing machine drum / clean circle in Deep Plum -->
+    <path
+        android:strokeColor="#6A0934"
+        android:strokeWidth="4"
+        android:pathData="M32,32 h44 v44 h-44 z" />
+    <path
+        android:strokeColor="#D81B60"
+        android:strokeWidth="3.5"
+        android:pathData="M54,54 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0" />
+    <!-- Fresh water wave / bubble accent in Velvet Rose -->
+    <path
+        android:fillColor="#D81B60"
+        android:pathData="M44,55 c3,-3 6,-3 9,0 c3,3 6,3 9,0 c0,4 -4,8 -9,8 c-5,0 -9,-4 -9,-8 z" />
+    <path
+        android:fillColor="#6A0934"
+        android:pathData="M40,38 h4 v4 h-4 z M48,38 h4 v4 h-4 z" />
+</vector>

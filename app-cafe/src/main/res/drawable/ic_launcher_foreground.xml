@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Espresso Amber Coffee Cup Emblem -->
+    <path
+        android:fillColor="#8E5836"
+        android:pathData="M32,44 h40 v20 c0,8.8 -7.2,16 -16,16 h-8 c-8.8,0 -16,-7.2 -16,-16 z" />
+    <!-- Cup handle -->
+    <path
+        android:strokeColor="#8E5836"
+        android:strokeWidth="4"
+        android:pathData="M72,48 h6 c4.4,0 8,3.6 8,8 v0 c0,4.4 -3.6,8 -8,8 h-6" />
+    <!-- Steam / Warmth -->
+    <path
+        android:strokeColor="#FBF9F5"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M44,36 c0,-4 4,-6 4,-10 M52,36 c0,-4 4,-6 4,-10 M60,36 c0,-4 4,-6 4,-10" />
+    <!-- Saucer plate -->
+    <path
+        android:strokeColor="#E5E0D8"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:pathData="M28,84 h52" />
+</vector>
