@@ -107,9 +107,9 @@
       "app": "both",
       "description": "Login PIN dengan token terenkripsi (DataStore + Tink)",
       "acceptance": "Login pertama online, buka kunci offline dengan PIN; token tidak terbaca di penyimpanan biasa",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "TinkCryptoManager (AES-256-GCM AEAD), PinHasher (SHA-256), EncryptedAuthDataStore, dan AuthManager berhasil dibuat di :core:auth. Teruji 100% (6 unit test lulus): login pertama online berhasil, berkas fisik DataStore diverifikasi tidak memuat plain text token atau PIN, buka kunci offline dengan PIN berhasil tanpa internet, dan token terhapus tuntas saat logout."
     },
     {
       "id": "F12",
