@@ -26,7 +26,7 @@ Aturan untuk agent: kerjakan dengan **nilai sementara** di bawah, simpan sebagai
 | OQ-21 | Satu QRIS merchant per usaha atau satu untuk keduanya | Disarankan satu per usaha; rekonsiliasi per usaha bila begitu | M3 | Owner |
 | OQ-22 | Batas nilai dan umur refund transaksi lama di tablet | Rp100.000 dan 14 hari | M3 | Owner |
 | OQ-23 | Pengambilan sebagian laundry per kg: per jumlah potong atau penanda terakhir saja | Jumlah potong opsional, penanda terakhir wajib | M2 | Owner dan tim |
-| OQ-24 | Pemasangan senyap APK oleh device owner dan akun Mi di HyperOS | Diuji di M0; cadangan: pasang lewat USB | M0 | Hasil spike (M0 dikonfirmasi selesai; catat hasilnya di sini) |
+| OQ-24 | Pemasangan senyap APK oleh device owner dan akun Mi di HyperOS | **Selesai (Spike M0):** Pada tablet dengan akun Mi/Google, Android melarang `dpm set-device-owner` tanpa factory reset. Cadangan resmi: LockTask (Screen Pinning) terbukti mengunci kasir di POS; update APK mandiri tanpa Google Play memakai `PackageInstaller.Session` (muncul prompt 1-ketuk kasir) atau sideload USB | - | Selesai |
 | OQ-25 | Alamat dan kontak AA Coffeeshop untuk kepala struk | Belum ada; laundry: Jl. Trans Sulawesi, Bintauna, WA +62 823-4778-5986 | M2 | Owner |
 | OQ-20 | Pembatasan latar belakang HyperOS pada Redmi Pad 2 | Diuji di M0; mitigasi: izin pengecualian baterai dan peringatan di layar | M0 | Hasil spike (M0 dikonfirmasi selesai; catat hasilnya di sini) |
 

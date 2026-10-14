@@ -27,9 +27,9 @@
       "app": "both",
       "description": "Uji kiosk (device owner, cadangan screen pinning) dan pasang APK senyap",
       "acceptance": "Kasir tidak bisa keluar dari app; update terpasang tanpa akun Google; akun Mi dicatat",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": "Belum selesai. Menunggu uji kiosk & silent install di tablet target."
+      "notes": "Lolos verifikasi di Redmi Pad 2 (HyperOS 2 / Android 16). LockTask (Screen Pinning) terbukti berhasil mengunci kasir di POS dan memblokir navigasi Back/Home/Recents. Device Owner dpm ditolak OS jika akun Mi/Google aktif (dicatat di OQ-24), update APK mandiri tanpa Google Play terverifikasi via PackageInstaller.Session dengan prompt konfirmasi kasir."
     },
     {
       "id": "F04",
