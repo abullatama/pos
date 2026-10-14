@@ -25,3 +25,7 @@ extensions.configure<ApplicationExtension> {
         compose = true
     }
 }
+
+configure<org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension> {
+    jvmToolchain(17)
+}

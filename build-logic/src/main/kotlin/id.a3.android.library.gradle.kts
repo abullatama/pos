@@ -19,3 +19,7 @@ extensions.configure<LibraryExtension> {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
+configure<org.jetbrains.kotlin.gradle.dsl.KotlinAndroidProjectExtension> {
+    jvmToolchain(17)
+}

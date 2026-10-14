@@ -58,10 +58,67 @@ server.listen(PORT, async () => {
     });
   }
 
+  // Test idempotency on POST /sync/bundles
+  const testBundleId = '11111111-2222-4333-8444-555555555555';
+  const bundlePayload = JSON.stringify({
+    bundles: [{
+      bundle_id: testBundleId,
+      device_id: 'test-device-1',
+      events: [{
+        event_id: '99999999-8888-4777-8666-555555555555',
+        type: 'order.created',
+        occurred_at: new Date().toISOString(),
+        payload: { order_id: '00000000-0000-4000-8000-000000000001', display_number: 'C1-0001', order_type: 'dine_in', lines: [], subtotal: 10000, discount: 0, service_charge: 0, tax: 0, rounding: 0, total: 10000 }
+      }]
+    }]
+  });
+
+  let idempotencyOk = false;
+  // First send -> expect ACCEPTED
+  const res1 = await new Promise(resolve => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: PORT,
+      path: '/v1/sync/bundles',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bundlePayload) }
+    }, res => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => resolve(JSON.parse(data)));
+    });
+    req.write(bundlePayload);
+    req.end();
+  });
+
+  // Second send -> expect DUPLICATE
+  const res2 = await new Promise(resolve => {
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: PORT,
+      path: '/v1/sync/bundles',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bundlePayload) }
+    }, res => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => resolve(JSON.parse(data)));
+    });
+    req.write(bundlePayload);
+    req.end();
+  });
+
+  if (res1.results?.[0]?.status === 'ACCEPTED' && res2.results?.[0]?.status === 'DUPLICATE') {
+    idempotencyOk = true;
+    console.log('[PASS] POST /v1/sync/bundles idempotency: 1st ACCEPTED, 2nd DUPLICATE');
+  } else {
+    console.error('[FAIL] POST /v1/sync/bundles idempotency:', { res1, res2 });
+  }
+
   server.close(() => {
-    console.log(`\nMock Server Test Results: ${passed} / ${endpoints.length} endpoints passed.`);
-    if (passed === endpoints.length) {
-      console.log('F05 MOCK SERVER STATUS: SUCCESS');
+    console.log(`\nMock Server Test Results: ${passed} / ${endpoints.length} endpoints passed. Idempotency: ${idempotencyOk}`);
+    if (passed === endpoints.length && idempotencyOk) {
+      console.log('F05 & F09 MOCK SERVER STATUS: SUCCESS');
       process.exit(0);
     } else {
       process.exit(1);

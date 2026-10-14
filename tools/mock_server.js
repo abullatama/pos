@@ -8,6 +8,8 @@ const url = require('url');
 
 const PORT = process.env.PORT || 8080;
 
+const seenBundles = new Map();
+
 const mockResponses = {
   // 1. POST /devices/register
   'POST /devices/register': (req, res, body) => {
@@ -112,11 +114,21 @@ const mockResponses = {
     } catch (_) {}
 
     const results = bundles.length > 0
-      ? bundles.map(b => ({
-          bundle_id: b.bundle_id,
-          status: 'ACCEPTED',
-          server_received_at: now
-        }))
+      ? bundles.map(b => {
+          if (seenBundles.has(b.bundle_id)) {
+            return {
+              bundle_id: b.bundle_id,
+              status: 'DUPLICATE',
+              server_received_at: seenBundles.get(b.bundle_id)
+            };
+          }
+          seenBundles.set(b.bundle_id, now);
+          return {
+            bundle_id: b.bundle_id,
+            status: 'ACCEPTED',
+            server_received_at: now
+          };
+        })
       : [{
           bundle_id: '00000000-0000-4000-8000-000000000001',
           status: 'ACCEPTED',

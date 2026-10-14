@@ -87,9 +87,9 @@
       "app": "both",
       "description": "Room, DAO, outbox, dan pengirim bundel idempoten",
       "acceptance": "Bundel dikirim dua kali tetap satu transaksi di mock server",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Room Database (AppDatabase), OrderDao, OutboxDao, dan OrderTransactionManager berhasil dibuat di :core:data dengan penjaminan transaksi atomik order + outbox. SyncSender di :core:sync terbukti mengirim bundel secara idempoten: pengiriman pertama mendapat status ACCEPTED dan pengiriman kedua untuk bundle_id yang sama dijawab DUPLICATE oleh mock server; keduanya ditandai sukses (SENT) di outbox tanpa menduplikasi data."
     },
     {
       "id": "F10",
