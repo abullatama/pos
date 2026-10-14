@@ -127,9 +127,9 @@
       "app": "both",
       "description": "AppShell: bilah atas, navigasi bawah mengambang, indikator sinkron",
       "acceptance": "Sesuai docs/ui/layout-standard.md; navigasi tersembunyi di alur pembayaran dan shift",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "AppShell, TopBar (64 dp dengan indikator sinkron 3-status hijau/kuning/merah dan status printer), FloatingBottomBar (mengambang 16 dp dari bawah), CafeTheme (sudut 8 dp/4 dp, Alabaster/Amber), dan LaundryTheme (sudut membulat/pil, Linen/Mawar) berhasil dibangun di :core:ui. Teruji 100% via Compose Previews (Cafe, Laundry, Focus Flow) dan unit test Compose: navigasi terbukti disembunyikan secara ketat saat isFocusFlowActive = true (alur pembayaran dan shift)."
     },
     {
       "id": "F14",
