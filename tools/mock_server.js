@@ -10,20 +10,60 @@ const PORT = process.env.PORT || 8080;
 
 const seenBundles = new Map();
 
+let mockDeviceState = {
+  status: 'ACTIVE',
+  business_unit_id: 'bu-cafe-01',
+  device_credential: 'mock-device-cred-secret-token'
+};
+
 const mockResponses = {
+  // Mock simulation control endpoints
+  'POST /mock/device/approve': (req, res) => {
+    mockDeviceState.status = 'ACTIVE';
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ACTIVE', message: 'Device status updated to ACTIVE' }));
+  },
+  'POST /mock/device/revoke': (req, res) => {
+    mockDeviceState.status = 'REVOKED';
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'REVOKED', message: 'Device status updated to REVOKED' }));
+  },
+  'POST /mock/device/pending': (req, res) => {
+    mockDeviceState.status = 'PENDING';
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'PENDING', message: 'Device status updated to PENDING' }));
+  },
+  'POST /mock/device/reset': (req, res) => {
+    mockDeviceState.status = 'ACTIVE';
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ACTIVE', message: 'Device reset to ACTIVE' }));
+  },
+
   // 1. POST /devices/register
   'POST /devices/register': (req, res, body) => {
+    mockDeviceState.status = 'PENDING';
     res.writeHead(202, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'PENDING' }));
   },
 
   // 2. GET /devices/me
   'GET /devices/me': (req, res) => {
+    const parsedUrl = url.parse(req.url, true);
+    const forcedStatus = parsedUrl.query.status || req.headers['x-mock-device-status'] || mockDeviceState.status;
+
+    if (forcedStatus === 'REVOKED') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        code: 'DEVICE_REVOKED',
+        message: 'Akses perangkat tablet telah dicabut oleh owner'
+      }));
+    }
+
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
-      status: 'ACTIVE',
-      business_unit_id: 'bu-cafe-01',
-      device_credential: 'mock-device-cred-secret-token'
+      status: forcedStatus,
+      business_unit_id: mockDeviceState.business_unit_id,
+      device_credential: mockDeviceState.device_credential
     }));
   },
 

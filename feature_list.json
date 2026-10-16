@@ -97,9 +97,9 @@
       "app": "both",
       "description": "Pendaftaran perangkat dengan kode sekali pakai",
       "acceptance": "Tablet berstatus Menunggu lalu Aktif setelah disetujui; DEVICE_REVOKED mengunci layar",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": "DeviceManager, DeviceApiService, DeviceRegistrationScreen (S01), DeviceRevokedCard (S17), dan persistensi terenkripsi Tink di EncryptedAuthDataStore berhasil dibangun dan lolos 100% unit test (DeviceManagerTest 7 passed, DeviceRegistrationScreenTest 4 passed). Siap untuk verifikasi fisik di Redmi Pad 2 oleh Android Studio AI Agent."
+      "notes": "Lolos verifikasi hardware fisik di Redmi Pad 2 (HyperOS 2 / Android 16). Saat app pertama dibuka menampilkan form Daftarkan Tablet (S01). Setelah kode dimasukkan dan dikirim, status berpindah ke 'Menunggu Persetujuan Owner'. Saat status ACTIVE dikonfirmasi server, tablet langsung berpindah ke layar POS (AppShell). Saat status REVOKED dikirim server (HTTP 403 DEVICE_REVOKED), tablet seketika mengunci layar ke S17 'Akses Tablet Dicabut' dan menghapus kredensial lokal."
     },
     {
       "id": "F11",
