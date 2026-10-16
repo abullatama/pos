@@ -2,6 +2,8 @@
 
 Aturan kerja untuk coding agent. Sumber kebenaran: `docs/spec/` (Spesifikasi Terpadu MVP v2.2), `contracts/openapi.yaml`, dan `contracts/test-vectors.json`. Jika file ini atau asumsimu bertentangan dengan ketiganya, ketiganya yang menang. Jika ada yang tidak jelas, tulis di `docs/open-questions.md` dan minta keputusan manusia. Jangan menebak.
 
+> **Pembagian kerja antar agen AI** ada di `AGENTS_RULES.md`. Baca file tersebut sebelum memulai sesi, terutama jika project dikerjakan bersama CodeBuddy (external AI) dan Android Studio AI Agent (internal AI).
+
 ## Apa yang dibangun
 
 - **Dua aplikasi Android terpisah** (cafe dan laundry) dari satu repositori, satu backend, satu database, satu web owner. Offline-first.

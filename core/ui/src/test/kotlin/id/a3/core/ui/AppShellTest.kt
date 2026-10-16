@@ -1,5 +1,10 @@
 package id.a3.core.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.automirrored.outlined.ShortText
+import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -32,9 +37,9 @@ class AppShellTest {
     val composeTestRule = createComposeRule()
 
     private val testNavItems = listOf(
-        NavItem("kasir", "Kasir", "☕"),
-        NavItem("pesanan", "Pesanan", "📋"),
-        NavItem("shift", "Shift", "⏰")
+        NavItem("kasir", "Kasir", Icons.Outlined.PointOfSale),
+        NavItem("pesanan", "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong),
+        NavItem("shift", "Shift", Icons.Outlined.AccessTime)
     )
 
     @Test

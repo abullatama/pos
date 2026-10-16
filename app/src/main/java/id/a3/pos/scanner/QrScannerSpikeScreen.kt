@@ -126,6 +126,7 @@ fun QrScannerSpikeScreen(modifier: Modifier = Modifier) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         CameraPreviewView(
                             onQrScanned = { result ->
+                                Log.i("QrScannerSpike", "QR Code DETECTED: $result")
                                 if (scannedResult != result) {
                                     scannedResult = result
                                     scanCount++
@@ -279,7 +280,7 @@ private fun processImageProxy(
         val width = imageProxy.width
         val height = imageProxy.height
         val source = PlanarYUVLuminanceSource(
-            data, width, height, 0, 0, width, height, false
+            data, plane.rowStride, height, 0, 0, width, height, false
         )
         val bitmap = BinaryBitmap(HybridBinarizer(source))
 

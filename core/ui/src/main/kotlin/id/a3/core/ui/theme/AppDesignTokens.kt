@@ -94,6 +94,7 @@ val LaundryShapes = AppShapes(
 
 val LocalAppColors = staticCompositionLocalOf { CafeColors }
 val LocalAppShapes = staticCompositionLocalOf { CafeShapes }
+val LocalAppTypography = staticCompositionLocalOf { CafeTypography }
 
 object A3Theme {
     val colors: AppColors
@@ -103,6 +104,10 @@ object A3Theme {
     val shapes: AppShapes
         @Composable
         get() = LocalAppShapes.current
+
+    val typography: AppTypography
+        @Composable
+        get() = LocalAppTypography.current
 }
 
 @Composable
@@ -110,6 +115,7 @@ fun CafeTheme(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalAppColors provides CafeColors,
         LocalAppShapes provides CafeShapes,
+        LocalAppTypography provides CafeTypography,
         content = content
     )
 }
@@ -119,6 +125,7 @@ fun LaundryTheme(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalAppColors provides LaundryColors,
         LocalAppShapes provides LaundryShapes,
+        LocalAppTypography provides LaundryTypography,
         content = content
     )
 }

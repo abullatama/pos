@@ -26,6 +26,15 @@ interface OrderDao {
     @Query("SELECT * FROM orders WHERE id = :orderId")
     fun observeOrder(orderId: String): Flow<OrderEntity?>
 
+    @Query("SELECT * FROM orders WHERE id = :orderId")
+    suspend fun getOrderById(orderId: String): OrderEntity?
+
+    @Query("SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC")
+    fun observeOrdersByStatus(status: String): Flow<List<OrderEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun updateOrder(order: OrderEntity)
+
     @Query("UPDATE orders SET status = :status, paidAmount = :paidAmount WHERE id = :orderId")
     suspend fun updatePaymentStatus(orderId: String, status: String, paidAmount: Long)
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,15 +22,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import id.a3.core.ui.theme.A3Theme
 
 data class NavItem(
     val id: String,
     val label: String,
-    val iconEmoji: String
+    val icon: ImageVector
 )
 
 @Composable
@@ -86,15 +87,20 @@ fun FloatingBottomBar(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            Text(
-                                text = item.iconEmoji,
-                                fontSize = 18.sp
+                            Icon(
+                                imageVector = item.icon,
+                                contentDescription = null,
+                                tint = itemContentColor,
+                                modifier = Modifier.padding(bottom = 2.dp)
                             )
                             Text(
                                 text = item.label,
                                 color = itemContentColor,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                style = if (isSelected) {
+                                    A3Theme.typography.label.copy(fontWeight = FontWeight.Bold)
+                                } else {
+                                    A3Theme.typography.label.copy(fontWeight = FontWeight.Medium)
+                                }
                             )
                         }
                     }

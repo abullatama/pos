@@ -6,14 +6,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Print
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,7 +25,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import id.a3.core.ui.theme.A3Theme
 
 @Composable
@@ -70,15 +71,14 @@ fun TopBar(
                         text = monogramText,
                         color = colors.onAccent,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
+                        fontSize = A3Theme.typography.label.fontSize
                     )
                 }
 
                 Text(
                     text = businessName,
                     color = colors.ink,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
+                    style = A3Theme.typography.title
                 )
             }
 
@@ -96,8 +96,7 @@ fun TopBar(
                 Text(
                     text = staffText,
                     color = colors.inkMuted,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
+                    style = A3Theme.typography.bodySmall
                 )
 
                 // Indikator Sinkronisasi (3 Status: Hijau, Kuning, Merah)
@@ -113,7 +112,7 @@ fun TopBar(
                 if (onAdminClick != null) {
                     Box(
                         modifier = Modifier
-                            .height(36.dp)
+                            .height(40.dp)
                             .clip(RoundedCornerShape(6.dp))
                             .border(1.dp, colors.border, RoundedCornerShape(6.dp))
                             .clickable(onClick = onAdminClick)
@@ -124,12 +123,16 @@ fun TopBar(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text("⚙️", fontSize = 14.sp)
+                            Icon(
+                                imageVector = Icons.Outlined.Settings,
+                                contentDescription = null,
+                                tint = colors.ink,
+                                modifier = Modifier.size(18.dp)
+                            )
                             Text(
                                 text = "Admin",
                                 color = colors.ink,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
+                                style = A3Theme.typography.label
                             )
                         }
                     }
@@ -177,8 +180,7 @@ fun SyncStatusBadge(
             Text(
                 text = label,
                 color = textColor,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
+                style = A3Theme.typography.label
             )
         }
     }
@@ -207,12 +209,16 @@ fun PrinterStatusBadge(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text("🖨️", fontSize = 12.sp)
+            Icon(
+                imageVector = Icons.Outlined.Print,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(14.dp)
+            )
             Text(
                 text = label,
                 color = textColor,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
+                style = A3Theme.typography.label
             )
         }
     }

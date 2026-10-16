@@ -4,34 +4,31 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.automirrored.outlined.ShortText
+import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
-import id.a3.core.ui.theme.A3Theme
 import id.a3.core.ui.theme.CafeTheme
+import id.tenang.kasir.cafe.navigation.CafeDestinations
+import id.tenang.kasir.cafe.navigation.CafeNavHost
 
 class MainActivity : ComponentActivity() {
 
     private val cafeNavItems = listOf(
-        NavItem("kasir", "Kasir", "☕"),
-        NavItem("pesanan", "Pesanan", "📋"),
-        NavItem("habis", "Menu Habis", "🚫"),
-        NavItem("shift", "Shift", "⏰"),
-        NavItem("lainnya", "Lainnya", "⋯")
+        NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale),
+        NavItem(CafeDestinations.PESANAN, "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong),
+        NavItem(CafeDestinations.HABIS, "Menu Habis", Icons.Outlined.Block),
+        NavItem(CafeDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime),
+        NavItem(CafeDestinations.LAINNYA, "Lainnya", Icons.AutoMirrored.Outlined.ShortText)
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,8 +36,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             CafeTheme {
-                var selectedTab by remember { mutableIntStateOf(0) }
-                var isPaymentActive by remember { mutableStateOf(false) }
+                val navController = rememberNavController()
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route ?: CafeDestinations.KASIR
+
+                val selectedIndex = cafeNavItems.indexOfFirst { it.id == currentRoute }.let {
+                    if (it >= 0) it else 0
+                }
+
+                val isFocusFlowActive = currentRoute == CafeDestinations.PEMBAYARAN
 
                 AppShell(
                     businessName = "AA COFFEESHOP",
@@ -51,24 +55,25 @@ class MainActivity : ComponentActivity() {
                     pendingSyncCount = 0,
                     isPrinterConnected = true,
                     navItems = cafeNavItems,
-                    selectedNavIndex = selectedTab,
-                    onNavItemSelected = { selectedTab = it },
-                    isFocusFlowActive = isPaymentActive
+                    selectedNavIndex = selectedIndex,
+                    onNavItemSelected = { index ->
+                        val targetRoute = cafeNavItems[index].id
+                        if (targetRoute != currentRoute) {
+                            navController.navigate(targetRoute) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    },
+                    isFocusFlowActive = isFocusFlowActive
                 ) { paddingValues ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(paddingValues)
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Layar Kasir: ${cafeNavItems[selectedTab].label}",
-                            color = A3Theme.colors.ink,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    CafeNavHost(
+                        navController = navController,
+                        paddingValues = paddingValues
+                    )
                 }
             }
         }

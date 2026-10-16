@@ -8,9 +8,11 @@ import id.a3.core.auth.crypto.PinHasher
 import id.a3.core.auth.crypto.TinkCryptoManager
 import id.a3.core.auth.model.TokenResponse
 import id.a3.core.auth.model.UserDto
+import id.a3.core.domain.device.DeviceStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 class EncryptedAuthDataStore(
     private val dataStore: DataStore<Preferences>,
@@ -25,6 +27,10 @@ class EncryptedAuthDataStore(
         val KEY_USER_NAME = stringPreferencesKey("user_name")
         val KEY_USER_ROLE = stringPreferencesKey("user_role")
         val KEY_BUSINESS_UNIT_ID = stringPreferencesKey("business_unit_id")
+        val KEY_DEVICE_ID = stringPreferencesKey("device_id")
+        val KEY_DEVICE_NAME = stringPreferencesKey("device_name")
+        val KEY_DEVICE_STATUS = stringPreferencesKey("device_status")
+        val KEY_DEVICE_CREDENTIAL_CIPHER = stringPreferencesKey("device_credential_cipher")
     }
 
     /**
@@ -118,6 +124,97 @@ class EncryptedAuthDataStore(
             val name = prefs[KEY_USER_NAME] ?: return@map null
             val role = prefs[KEY_USER_ROLE] ?: return@map null
             UserDto(id = id, name = name, role = role)
+        }
+    }
+
+    /**
+     * Mengambil ID perangkat yang tersimpan atau membuat UUID baru dan menyimpannya permanen.
+     */
+    suspend fun getOrCreateDeviceId(): String {
+        val prefs = dataStore.data.first()
+        val existing = prefs[KEY_DEVICE_ID]
+        if (!existing.isNullOrBlank()) {
+            return existing
+        }
+        val generated = UUID.randomUUID().toString()
+        dataStore.edit { p ->
+            p[KEY_DEVICE_ID] = generated
+        }
+        return generated
+    }
+
+    suspend fun saveDeviceRegistration(deviceId: String, deviceName: String, status: DeviceStatus) {
+        dataStore.edit { prefs ->
+            prefs[KEY_DEVICE_ID] = deviceId
+            prefs[KEY_DEVICE_NAME] = deviceName
+            prefs[KEY_DEVICE_STATUS] = status.name
+        }
+    }
+
+    suspend fun updateDeviceStatus(
+        status: DeviceStatus,
+        credential: String? = null,
+        businessUnitId: String? = null
+    ) {
+        val encryptedCredential = credential?.let { cryptoManager.encrypt(it) }
+        dataStore.edit { prefs ->
+            prefs[KEY_DEVICE_STATUS] = status.name
+            if (encryptedCredential != null) {
+                prefs[KEY_DEVICE_CREDENTIAL_CIPHER] = encryptedCredential
+            }
+            if (businessUnitId != null) {
+                prefs[KEY_BUSINESS_UNIT_ID] = businessUnitId
+            }
+        }
+    }
+
+    suspend fun getDeviceStatus(): DeviceStatus {
+        val prefs = dataStore.data.first()
+        val raw = prefs[KEY_DEVICE_STATUS] ?: return DeviceStatus.UNREGISTERED
+        return try {
+            DeviceStatus.valueOf(raw)
+        } catch (_: Exception) {
+            DeviceStatus.UNREGISTERED
+        }
+    }
+
+    suspend fun getDeviceName(): String? {
+        val prefs = dataStore.data.first()
+        return prefs[KEY_DEVICE_NAME]
+    }
+
+    suspend fun getDeviceCredential(): String? {
+        val prefs = dataStore.data.first()
+        val cipher = prefs[KEY_DEVICE_CREDENTIAL_CIPHER] ?: return null
+        return try {
+            cryptoManager.decrypt(cipher)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun observeDeviceStatus(): Flow<DeviceStatus> {
+        return dataStore.data.map { prefs ->
+            val raw = prefs[KEY_DEVICE_STATUS] ?: return@map DeviceStatus.UNREGISTERED
+            try {
+                DeviceStatus.valueOf(raw)
+            } catch (_: Exception) {
+                DeviceStatus.UNREGISTERED
+            }
+        }
+    }
+
+    /**
+     * Mencabut perangkat (DEVICE_REVOKED): menghapus kredensial perangkat dan token kasir,
+     * serta mengunci status perangkat menjadi REVOKED.
+     */
+    suspend fun markDeviceRevoked() {
+        dataStore.edit { prefs ->
+            prefs[KEY_DEVICE_STATUS] = DeviceStatus.REVOKED.name
+            prefs.remove(KEY_DEVICE_CREDENTIAL_CIPHER)
+            prefs.remove(KEY_ACCESS_TOKEN_CIPHER)
+            prefs.remove(KEY_REFRESH_TOKEN_CIPHER)
+            prefs.remove(KEY_PIN_HASH_CIPHER)
         }
     }
 }

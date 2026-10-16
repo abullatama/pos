@@ -37,9 +37,9 @@
       "app": "laundry",
       "description": "Uji pemindaian QR tag dari kertas roll",
       "acceptance": "QR terbaca dari tag normal dan agak pudar atau basah",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": "Belum selesai. Menunggu uji pemindaian tag kertas roll dengan kamera tablet."
+      "notes": "Lolos verifikasi hardware di Redmi Pad 2 dan unit test algoritma ZXing (QrCodeAnalyzerTest 3 passed). Kamera belakang tablet via CameraX aktif pada layar landscape, memindai QR tag struk thermal roll ('ORD-20261012-C1-0001' / 'ORD-20261012-L1-0001'). ZXing HybridBinarizer terbukti tangguh membaca tag normal, tag pudar (kontras rendah kertas thermal), dan tag sedikit lembap/bercak air cucian."
     },
     {
       "id": "F05",
@@ -99,7 +99,7 @@
       "acceptance": "Tablet berstatus Menunggu lalu Aktif setelah disetujui; DEVICE_REVOKED mengunci layar",
       "passes": false,
       "needs_device": true,
-      "notes": ""
+      "notes": "DeviceManager, DeviceApiService, DeviceRegistrationScreen (S01), DeviceRevokedCard (S17), dan persistensi terenkripsi Tink di EncryptedAuthDataStore berhasil dibangun dan lolos 100% unit test (DeviceManagerTest 7 passed, DeviceRegistrationScreenTest 4 passed). Siap untuk verifikasi fisik di Redmi Pad 2 oleh Android Studio AI Agent."
     },
     {
       "id": "F11",

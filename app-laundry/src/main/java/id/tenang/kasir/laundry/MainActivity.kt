@@ -4,34 +4,31 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ShortText
+import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
-import id.a3.core.ui.theme.A3Theme
 import id.a3.core.ui.theme.LaundryTheme
+import id.tenang.kasir.laundry.navigation.LaundryDestinations
+import id.tenang.kasir.laundry.navigation.LaundryNavHost
 
 class MainActivity : ComponentActivity() {
 
     private val laundryNavItems = listOf(
-        NavItem("beranda", "Beranda", "🏠"),
-        NavItem("order", "Order Baru", "➕"),
-        NavItem("cucian", "Cucian", "🧺"),
-        NavItem("scan", "Scan QR", "📷"),
-        NavItem("lainnya", "Lainnya", "⋯")
+        NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home),
+        NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle),
+        NavItem(LaundryDestinations.CUCIAN, "Cucian", Icons.Outlined.Inventory2),
+        NavItem(LaundryDestinations.SCAN, "Scan QR", Icons.Outlined.PhotoCamera),
+        NavItem(LaundryDestinations.LAINNYA, "Lainnya", Icons.AutoMirrored.Outlined.ShortText)
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,8 +36,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             LaundryTheme {
-                var selectedTab by remember { mutableIntStateOf(0) }
-                var isPaymentActive by remember { mutableStateOf(false) }
+                val navController = rememberNavController()
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentRoute = navBackStackEntry?.destination?.route ?: LaundryDestinations.BERANDA
+
+                val selectedIndex = laundryNavItems.indexOfFirst { it.id == currentRoute }.let {
+                    if (it >= 0) it else 0
+                }
+
+                val isFocusFlowActive = currentRoute == LaundryDestinations.PEMBAYARAN
 
                 AppShell(
                     businessName = "ATHIA LAUNDRY HOUSE",
@@ -51,24 +55,25 @@ class MainActivity : ComponentActivity() {
                     pendingSyncCount = 0,
                     isPrinterConnected = true,
                     navItems = laundryNavItems,
-                    selectedNavIndex = selectedTab,
-                    onNavItemSelected = { selectedTab = it },
-                    isFocusFlowActive = isPaymentActive
+                    selectedNavIndex = selectedIndex,
+                    onNavItemSelected = { index ->
+                        val targetRoute = laundryNavItems[index].id
+                        if (targetRoute != currentRoute) {
+                            navController.navigate(targetRoute) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    },
+                    isFocusFlowActive = isFocusFlowActive
                 ) { paddingValues ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(paddingValues)
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Layar Laundry: ${laundryNavItems[selectedTab].label}",
-                            color = A3Theme.colors.ink,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    LaundryNavHost(
+                        navController = navController,
+                        paddingValues = paddingValues
+                    )
                 }
             }
         }

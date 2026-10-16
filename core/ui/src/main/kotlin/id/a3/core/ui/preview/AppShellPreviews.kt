@@ -14,6 +14,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.automirrored.outlined.ShortText
+import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.AddCircle
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.PointOfSale
 import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
@@ -22,19 +32,19 @@ import id.a3.core.ui.theme.CafeTheme
 import id.a3.core.ui.theme.LaundryTheme
 
 val SampleCafeNavItems = listOf(
-    NavItem("kasir", "Kasir", "☕"),
-    NavItem("pesanan", "Pesanan", "📋"),
-    NavItem("habis", "Menu Habis", "🚫"),
-    NavItem("shift", "Shift", "⏰"),
-    NavItem("lainnya", "Lainnya", "⋯")
+    NavItem("kasir", "Kasir", Icons.Outlined.PointOfSale),
+    NavItem("pesanan", "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong),
+    NavItem("habis", "Menu Habis", Icons.Outlined.Block),
+    NavItem("shift", "Shift", Icons.Outlined.AccessTime),
+    NavItem("lainnya", "Lainnya", Icons.AutoMirrored.Outlined.ShortText)
 )
 
 val SampleLaundryNavItems = listOf(
-    NavItem("beranda", "Beranda", "🏠"),
-    NavItem("order", "Order Baru", "➕"),
-    NavItem("cucian", "Cucian", "🧺"),
-    NavItem("scan", "Scan QR", "📷"),
-    NavItem("lainnya", "Lainnya", "⋯")
+    NavItem("beranda", "Beranda", Icons.Outlined.Home),
+    NavItem("order", "Order Baru", Icons.Outlined.AddCircle),
+    NavItem("cucian", "Cucian", Icons.Outlined.Inventory2),
+    NavItem("scan", "Scan QR", Icons.Outlined.PhotoCamera),
+    NavItem("lainnya", "Lainnya", Icons.AutoMirrored.Outlined.ShortText)
 )
 
 @Preview(name = "AA Coffeeshop - Normal Flow", widthDp = 1138, heightDp = 711)

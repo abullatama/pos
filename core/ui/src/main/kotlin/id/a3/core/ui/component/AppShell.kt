@@ -4,8 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,13 +55,17 @@ fun AppShell(
     // Hitung safe padding bawah untuk konten
     val contentBottomPadding = if (isBottomBarVisible) 88.dp else 0.dp
 
+    // WindowInsets untuk edge-to-edge (Android 15+ default)
+    val safeDrawing = WindowInsets.safeDrawing.asPaddingValues()
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(colors.canvas)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Bilah Atas 64 dp
+            // Bilah Atas 64 dp, dengan offset status bar agar tidak tertutup
             TopBar(
                 businessName = businessName,
                 monogramText = monogramText,
@@ -67,7 +75,9 @@ fun AppShell(
                 pendingSyncCount = pendingSyncCount,
                 isPrinterConnected = isPrinterConnected,
                 onAdminClick = onAdminClick,
-                modifier = Modifier.testTag(APP_SHELL_TOP_BAR_TAG)
+                modifier = Modifier
+                    .padding(top = statusBarTop)
+                    .testTag(APP_SHELL_TOP_BAR_TAG)
             )
 
             // Area Konten Utama
@@ -80,7 +90,7 @@ fun AppShell(
             }
         }
 
-        // Dok Navigasi Bawah Mengambang (16 dp dari dasar layar)
+        // Dok Navigasi Bawah Mengambang (16 dp dari safe area bawah)
         FloatingBottomBar(
             items = navItems,
             selectedIndex = selectedNavIndex,
@@ -88,7 +98,7 @@ fun AppShell(
             visible = isBottomBarVisible,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 16.dp)
+                .padding(bottom = 16.dp + safeDrawing.calculateBottomPadding())
                 .testTag(APP_SHELL_BOTTOM_BAR_TAG)
         )
     }
