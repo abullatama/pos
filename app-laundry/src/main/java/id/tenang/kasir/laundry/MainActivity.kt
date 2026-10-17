@@ -110,7 +110,16 @@ class MainActivity : ComponentActivity() {
                         },
                         isLoading = isActionLoading,
                         errorMessage = actionErrorMessage,
-                        businessUnitName = LaundryAppConfig.appName
+                        businessUnitName = LaundryAppConfig.appName,
+                        onDebugBypassClick = {
+                            coroutineScope.launch {
+                                if (deviceStatus == DeviceStatus.REVOKED) {
+                                    deviceManager.resetDeviceForDebug()
+                                } else {
+                                    deviceManager.activateForDebug(LaundryAppConfig.appName)
+                                }
+                            }
+                        }
                     )
                 } else {
                     val navController = rememberNavController()
@@ -131,6 +140,15 @@ class MainActivity : ComponentActivity() {
                         syncStatus = SyncStatus.SYNCED,
                         pendingSyncCount = 0,
                         isPrinterConnected = true,
+                        onAdminClick = {
+                            navController.navigate(LaundryDestinations.LAINNYA) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         navItems = laundryNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->

@@ -4,8 +4,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import id.a3.core.ui.theme.CafeTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -95,5 +98,39 @@ class SharedComponentsTest {
 
         composeTestRule.onNodeWithText("Gagal memuat").assertIsDisplayed()
         composeTestRule.onNodeWithText("Periksa koneksi internet dan coba lagi.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `A3Keypad handles digit, clear, and backspace clicks correctly`() {
+        var input = ""
+        var clearCalled = false
+
+        composeTestRule.setContent {
+            CafeTheme {
+                A3Keypad(
+                    onDigitClick = { input += it },
+                    onBackspace = { if (input.isNotEmpty()) input = input.dropLast(1) },
+                    onClear = {
+                        clearCalled = true
+                        input = ""
+                    }
+                )
+            }
+        }
+
+        // Ketuk angka 1, 2, 3
+        composeTestRule.onNodeWithText("1").performClick()
+        composeTestRule.onNodeWithText("2").performClick()
+        composeTestRule.onNodeWithText("3").performClick()
+        assertEquals("123", input)
+
+        // Ketuk backspace (⌫)
+        composeTestRule.onNodeWithTag(A3_KEYPAD_BACKSPACE_TAG).performClick()
+        assertEquals("12", input)
+
+        // Ketuk Clear (C)
+        composeTestRule.onNodeWithTag(A3_KEYPAD_CLEAR_TAG).performClick()
+        assertEquals("", input)
+        assertEquals(true, clearCalled)
     }
 }

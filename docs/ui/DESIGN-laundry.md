@@ -50,7 +50,7 @@ Catatan: mawar mirip merah. Karena itu status Bahaya tidak pernah hanya berupa w
 - **Sudut:** kartu dan panel 20 px, kolom input 16 px, tombol dan chip bentuk pil (`9999px`), dok navigasi pil.
 - **Kartu:** latar `surface`, garis `border`, bayangan `0 4px 20px -2px rgba(216,27,96,0.06)`. Item terpilih: latar `accent-soft` dan garis `accent`.
 - **Tombol utama:** latar `accent`, teks putih, tinggi 56 px, label menyebut aksinya ("Simpan order", "Terima pembayaran"). **Sekunder:** garis 1,5 px `accent`, teks `accent`, hover `accent-soft`. **Bahaya:** teks dan garis `Bahaya`.
-- **Dok navigasi:** mengambang, pil, latar `surface`, bayangan `0 12px 32px -4px rgba(30,41,59,0.08)`, item aktif latar `accent` dengan teks putih.
+- **Bilah navigasi samping kiri (Navigation Rail 76 px):** latar `surface`, monogram "AL" di pucuk atas, garis pemisah mawar halus, item aktif berlatar `accent` bentuk pil (`9999px`) dengan teks putih, tombol cepat admin di dasar bawah.
 - **Ikon:** garis medium 1,5 sampai 2 px, ujung membulat.
 - **Motif gelembung air:** hanya sangat halus di keadaan kosong (daftar kosong), tidak di layar kerja.
 

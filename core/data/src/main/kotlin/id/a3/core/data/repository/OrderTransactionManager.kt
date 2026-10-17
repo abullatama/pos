@@ -2,11 +2,20 @@ package id.a3.core.data.repository
 
 import androidx.room.withTransaction
 import id.a3.core.data.local.AppDatabase
+import id.a3.core.data.local.dao.MasterDataDao
 import id.a3.core.data.local.dao.OrderDao
 import id.a3.core.data.local.dao.OutboxDao
 import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
+import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.data.local.entity.OutboxEntity
+import java.time.Instant
+import java.util.UUID
+import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /**
  * Mengelola penulisan transaksi lokal dan outbox secara atomik:
@@ -15,9 +24,20 @@ import id.a3.core.data.local.entity.OutboxEntity
  */
 class OrderTransactionManager(
     private val database: AppDatabase,
-    private val orderDao: OrderDao = database.orderDao(),
-    private val outboxDao: OutboxDao = database.outboxDao()
+    val orderDao: OrderDao = database.orderDao(),
+    val outboxDao: OutboxDao = database.outboxDao(),
+    val masterDataDao: MasterDataDao = database.masterDataDao()
 ) {
+
+    /**
+     * Mengamati seluruh pesanan terbuka (open orders) yang sedang aktif di cafe.
+     */
+    fun observeOpenOrders(): Flow<List<OrderWithLines>> = orderDao.observeOpenOrdersWithLines()
+
+    /**
+     * Mengambil satu pesanan beserta baris itemnya berdasarkan ID.
+     */
+    suspend fun getOrderWithLines(orderId: String): OrderWithLines? = orderDao.getOrderWithLines(orderId)
 
     /**
      * Menyimpan order, rincian baris item, dan antrean outbox secara atomik dalam satu transaksi Room.
@@ -33,6 +53,426 @@ class OrderTransactionManager(
                 orderDao.insertLines(lines)
             }
             outboxDao.insert(outbox)
+        }
+    }
+
+    /**
+     * Menandai status menu Habis/Tersedia di Room dan mencatat event outbox 'menu.sold_out_changed' secara atomik.
+     */
+    suspend fun recordSoldOutChanged(
+        menuItemId: String,
+        soldOut: Boolean,
+        deviceId: String = "dev-cafe-1",
+        shiftId: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            masterDataDao.updateMenuItemSoldOut(menuItemId, soldOut)
+            val eventId = UUID.randomUUID().toString()
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            val payload = buildJsonObject {
+                put("menu_item_id", menuItemId)
+                put("sold_out", soldOut)
+            }
+            val eventObj = buildJsonObject {
+                put("event_id", eventId)
+                put("type", "menu.sold_out_changed")
+                put("occurred_at", occurredAt)
+                put("payload", payload)
+            }
+            val eventsArray = buildJsonArray {
+                add(eventObj)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Memindahkan meja pesanan dine-in di Room dan mencatat event outbox 'order.table_moved' secara atomik.
+     */
+    suspend fun recordTableMoved(
+        orderId: String,
+        fromTable: String,
+        toTable: String,
+        deviceId: String = "dev-cafe-1",
+        shiftId: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            orderDao.updateTableLabel(orderId, toTable)
+            val eventId = UUID.randomUUID().toString()
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            val payload = buildJsonObject {
+                put("order_id", orderId)
+                put("from_table", fromTable)
+                put("to_table", toTable)
+            }
+            val eventObj = buildJsonObject {
+                put("event_id", eventId)
+                put("type", "order.table_moved")
+                put("occurred_at", occurredAt)
+                put("payload", payload)
+            }
+            val eventsArray = buildJsonArray {
+                add(eventObj)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Membuat pesanan terbuka baru (dine-in) dan mencatat event 'order.created' serta 'order.sent_to_kitchen' secara atomik.
+     */
+    suspend fun createOpenOrderWithKitchenTicket(
+        order: OrderEntity,
+        lines: List<OrderLineEntity>,
+        deviceId: String = "dev-cafe-1",
+        shiftId: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            orderDao.insertOrder(order.copy(status = "open"))
+            if (lines.isNotEmpty()) {
+                orderDao.insertLines(lines)
+            }
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            // 1. Event order.created
+            val orderLinesArray = buildJsonArray {
+                lines.forEach { line ->
+                    add(
+                        buildJsonObject {
+                            put("line_id", line.id)
+                            put("item_ref_id", line.itemRefId)
+                            put("name", line.nameSnapshot)
+                            put("quantity", line.quantity)
+                            put("unit_price", line.unitPriceSnapshot)
+                            line.note?.let { put("note", it) }
+                        }
+                    )
+                }
+            }
+
+            val createdPayload = buildJsonObject {
+                put("order_id", order.id)
+                put("display_number", order.displayNumber)
+                put("order_type", order.orderType)
+                order.tableLabel?.let { put("table_label", it) }
+                put("lines", orderLinesArray)
+                put("subtotal", order.subtotal)
+                put("discount", order.discount)
+                put("service_charge", order.serviceCharge)
+                put("tax", order.tax)
+                put("rounding", order.rounding)
+                put("total", order.total)
+            }
+
+            val createdEvent = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "order.created")
+                put("occurred_at", occurredAt)
+                put("payload", createdPayload)
+            }
+
+            // 2. Event order.sent_to_kitchen (hanya membawa line_ids item yang baru dikirim)
+            val kitchenLineIds = buildJsonArray {
+                lines.forEach { add(JsonPrimitive(it.id)) }
+            }
+            val kitchenPayload = buildJsonObject {
+                put("order_id", order.id)
+                put("line_ids", kitchenLineIds)
+            }
+            val kitchenEvent = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "order.sent_to_kitchen")
+                put("occurred_at", occurredAt)
+                put("payload", kitchenPayload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(createdEvent)
+                add(kitchenEvent)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Menambahkan item baru ke pesanan terbuka dan mencatat event 'order.items_added' serta 'order.sent_to_kitchen' secara atomik.
+     */
+    suspend fun addItemsToOpenOrder(
+        orderId: String,
+        newLines: List<OrderLineEntity>,
+        newSubtotal: Long,
+        newDiscount: Long,
+        newServiceCharge: Long,
+        newTax: Long,
+        newRounding: Long,
+        newTotal: Long,
+        deviceId: String = "dev-cafe-1",
+        shiftId: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            if (newLines.isNotEmpty()) {
+                orderDao.insertLines(newLines)
+            }
+            orderDao.updateOrderTotals(
+                orderId = orderId,
+                subtotal = newSubtotal,
+                discount = newDiscount,
+                serviceCharge = newServiceCharge,
+                tax = newTax,
+                rounding = newRounding,
+                total = newTotal
+            )
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            // 1. Event order.items_added (hanya membawa baris baru dan total terbaru)
+            val newLinesArray = buildJsonArray {
+                newLines.forEach { line ->
+                    add(
+                        buildJsonObject {
+                            put("line_id", line.id)
+                            put("item_ref_id", line.itemRefId)
+                            put("name", line.nameSnapshot)
+                            put("quantity", line.quantity)
+                            put("unit_price", line.unitPriceSnapshot)
+                            line.note?.let { put("note", it) }
+                        }
+                    )
+                }
+            }
+
+            val itemsAddedPayload = buildJsonObject {
+                put("order_id", orderId)
+                put("lines", newLinesArray)
+                put("subtotal", newSubtotal)
+                put("discount", newDiscount)
+                put("service_charge", newServiceCharge)
+                put("tax", newTax)
+                put("rounding", newRounding)
+                put("total", newTotal)
+            }
+
+            val itemsAddedEvent = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "order.items_added")
+                put("occurred_at", occurredAt)
+                put("payload", itemsAddedPayload)
+            }
+
+            // 2. Event order.sent_to_kitchen (hanya membawa line_ids dari newLines!)
+            val kitchenLineIds = buildJsonArray {
+                newLines.forEach { add(JsonPrimitive(it.id)) }
+            }
+            val kitchenPayload = buildJsonObject {
+                put("order_id", orderId)
+                put("line_ids", kitchenLineIds)
+            }
+            val kitchenEvent = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "order.sent_to_kitchen")
+                put("occurred_at", occurredAt)
+                put("payload", kitchenPayload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(itemsAddedEvent)
+                add(kitchenEvent)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Mencatat pembayaran pesanan (Tunai atau QRIS Statis) di Room dan menghasilkan event outbox 'payment.recorded'.
+     */
+    suspend fun recordPayment(
+        orderId: String,
+        method: String,
+        amount: Long,
+        tendered: Long? = null,
+        isDp: Boolean = false,
+        paymentId: String = UUID.randomUUID().toString(),
+        idempotencyKey: String = UUID.randomUUID().toString(),
+        deviceId: String = "dev-cafe-1",
+        shiftId: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            val currentOrder = orderDao.getOrderById(orderId)
+                ?: throw IllegalStateException("Pesanan dengan ID $orderId tidak ditemukan")
+
+            val newPaidAmount = currentOrder.paidAmount + amount
+            val newStatus = if (isDp) "dp" else "paid"
+
+            orderDao.updatePaymentStatus(
+                orderId = orderId,
+                status = newStatus,
+                paidAmount = newPaidAmount
+            )
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            val paymentPayload = buildJsonObject {
+                put("payment_id", paymentId)
+                put("order_id", orderId)
+                put("method", method)
+                put("amount", amount)
+                tendered?.let { put("tendered", it) }
+                put("idempotency_key", idempotencyKey)
+            }
+
+            val paymentEvent = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "payment.recorded")
+                put("occurred_at", occurredAt)
+                put("payload", paymentPayload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(paymentEvent)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Menyimpan pesanan langsung lunas (misal take-away) dan mencatat event 'order.created' serta 'payment.recorded' secara atomik.
+     */
+    suspend fun createAndPayOrder(
+        order: OrderEntity,
+        lines: List<OrderLineEntity>,
+        method: String,
+        amount: Long,
+        tendered: Long? = null,
+        paymentId: String = UUID.randomUUID().toString(),
+        idempotencyKey: String = UUID.randomUUID().toString(),
+        deviceId: String = "dev-cafe-1",
+        shiftId: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            val paidOrder = order.copy(status = "paid", paidAmount = amount)
+            orderDao.insertOrder(paidOrder)
+            if (lines.isNotEmpty()) {
+                orderDao.insertLines(lines)
+            }
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            // 1. Event order.created
+            val orderLinesArray = buildJsonArray {
+                lines.forEach { line ->
+                    add(
+                        buildJsonObject {
+                            put("line_id", line.id)
+                            put("item_ref_id", line.itemRefId)
+                            put("name", line.nameSnapshot)
+                            put("quantity", line.quantity)
+                            put("unit_price", line.unitPriceSnapshot)
+                            line.note?.let { put("note", it) }
+                        }
+                    )
+                }
+            }
+
+            val createdPayload = buildJsonObject {
+                put("order_id", paidOrder.id)
+                put("display_number", paidOrder.displayNumber)
+                put("order_type", paidOrder.orderType)
+                paidOrder.tableLabel?.let { put("table_label", it) }
+                put("lines", orderLinesArray)
+                put("subtotal", paidOrder.subtotal)
+                put("discount", paidOrder.discount)
+                put("service_charge", paidOrder.serviceCharge)
+                put("tax", paidOrder.tax)
+                put("rounding", paidOrder.rounding)
+                put("total", paidOrder.total)
+            }
+
+            val createdEvent = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "order.created")
+                put("occurred_at", occurredAt)
+                put("payload", createdPayload)
+            }
+
+            // 2. Event payment.recorded
+            val paymentPayload = buildJsonObject {
+                put("payment_id", paymentId)
+                put("order_id", paidOrder.id)
+                put("method", method)
+                put("amount", amount)
+                tendered?.let { put("tendered", it) }
+                put("idempotency_key", idempotencyKey)
+            }
+
+            val paymentEvent = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "payment.recorded")
+                put("occurred_at", occurredAt)
+                put("payload", paymentPayload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(createdEvent)
+                add(paymentEvent)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
         }
     }
 }

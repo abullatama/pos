@@ -1,16 +1,13 @@
 package id.a3.feature.payment.repository
 
-import id.a3.core.data.local.dao.OrderDao
 import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
-import id.a3.core.data.local.entity.OutboxEntity
-import id.a3.core.data.local.entity.OutboxStatus
+import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.data.repository.OrderTransactionManager
-import java.util.UUID
 
-enum class PaymentMethod {
-    CASH,
-    STATIC_QRIS
+enum class PaymentMethod(val label: String, val apiKey: String) {
+    CASH("Tunai", "cash"),
+    STATIC_QRIS("QRIS Statis", "qris_static")
 }
 
 data class PaymentTransaction(
@@ -23,40 +20,50 @@ data class PaymentTransaction(
 )
 
 interface PaymentRepository {
-    suspend fun processPayment(
-        payment: PaymentTransaction,
+    suspend fun getOrderWithLines(orderId: String): OrderWithLines?
+    suspend fun processPayment(payment: PaymentTransaction): Result<Unit>
+    suspend fun processTakeAwayDirectPayment(
         order: OrderEntity,
         lines: List<OrderLineEntity>,
-        eventsJson: String
+        payment: PaymentTransaction
     ): Result<Unit>
 }
 
 class DefaultPaymentRepository(
-    private val orderDao: OrderDao,
     private val transactionManager: OrderTransactionManager
 ) : PaymentRepository {
 
-    override suspend fun processPayment(
-        payment: PaymentTransaction,
+    override suspend fun getOrderWithLines(orderId: String): OrderWithLines? {
+        return transactionManager.getOrderWithLines(orderId)
+    }
+
+    override suspend fun processPayment(payment: PaymentTransaction): Result<Unit> {
+        return try {
+            transactionManager.recordPayment(
+                orderId = payment.orderId,
+                method = payment.method.apiKey,
+                amount = payment.totalAmount,
+                tendered = if (payment.method == PaymentMethod.CASH) payment.cashReceived else null,
+                isDp = payment.isDp
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun processTakeAwayDirectPayment(
         order: OrderEntity,
         lines: List<OrderLineEntity>,
-        eventsJson: String
+        payment: PaymentTransaction
     ): Result<Unit> {
-        val updatedOrder = order.copy(
-            status = if (payment.isDp) "DP" else "PAID"
-        )
-        val outbox = OutboxEntity(
-            bundleId = UUID.randomUUID().toString(),
-            deviceId = order.deviceId,
-            shiftId = order.shiftId,
-            eventsJson = eventsJson,
-            status = OutboxStatus.PENDING
-        )
         return try {
-            transactionManager.createOrderWithOutbox(
-                order = updatedOrder,
+            transactionManager.createAndPayOrder(
+                order = order,
                 lines = lines,
-                outbox = outbox
+                method = payment.method.apiKey,
+                amount = payment.totalAmount,
+                tendered = if (payment.method == PaymentMethod.CASH) payment.cashReceived else null
             )
             Result.success(Unit)
         } catch (e: Exception) {

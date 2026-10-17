@@ -1,0 +1,31 @@
+package id.a3.feature.cafe
+
+import android.content.Context
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import id.a3.core.data.local.AppDatabase
+import id.a3.core.data.repository.OrderTransactionManager
+import id.a3.core.printer.PrinterService
+import id.a3.core.printer.connection.DefaultPrinterService
+import id.a3.feature.cafe.presentation.CafeMenuViewModel
+import id.a3.feature.cafe.repository.DefaultCafeMenuRepository
+
+class CafeMenuViewModelFactory(
+    private val context: Context,
+    private val printerService: PrinterService? = null
+) : ViewModelProvider.Factory {
+
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(CafeMenuViewModel::class.java)) {
+            val database = AppDatabase.build(context)
+            val transactionManager = OrderTransactionManager(database)
+            val repository = DefaultCafeMenuRepository(database.masterDataDao(), transactionManager)
+            val actualPrinterService = printerService ?: DefaultPrinterService(context).apply {
+                autoConnectPairedPrinter()
+            }
+            return CafeMenuViewModel(repository, transactionManager, actualPrinterService) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
+    }
+}

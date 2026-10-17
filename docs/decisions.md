@@ -104,3 +104,16 @@ Payment gateway, QRIS Dinamis, webhook pembayaran, rekonsiliasi dinamis, antar-j
 
 - Status: Diterima (2026-10-13)
 - Keputusan: cafe memakai panduan merek AA Coffeeshop (alabaster, obsidian, amber; sudut 4 px; dok persegi), laundry memakai panduan Athia Laundry House (linen, mawar, plum; sudut membulat; dok pil). Teks panduan merek 12 px dinaikkan ke 14 px untuk tablet, teks putih di atas hijau WhatsApp diganti teks gelap, dan status memakai warna fungsi terpisah dari warna merek. Berkas: `docs/ui/DESIGN-*.md`.
+
+## D-18 Arsitektur UI POS Tablet: Left Navigation Rail & Modern Organic Clean Utility
+
+- Status: Diterima (2026-10-17)
+- Konteks: Bilah bawah mengambang (floating bottom bar) memotong 20% ruang vertikal tablet landscape dan menabrak panel keranjang serta tombol aksi di kanan bawah. Gaya kotak kaku 4 dp terasa dingin dan tidak mencerminkan terminal POS modern.
+- Keputusan:
+  1. Mengadopsi arsitektur Left Navigation Rail (68 dp floating dock) menggantikan bottom bar, membebaskan 100% ruang vertikal konten.
+  2. Mengadopsi filosofi visual Modern Organic & Clean Utility (design2.md & contoh.jpeg): sudut melengkung 16–24 dp, search bar pil 48 dp, banner kategori dinamis slidable horizontal, grid produk adaptif 4–5 kolom.
+  3. Warna cafe: Palet monokrom bernilai tinggi (kanvas krem hangat `#F4F2E6`, permukaan putih `#FFFFFF`, tinta `#141414`) dengan aksen fokus Deep Forest Artisan Green (`#0A3D24`). Item menu aktif di rail kiri berlatar putih murni (`#FFFFFF`) dengan teks/ikon hitam pekat.
+  4. TopBar menyatu penuh dengan kanvas krem, menampilkan logo resmi A3 transparan (tiga 'A' saling mengunci) dan tanggal dinamis (tanpa nama toko berulang dan tanpa garis divider).
+  5. Struk pesanan: Purchase receipt drawer 24 dp melayang tanpa border hitam kaku luar, auto-expand saat item ditambahkan dan collapse saat kosong, segmented pill `[Dine In] [Take Away] [Order Online]`, rincian add-on terurai bertingkat, dan tombol geser taktil adaptif `A3SwipeButton` (Solusi B).
+  6. Modal verifikasi pesanan C02: Setiap item menu yang diketuk (baik bervarian maupun standar) wajib membuka modal sheet untuk kuantitas dan catatan barista/dapur sebelum masuk ke struk.
+- Berkas rujukan: `docs/ui/DESIGN-cafe.md`, `docs/ui/layout-standard.md`, `design2.md`, `contoh.jpeg`.

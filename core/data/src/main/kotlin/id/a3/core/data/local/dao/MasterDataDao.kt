@@ -27,6 +27,9 @@ interface MasterDataDao {
     @Query("SELECT * FROM menu_items WHERE id = :id")
     suspend fun getMenuItem(id: String): MenuItemEntity?
 
+    @Query("UPDATE menu_items SET soldOut = :soldOut, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateMenuItemSoldOut(id: String, soldOut: Boolean, updatedAt: Long = System.currentTimeMillis())
+
     @Query("DELETE FROM menu_items")
     suspend fun clearMenuItems()
 

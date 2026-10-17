@@ -217,4 +217,18 @@ class EncryptedAuthDataStore(
             prefs.remove(KEY_PIN_HASH_CIPHER)
         }
     }
+
+    /**
+     * Menghapus seluruh data registrasi perangkat untuk keperluan pengujian lokal.
+     */
+    suspend fun resetDeviceRegistration() {
+        dataStore.edit { prefs ->
+            prefs.remove(KEY_DEVICE_STATUS)
+            prefs.remove(KEY_DEVICE_NAME)
+            prefs.remove(KEY_DEVICE_CREDENTIAL_CIPHER)
+            prefs.remove(KEY_ACCESS_TOKEN_CIPHER)
+            prefs.remove(KEY_REFRESH_TOKEN_CIPHER)
+            prefs.remove(KEY_PIN_HASH_CIPHER)
+        }
+    }
 }

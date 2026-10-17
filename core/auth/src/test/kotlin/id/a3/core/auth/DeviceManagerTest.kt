@@ -210,4 +210,28 @@ class DeviceManagerTest {
         assertEquals(DeviceStatus.REVOKED, deviceManager.deviceStatus.value)
         assertNull(deviceManager.getDeviceCredential())
     }
+
+    @Test
+    fun `activateForDebug sets status to ACTIVE and saves credentials locally without network`() = runBlocking {
+        deviceManager.initialize()
+        assertEquals(DeviceStatus.UNREGISTERED, deviceManager.deviceStatus.value)
+
+        deviceManager.activateForDebug("Tablet Uji Coba")
+
+        assertEquals(DeviceStatus.ACTIVE, deviceManager.deviceStatus.value)
+        assertEquals("Tablet Uji Coba", deviceManager.getDeviceName())
+        assertEquals("demo-device-credential-local", deviceManager.getDeviceCredential())
+        assertEquals(0, mockWebServer.requestCount) // Zero network calls!
+    }
+
+    @Test
+    fun `resetDeviceForDebug restores status to UNREGISTERED and clears credentials`() = runBlocking {
+        deviceManager.activateForDebug("Tablet Uji Coba")
+        assertEquals(DeviceStatus.ACTIVE, deviceManager.deviceStatus.value)
+
+        deviceManager.resetDeviceForDebug()
+
+        assertEquals(DeviceStatus.UNREGISTERED, deviceManager.deviceStatus.value)
+        assertNull(deviceManager.getDeviceCredential())
+    }
 }

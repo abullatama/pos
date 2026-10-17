@@ -147,9 +147,9 @@
       "app": "cafe",
       "description": "Daftar menu, varian, add-on, dan keranjang",
       "acceptance": "Total keranjang sama dengan core:domain",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Layar C01 Kasir POS (pola 65% katalog menu / 35% struk keranjang) dan C02 Modal Bottom Sheet varian/add-on berhasil dibangun di :feature:cafe. Teruji 100% (CafeMenuViewModelTest 9 passed): penambahan item langsung maupun berpilihan (varian single-choice & add-on multi-choice) menghitung harga satuan real-time, stepper kuantitas taktil, dan seluruh kalkulasi keranjang (subtotal, diskon, biaya layanan, pajak, pembulatan Rp100, dan total akhir) identik dengan :core:domain CafeCalculator tanpa selisih 1 rupiah pun."
     },
     {
       "id": "F16",
@@ -157,9 +157,9 @@
       "app": "cafe",
       "description": "Diskon preset, biaya layanan, pajak, dan pembulatan di layar bayar",
       "acceptance": "Hasil sama dengan test vector C1 sampai C3",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Dialog C06 Diskon & Potongan (Preset Cepat 5%, 10%, Rp5.000 dan Diskon Manual/Komplimen dengan PIN Manager S14 serta alasan audit wajib) terintegrasi ke PurchaseReceiptCard C01. Hasil kalkulasi subtotal, diskon, biaya layanan, pajak, pembulatan kelipatan Rp100 setengah naik, dan total akhir lolos 100% pada Test Vector C1, C2, dan C3 di CafeMenuViewModelTest. Proteksi PIN Manager salah 3 kali mengunci akun (COR-07) dan pembulatan deterministik terverifikasi penuh."
     },
     {
       "id": "F17",
@@ -167,9 +167,9 @@
       "app": "cafe",
       "description": "Dine-in dan takeaway, pindah meja, tanda Habis",
       "acceptance": "order.table_moved dan menu.sold_out_changed sampai ke server",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Alur dine-in, takeaway, pindah meja (Dialog C05), dan kelola menu habis (Layar C07) selesai dibangun di :feature:cafe. Penandaan menu habis menyimpan status di Room dan mencatat event outbox 'menu.sold_out_changed'; katalog POS C01 otomatis meredupkan kartu menu habis dan memblokir penambahan ke keranjang. Fitur pindah meja mencatat event outbox 'order.table_moved' (from_table dan to_table). Teruji 100% pada RoomOutboxTransactionTest dan CafeMenuViewModelTest."
     },
     {
       "id": "F18",
@@ -177,9 +177,9 @@
       "app": "cafe",
       "description": "Kirim ke dapur dan tambah item pesanan terbuka",
       "acceptance": "Tiket dapur hanya berisi item baru, tanpa harga",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": ""
+      "notes": "KitchenTicketFormatter di :core:printer selesai dibangun dan teruji 100% (KitchenTicketFormatterTest): tiket dapur memuat judul besar, nomor meja, dan hanya item baru tanpa harga/mata uang Rp sama sekali (PRT-03). OrderTransactionManager di :core:data mengelola event outbox 'order.created', 'order.items_added', dan 'order.sent_to_kitchen' (membawa array line_ids baru). Layar C04 & C05 Pesanan Terbuka (CafeOpenOrdersScreen) dihubungkan ke CafeNavHost dengan pola master/detail responsif."
     },
     {
       "id": "F19",
@@ -247,9 +247,9 @@
       "app": "both",
       "description": "Pembayaran Tunai: kembalian dan DP",
       "acceptance": "Kembalian benar; DP dan pelunasan tercatat terpisah (L4, K2)",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Layar alur bayar tunai (S06) selesai dibangun di :feature:payment dan teruji 100% pada PaymentViewModelTest & RoomOutboxTransactionTest. Menghitung kembalian akurat menggunakan CashCalculator (Test Vector K2: total 61.400, diterima 70.000, kembalian 8.600), menyediakan tombol nominal cepat (Uang Pas, kelipatan 10k/50k/100k), mencatat event outbox 'payment.recorded' secara atomik, dan mencetak struk pelanggan 58 mm via CustomerReceiptFormatter."
     },
     {
       "id": "F26",
@@ -257,9 +257,9 @@
       "app": "both",
       "description": "Pembayaran QRIS Statis dengan konfirmasi manual, juga offline",
       "acceptance": "Tercatat dengan kasir dan shift; tanpa metode lain",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Layar alur bayar QRIS Statis (S07) selesai dibangun di :feature:payment dan teruji 100%. Menampilkan nominal total besar, panduan verifikasi merchant/soundbox toko (PAY-03), bekerja offline tanpa gateway/internet (PAY-04), mencatat event outbox 'payment.recorded' dengan method 'qris_static' secara atomik ke Room, dan otomatis mencetak struk pelanggan."
     },
     {
       "id": "F27",

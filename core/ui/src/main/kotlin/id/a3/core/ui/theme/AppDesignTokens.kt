@@ -45,29 +45,33 @@ data class AppShapes(
     val cardShape: Shape,
     val buttonShape: Shape,
     val inputShape: Shape,
-    val bottomBarShape: Shape
+    val bottomBarShape: Shape,
+    val navItemShape: Shape = buttonShape,
+    val floatingRailShape: Shape = RoundedCornerShape(14.dp)
 )
 
 val CafeColors = AppColors(
-    canvas = Color(0xFFFBF9F5),
+    canvas = Color(0xFFF4F2E6),
     surface = Color(0xFFFFFFFF),
-    surfaceAlt = Color(0xFFE5E0D8),
-    ink = Color(0xFF111111),
-    inkMuted = Color(0xFF4A4A4A),
-    accent = Color(0xFF8E5836),
-    onAccent = Color(0xFFFBF9F5),
-    border = Color(0x14111111),
-    navBackground = Color(0xFF111111),
-    navItemText = Color(0xFFFBF9F5),
-    navItemActiveBackground = Color(0xFFE5E0D8),
-    navItemActiveText = Color(0xFF111111)
+    surfaceAlt = Color(0xFFEAE8DF),
+    ink = Color(0xFF141414),
+    inkMuted = Color(0xFF6B7280),
+    accent = Color(0xFF0A3D24),
+    onAccent = Color(0xFFFFFFFF),
+    border = Color(0x2E141414),
+    navBackground = Color(0xFF141414),
+    navItemText = Color(0xFF9E9E9E),
+    navItemActiveBackground = Color(0xFFFFFFFF),
+    navItemActiveText = Color(0xFF141414)
 )
 
 val CafeShapes = AppShapes(
-    cardShape = RoundedCornerShape(4.dp),
-    buttonShape = RoundedCornerShape(4.dp),
-    inputShape = RoundedCornerShape(4.dp),
-    bottomBarShape = RoundedCornerShape(8.dp)
+    cardShape = RoundedCornerShape(16.dp),
+    buttonShape = RoundedCornerShape(9999.dp),
+    inputShape = RoundedCornerShape(9999.dp),
+    bottomBarShape = RoundedCornerShape(24.dp),
+    navItemShape = RoundedCornerShape(14.dp),
+    floatingRailShape = RoundedCornerShape(20.dp)
 )
 
 val LaundryColors = AppColors(
@@ -89,7 +93,9 @@ val LaundryShapes = AppShapes(
     cardShape = RoundedCornerShape(20.dp),
     buttonShape = RoundedCornerShape(9999.dp),
     inputShape = RoundedCornerShape(16.dp),
-    bottomBarShape = RoundedCornerShape(9999.dp)
+    bottomBarShape = RoundedCornerShape(9999.dp),
+    navItemShape = RoundedCornerShape(9999.dp),
+    floatingRailShape = RoundedCornerShape(9999.dp)
 )
 
 val LocalAppColors = staticCompositionLocalOf { CafeColors }

@@ -153,4 +153,33 @@ class DeviceManager(
             DeviceCheckResult.Error("HTTP_$code", "Gagal memeriksa status (kode $code): ${response.message()}")
         }
     }
+
+    /**
+     * Mengaktifkan perangkat secara lokal khusus untuk keperluan demo dan peninjauan UI:
+     * Menyimpan status ACTIVE dan kredensial tiruan tanpa memerlukan koneksi server backend.
+     */
+    suspend fun activateForDebug(
+        deviceName: String = "Tablet Kasir (Demo)"
+    ) {
+        val deviceId = encryptedDataStore.getOrCreateDeviceId()
+        encryptedDataStore.saveDeviceRegistration(
+            deviceId = deviceId,
+            deviceName = deviceName,
+            status = DeviceStatus.ACTIVE
+        )
+        encryptedDataStore.updateDeviceStatus(
+            status = DeviceStatus.ACTIVE,
+            credential = "demo-device-credential-local",
+            businessUnitId = if (appId == "laundry") "bu-laundry-01" else "bu-cafe-01"
+        )
+        _deviceStatus.value = DeviceStatus.ACTIVE
+    }
+
+    /**
+     * Mereset status perangkat kembali ke UNREGISTERED untuk menguji ulang alur pendaftaran.
+     */
+    suspend fun resetDeviceForDebug() {
+        encryptedDataStore.resetDeviceRegistration()
+        _deviceStatus.value = DeviceStatus.UNREGISTERED
+    }
 }

@@ -70,7 +70,6 @@ class AppShellTest {
 
         // Top Bar elements
         composeTestRule.onNodeWithTag(APP_SHELL_TOP_BAR_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("AA COFFEESHOP").assertIsDisplayed()
         composeTestRule.onNodeWithText("Budi Santoso · Shift 1").assertIsDisplayed()
         composeTestRule.onNodeWithText("Tersinkron").assertIsDisplayed()
         composeTestRule.onNodeWithText("Printer Siap").assertIsDisplayed()

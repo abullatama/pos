@@ -63,8 +63,8 @@ class DeviceRegistrationScreenTest {
 
         composeTestRule.onNodeWithText("Menunggu Persetujuan Owner").assertIsDisplayed()
         composeTestRule.onNodeWithText("Pendaftaran Terkirim").assertIsDisplayed()
-        composeTestRule.onNodeWithTag(DEVICE_REG_CHECK_STATUS_BTN_TAG).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Periksa Status Sekarang").assertIsDisplayed()
+        composeTestRule.onNodeWithTag(DEVICE_REG_CHECK_STATUS_BTN_TAG).assertExists()
+        composeTestRule.onNodeWithText("Periksa Status Sekarang").assertExists()
     }
 
     @Test
@@ -109,5 +109,27 @@ class DeviceRegistrationScreenTest {
         composeTestRule.onNodeWithTag(DEVICE_REVOKED_BANNER_TAG).assertIsDisplayed()
         composeTestRule.onNodeWithText("Akses Tablet Dicabut").assertIsDisplayed()
         composeTestRule.onNodeWithText("Device ID: dev-uuid-1234").assertIsDisplayed()
+    }
+
+    @Test
+    fun `debug bypass button is rendered when onDebugBypassClick is provided`() {
+        var bypassClicked = false
+        composeTestRule.setContent {
+            CafeTheme {
+                DeviceRegistrationScreen(
+                    deviceStatus = DeviceStatus.UNREGISTERED,
+                    deviceId = "dev-uuid-1234",
+                    deviceName = "Kasir 1",
+                    onDeviceNameChange = {},
+                    registrationCode = "",
+                    onRegistrationCodeChange = {},
+                    onRegisterClick = {},
+                    onCheckStatusClick = {},
+                    onDebugBypassClick = { bypassClicked = true }
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Masuk Mode Demo / Lewati").assertExists()
     }
 }

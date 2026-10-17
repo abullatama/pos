@@ -24,7 +24,9 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PointOfSale
+import id.a3.core.domain.device.DeviceStatus
 import id.a3.core.ui.component.AppShell
+import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
 import id.a3.core.ui.theme.A3Theme
@@ -149,5 +151,56 @@ fun FocusFlowHiddenNavPreview() {
                 }
             }
         }
+    }
+}
+
+@Preview(name = "S01 - Form Pendaftaran Tablet", widthDp = 1138, heightDp = 711)
+@Composable
+fun DeviceRegistrationPreview() {
+    CafeTheme {
+        DeviceRegistrationScreen(
+            deviceStatus = DeviceStatus.UNREGISTERED,
+            deviceId = "8f3c-9a12-4e55-bd31",
+            deviceName = "Tablet Kasir Utama",
+            onDeviceNameChange = {},
+            registrationCode = "REG-8834",
+            onRegistrationCodeChange = {},
+            onRegisterClick = {},
+            onCheckStatusClick = {}
+        )
+    }
+}
+
+@Preview(name = "S01 - Menunggu Persetujuan Owner", widthDp = 1138, heightDp = 711)
+@Composable
+fun DevicePendingApprovalPreview() {
+    LaundryTheme {
+        DeviceRegistrationScreen(
+            deviceStatus = DeviceStatus.PENDING,
+            deviceId = "8f3c-9a12-4e55-bd31",
+            deviceName = "Tablet Kasir Laundry",
+            onDeviceNameChange = {},
+            registrationCode = "",
+            onRegistrationCodeChange = {},
+            onRegisterClick = {},
+            onCheckStatusClick = {}
+        )
+    }
+}
+
+@Preview(name = "S17 - Akses Tablet Dicabut (Segel Simetris)", widthDp = 1138, heightDp = 711)
+@Composable
+fun DeviceRevokedLockoutPreview() {
+    CafeTheme {
+        DeviceRegistrationScreen(
+            deviceStatus = DeviceStatus.REVOKED,
+            deviceId = "8f3c-9a12-4e55-bd31",
+            deviceName = "Tablet Kasir 1",
+            onDeviceNameChange = {},
+            registrationCode = "",
+            onRegistrationCodeChange = {},
+            onRegisterClick = {},
+            onCheckStatusClick = {}
+        )
     }
 }

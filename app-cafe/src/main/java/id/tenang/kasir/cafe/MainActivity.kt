@@ -1,9 +1,13 @@
 package id.tenang.kasir.cafe
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.automirrored.outlined.ShortText
@@ -26,6 +30,8 @@ import id.a3.core.auth.DeviceManager
 import id.a3.core.auth.DeviceManagerFactory
 import id.a3.core.auth.DeviceRegisterResult
 import id.a3.core.domain.device.DeviceStatus
+import id.a3.core.printer.PrinterStatus
+import id.a3.core.printer.connection.DefaultPrinterService
 import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
@@ -38,6 +44,7 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private lateinit var deviceManager: DeviceManager
+    private lateinit var printerService: DefaultPrinterService
 
     private val cafeNavItems = listOf(
         NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale),
@@ -50,6 +57,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        printerService = DefaultPrinterService(this)
 
         deviceManager = DeviceManagerFactory.getOrCreate(
             context = this,
@@ -65,6 +74,26 @@ class MainActivity : ComponentActivity() {
         setContent {
             CafeTheme {
                 val deviceStatus by deviceManager.deviceStatus.collectAsState()
+                val printerStatus by printerService.status.collectAsState()
+
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) {
+                    printerService.autoConnectPairedPrinter()
+                }
+
+                LaunchedEffect(Unit) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.BLUETOOTH_CONNECT,
+                                Manifest.permission.BLUETOOTH_SCAN
+                            )
+                        )
+                    } else {
+                        printerService.autoConnectPairedPrinter()
+                    }
+                }
 
                 if (deviceStatus != DeviceStatus.ACTIVE) {
                     var deviceNameInput by remember { mutableStateOf(CafeAppConfig.appName) }
@@ -110,7 +139,16 @@ class MainActivity : ComponentActivity() {
                         },
                         isLoading = isActionLoading,
                         errorMessage = actionErrorMessage,
-                        businessUnitName = CafeAppConfig.appName
+                        businessUnitName = CafeAppConfig.appName,
+                        onDebugBypassClick = {
+                            coroutineScope.launch {
+                                if (deviceStatus == DeviceStatus.REVOKED) {
+                                    deviceManager.resetDeviceForDebug()
+                                } else {
+                                    deviceManager.activateForDebug(CafeAppConfig.appName)
+                                }
+                            }
+                        }
                     )
                 } else {
                     val navController = rememberNavController()
@@ -130,7 +168,16 @@ class MainActivity : ComponentActivity() {
                         shiftInfo = "Shift 1",
                         syncStatus = SyncStatus.SYNCED,
                         pendingSyncCount = 0,
-                        isPrinterConnected = true,
+                        isPrinterConnected = printerStatus is PrinterStatus.Connected,
+                        onAdminClick = {
+                            navController.navigate(CafeDestinations.LAINNYA) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         navItems = cafeNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
@@ -149,7 +196,8 @@ class MainActivity : ComponentActivity() {
                     ) { paddingValues ->
                         CafeNavHost(
                             navController = navController,
-                            paddingValues = paddingValues
+                            paddingValues = paddingValues,
+                            printerService = printerService
                         )
                     }
                 }
