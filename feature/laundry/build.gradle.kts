@@ -11,6 +11,7 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    implementation(project(":core:printer"))
     implementation(project(":feature:shift"))
     implementation(project(":feature:payment"))
     implementation(platform(libs.androidx.compose.bom))
@@ -27,4 +28,5 @@ dependencies {
     implementation(libs.androidx.camera.view)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

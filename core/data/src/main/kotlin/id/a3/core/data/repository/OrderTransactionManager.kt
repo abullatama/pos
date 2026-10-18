@@ -2,9 +2,13 @@ package id.a3.core.data.repository
 
 import androidx.room.withTransaction
 import id.a3.core.data.local.AppDatabase
+import id.a3.core.data.local.dao.CustomerDao
+import id.a3.core.data.local.dao.LaundryPickupDao
 import id.a3.core.data.local.dao.MasterDataDao
 import id.a3.core.data.local.dao.OrderDao
 import id.a3.core.data.local.dao.OutboxDao
+import id.a3.core.data.local.entity.CustomerEntity
+import id.a3.core.data.local.entity.LaundryPickupEntity
 import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
 import id.a3.core.data.local.entity.OrderWithLines
@@ -26,7 +30,9 @@ class OrderTransactionManager(
     private val database: AppDatabase,
     val orderDao: OrderDao = database.orderDao(),
     val outboxDao: OutboxDao = database.outboxDao(),
-    val masterDataDao: MasterDataDao = database.masterDataDao()
+    val masterDataDao: MasterDataDao = database.masterDataDao(),
+    val customerDao: CustomerDao = database.customerDao(),
+    val laundryPickupDao: LaundryPickupDao = database.laundryPickupDao()
 ) {
 
     /**
@@ -40,9 +46,38 @@ class OrderTransactionManager(
     fun observeCompletedOrders(): Flow<List<OrderWithLines>> = orderDao.observeCompletedOrdersWithLines()
 
     /**
+     * Mengamati seluruh pesanan laundry (bisa difilter berdasarkan status).
+     */
+    fun observeLaundryOrders(statusFilter: String? = null): Flow<List<OrderWithLines>> {
+        return if (statusFilter.isNullOrBlank() || statusFilter.lowercase() == "semua") {
+            orderDao.observeLaundryOrdersWithLines()
+        } else {
+            orderDao.observeLaundryOrdersWithLinesByStatus(statusFilter.lowercase())
+        }
+    }
+
+    /**
+     * Mengamati riwayat pengambilan per baris pakaian untuk suatu order.
+     */
+    fun observePickupsForOrder(orderId: String): Flow<List<LaundryPickupEntity>> =
+        laundryPickupDao.observePickupsByOrderId(orderId)
+
+    /**
      * Mengambil satu pesanan beserta baris itemnya berdasarkan ID.
      */
     suspend fun getOrderWithLines(orderId: String): OrderWithLines? = orderDao.getOrderWithLines(orderId)
+
+    /**
+     * Mengambil satu pesanan beserta baris itemnya berdasarkan nomor tampil (misal: L1-0012).
+     */
+    suspend fun getOrderWithLinesByDisplayNumber(displayNumber: String): OrderWithLines? =
+        orderDao.getOrderWithLinesByDisplayNumber(displayNumber)
+
+    /**
+     * Mengambil satu pesanan berdasarkan nomor tampil.
+     */
+    suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity? =
+        orderDao.getOrderByDisplayNumber(displayNumber)
 
     /**
      * Menyimpan order, rincian baris item, dan antrean outbox secara atomik dalam satu transaksi Room.
@@ -480,4 +515,296 @@ class OrderTransactionManager(
             outbox
         }
     }
+
+    /**
+     * Membuat pesanan laundry baru dan mencatat event 'customer.created' (jika pelanggan baru)
+     * serta 'order.created' ke dalam outbox secara atomik.
+     * Sesuai aturan arsitektur, event customer.created dan laundry.* tidak mensyaratkan shift (shift_id boleh null).
+     */
+    suspend fun createLaundryOrderWithCustomer(
+        order: OrderEntity,
+        lines: List<OrderLineEntity>,
+        customer: CustomerEntity?,
+        isNewCustomer: Boolean,
+        deviceId: String = "dev-laundry-1",
+        shiftId: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            if (customer != null && isNewCustomer) {
+                customerDao.insertCustomer(customer)
+            }
+
+            val finalOrder = if (customer != null) {
+                order.copy(customerId = customer.id)
+            } else {
+                order
+            }
+
+            orderDao.insertOrder(finalOrder)
+            if (lines.isNotEmpty()) {
+                orderDao.insertLines(lines)
+            }
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            val eventsArray = buildJsonArray {
+                // 1. Event customer.created (jika pelanggan baru dibuat)
+                if (customer != null && isNewCustomer) {
+                    val customerPayload = buildJsonObject {
+                        put("customer_id", customer.id)
+                        put("name", customer.name)
+                        put("phone", customer.phone)
+                    }
+                    val customerEvent = buildJsonObject {
+                        put("event_id", UUID.randomUUID().toString())
+                        put("type", "customer.created")
+                        put("occurred_at", occurredAt)
+                        put("payload", customerPayload)
+                    }
+                    add(customerEvent)
+                }
+
+                // 2. Event order.created
+                val orderLinesArray = buildJsonArray {
+                    lines.forEach { line ->
+                        add(
+                            buildJsonObject {
+                                put("line_id", line.id)
+                                put("item_ref_id", line.itemRefId)
+                                put("name", line.nameSnapshot)
+                                put("quantity", line.quantity)
+                                put("unit_price", line.unitPriceSnapshot)
+                                line.note?.let { put("note", it) }
+                            }
+                        )
+                    }
+                }
+
+                val orderPayload = buildJsonObject {
+                    put("order_id", finalOrder.id)
+                    put("display_number", finalOrder.displayNumber)
+                    put("order_type", finalOrder.orderType)
+                    finalOrder.customerId?.let { put("customer_id", it) }
+                    put("lines", orderLinesArray)
+                    put("subtotal", finalOrder.subtotal)
+                    put("discount", finalOrder.discount)
+                    put("service_charge", finalOrder.serviceCharge)
+                    put("tax", finalOrder.tax)
+                    put("rounding", finalOrder.rounding)
+                    put("total", finalOrder.total)
+                }
+
+                val orderEvent = buildJsonObject {
+                    put("event_id", UUID.randomUUID().toString())
+                    put("type", "order.created")
+                    put("occurred_at", occurredAt)
+                    put("payload", orderPayload)
+                }
+                add(orderEvent)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Memperbarui status cucian satu arah (Diterima -> Diproses -> Siap) dan mencatat
+     * event outbox 'laundry.status_changed' secara atomik.
+     * Sesuai aturan arsitektur, event laundry.* tidak mensyaratkan shift (shift_id = null).
+     */
+    suspend fun advanceLaundryOrderStatus(
+        orderId: String,
+        targetStatus: String,
+        deviceId: String = "dev-laundry-1",
+        rework: Boolean = false,
+        reworkReason: String? = null,
+        reworkApprovedBy: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            val existing = orderDao.getOrderById(orderId)
+                ?: throw IllegalArgumentException("Pesanan dengan ID $orderId tidak ditemukan")
+
+            // Validasi transisi status satu arah:
+            // received / open -> processing
+            // processing -> ready
+            // rework: ready -> processing
+            if (rework) {
+                if (existing.status != "ready") {
+                    throw IllegalStateException("Cuci ulang hanya dapat dilakukan dari status Siap (ready), status saat ini: ${existing.status}")
+                }
+                if (targetStatus != "processing") {
+                    throw IllegalArgumentException("Status cuci ulang harus menjadi processing, diberikan: $targetStatus")
+                }
+            } else {
+                val isValidTransition = when (existing.status.lowercase()) {
+                    "open", "received" -> targetStatus == "processing"
+                    "processing" -> targetStatus == "ready"
+                    else -> false
+                }
+                if (!isValidTransition) {
+                    throw IllegalStateException("Transisi status satu arah ilegal dari '${existing.status}' ke '$targetStatus'")
+                }
+            }
+
+            orderDao.updateOrder(existing.copy(status = targetStatus))
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            val payload = buildJsonObject {
+                put("order_id", orderId)
+                put("status", targetStatus)
+                if (rework) {
+                    put("rework", true)
+                    reworkReason?.let { put("reason", it) }
+                    reworkApprovedBy?.let { put("approved_by", it) }
+                }
+            }
+
+            val eventObj = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "laundry.status_changed")
+                put("occurred_at", occurredAt)
+                put("payload", payload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(eventObj)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = null, // Event laundry.* tidak terikat shift
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Mencatat pengambilan cucian per baris layanan (LDR-11, F22).
+     * - Menyimpan entitas pengambilan ke Room (laundry_pickups).
+     * - Memvalidasi proteksi belum lunas (LDR-10, F24): jika sisa > 0, wajib menyertakan [approvedBy] (Manager).
+     * - Memeriksa apakah semua baris order telah ditandai is_final = true. Jika ya, status order bertransisi ke 'picked_up'.
+     * - Menyusun event 'laundry.picked_up' ke antrean outbox secara atomik tanpa shift_id.
+     */
+    suspend fun recordLaundryPickups(
+        orderId: String,
+        items: List<LaundryPickupItem>,
+        userId: String? = null,
+        approvedBy: String? = null,
+        deviceId: String = "dev-laundry-1"
+    ): OutboxEntity {
+        return database.withTransaction {
+            val orderWithLines = orderDao.getOrderWithLines(orderId)
+                ?: throw IllegalArgumentException("Pesanan dengan ID $orderId tidak ditemukan")
+
+            val order = orderWithLines.order
+            val isFullyPaid = order.paidAmount >= order.total
+
+            // F24 & LDR-10: Penyerahan cucian belum lunas wajib persetujuan PIN Manager!
+            if (!isFullyPaid && approvedBy.isNullOrBlank()) {
+                throw IllegalStateException("Penyerahan cucian belum lunas wajib diotorisasi PIN Manager (F24 / LDR-10)")
+            }
+
+            if (items.isEmpty()) {
+                throw IllegalArgumentException("Daftar pengambilan pakaian tidak boleh kosong")
+            }
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.now().toString()
+
+            // 1. Simpan entitas pengambilan ke Room
+            val pickupEntities = items.map { item ->
+                LaundryPickupEntity(
+                    id = UUID.randomUUID().toString(),
+                    orderId = orderId,
+                    orderLineId = item.orderLineId,
+                    quantity = item.quantity,
+                    isFinal = item.isFinal,
+                    note = item.note,
+                    userId = userId,
+                    approvedBy = approvedBy
+                )
+            }
+            laundryPickupDao.insertPickups(pickupEntities)
+
+            // 2. Evaluasi apakah seluruh baris pesanan sudah berstatus pengambilan terakhir (is_final)
+            val allPastPickups = laundryPickupDao.getPickupsByOrderId(orderId)
+            val linesWithFinalPickup = allPastPickups.filter { it.isFinal }.map { it.orderLineId }.toSet()
+            val allLinesCompleted = orderWithLines.lines.all { line -> linesWithFinalPickup.contains(line.id) }
+
+            if (allLinesCompleted) {
+                // Semua baris sudah diambil tuntas -> status order menjadi 'picked_up'
+                orderDao.updateOrder(order.copy(status = "picked_up"))
+            }
+
+            // 3. Susun event outbox laundry.picked_up untuk tiap item pengambilan
+            val eventsArray = buildJsonArray {
+                items.forEach { item ->
+                    val payload = buildJsonObject {
+                        put("order_id", orderId)
+                        put("order_line_id", item.orderLineId)
+                        put("quantity", item.quantity)
+                        put("is_final", item.isFinal)
+                        item.note?.let { put("note", it) }
+                        approvedBy?.let { put("approved_by", it) }
+                    }
+                    val eventObj = buildJsonObject {
+                        put("event_id", UUID.randomUUID().toString())
+                        put("type", "laundry.picked_up")
+                        put("occurred_at", occurredAt)
+                        put("payload", payload)
+                    }
+                    add(eventObj)
+                }
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = null, // Event laundry.* tidak terikat shift
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Cuci ulang karena komplain pelanggan (LDR-12, F23).
+     * Status Siap kembali ke Diproses dengan alasan dan PIN manager, tanpa tagihan baru.
+     */
+    suspend fun reworkLaundryOrder(
+        orderId: String,
+        reason: String,
+        approvedBy: String,
+        deviceId: String = "dev-laundry-1"
+    ): OutboxEntity {
+        return advanceLaundryOrderStatus(
+            orderId = orderId,
+            targetStatus = "processing",
+            deviceId = deviceId,
+            rework = true,
+            reworkReason = reason,
+            reworkApprovedBy = approvedBy
+        )
+    }
 }
+
+data class LaundryPickupItem(
+    val orderLineId: String,
+    val quantity: Int,
+    val isFinal: Boolean,
+    val note: String? = null
+)

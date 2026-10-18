@@ -11,16 +11,30 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import id.a3.core.printer.PrinterService
 import id.a3.core.ui.theme.A3Theme
+import id.a3.feature.laundry.LaundryViewModelFactory
+import id.a3.feature.laundry.presentation.LaundryOrderScreen
+import id.a3.feature.laundry.presentation.LaundryOrderViewModel
+import id.a3.feature.laundry.presentation.LaundryOrdersScreen
+import id.a3.feature.laundry.presentation.LaundryOrdersViewModel
+import id.a3.feature.laundry.presentation.LaundryScanViewModel
 import id.a3.feature.laundry.scanner.LaundryScanScreen
+import id.a3.feature.payment.PaymentViewModelFactory
+import id.a3.feature.payment.presentation.PaymentScreen
+import id.a3.feature.payment.presentation.PaymentViewModel
 
 object LaundryDestinations {
     const val BERANDA = "beranda"
@@ -38,6 +52,23 @@ fun LaundryNavHost(
     modifier: Modifier = Modifier,
     printerService: PrinterService? = null
 ) {
+    val context = LocalContext.current
+
+    val laundryViewModel: LaundryOrderViewModel = viewModel(
+        factory = LaundryViewModelFactory(context, printerService)
+    )
+    val scanViewModel: LaundryScanViewModel = viewModel(
+        factory = LaundryViewModelFactory(context, printerService)
+    )
+    val ordersViewModel: LaundryOrdersViewModel = viewModel(
+        factory = LaundryViewModelFactory(context, printerService)
+    )
+    val paymentViewModel: PaymentViewModel = viewModel(
+        factory = PaymentViewModelFactory(context, printerService)
+    )
+
+    val uiState by laundryViewModel.uiState.collectAsState()
+
     NavHost(
         navController = navController,
         startDestination = LaundryDestinations.BERANDA,
@@ -76,24 +107,74 @@ fun LaundryNavHost(
         composable(LaundryDestinations.BERANDA) {
             LaundryPlaceholderView("Layar Beranda Laundry (L01)")
         }
+
         composable(LaundryDestinations.ORDER) {
-            LaundryPlaceholderView("Layar Order Baru Laundry (L03)")
-        }
-        composable(LaundryDestinations.CUCIAN) {
-            LaundryPlaceholderView("Layar Daftar & Detail Cucian (L05/L06)")
-        }
-        composable(LaundryDestinations.SCAN) {
-            LaundryScanScreen(
-                onStatusAdvanceClick = { orderId ->
-                    // Di M2 akan memicu update status cucian via LaundryOrderRepository
+            LaundryOrderScreen(
+                uiState = uiState,
+                viewModel = laundryViewModel,
+                onProceedToPayment = { orderId, total, displayNumber ->
+                    paymentViewModel.initializeWithOrder(
+                        orderId = orderId,
+                        totalAmount = total,
+                        displayNumber = displayNumber,
+                        tableOrQueueLabel = "Athia Laundry",
+                        cashierName = "Kasir Laundry"
+                    )
+                    navController.navigate(LaundryDestinations.PEMBAYARAN)
+                },
+                onOrderSavedSuccessfully = {
+                    navController.navigate(LaundryDestinations.CUCIAN) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
             )
         }
+
+        composable(LaundryDestinations.CUCIAN) {
+            LaundryOrdersScreen(
+                viewModel = ordersViewModel,
+                onProceedToSettlement = { orderId, remaining, displayNumber ->
+                    paymentViewModel.initializeWithOrder(
+                        orderId = orderId,
+                        totalAmount = remaining,
+                        displayNumber = displayNumber,
+                        tableOrQueueLabel = "Athia Laundry (Pelunasan)",
+                        cashierName = "Kasir Laundry"
+                    )
+                    navController.navigate(LaundryDestinations.PEMBAYARAN)
+                }
+            )
+        }
+
+        composable(LaundryDestinations.SCAN) {
+            LaundryScanScreen(viewModel = scanViewModel)
+        }
+
         composable(LaundryDestinations.LAINNYA) {
             LaundryPlaceholderView("Layar Pengaturan & Menu Admin")
         }
+
         composable(LaundryDestinations.PEMBAYARAN) {
-            LaundryPlaceholderView("Alur Pembayaran (Fokus Penuh)")
+            PaymentScreen(
+                viewModel = paymentViewModel,
+                onBackClick = {
+                    navController.popBackStack()
+                },
+                onFinishAndNewOrder = {
+                    laundryViewModel.clearOrder()
+                    navController.navigate(LaundryDestinations.ORDER) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            )
         }
     }
 }

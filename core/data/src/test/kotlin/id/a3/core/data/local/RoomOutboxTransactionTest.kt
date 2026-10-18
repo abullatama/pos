@@ -2,11 +2,15 @@ package id.a3.core.data.local
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import id.a3.core.data.local.entity.CustomerEntity
 import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
 import id.a3.core.data.local.entity.OutboxEntity
 import id.a3.core.data.local.entity.OutboxStatus
+import id.a3.core.data.repository.LaundryPickupItem
 import id.a3.core.data.repository.OrderTransactionManager
+import id.a3.core.data.util.PhoneNumberUtil
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -426,5 +430,378 @@ class RoomOutboxTransactionTest {
         assertTrue(savedOutbox.eventsJson.contains("\"type\":\"payment.recorded\""))
         assertTrue(savedOutbox.eventsJson.contains("\"method\":\"qris_static\""))
         assertTrue(savedOutbox.eventsJson.contains("\"amount\":26000"))
+    }
+
+    @Test
+    fun `phoneNumberUtil normalizes and validates indonesian phone numbers correctly`() {
+        // Normalisasi berbagai variasi awalan dan separator
+        assertEquals("081234567890", PhoneNumberUtil.normalize("+62 812-3456-7890"))
+        assertEquals("081234567890", PhoneNumberUtil.normalize("6281234567890"))
+        assertEquals("081234567890", PhoneNumberUtil.normalize("0812 3456 7890"))
+        assertEquals("081234567890", PhoneNumberUtil.normalize("0812-3456-7890"))
+
+        // Validasi format
+        assertTrue(PhoneNumberUtil.isValid("081234567890"))
+        assertTrue(PhoneNumberUtil.isValid("+6281234567890"))
+        assertFalse(PhoneNumberUtil.isValid("021123456")) // Telepon rumah/bukan 08
+        assertFalse(PhoneNumberUtil.isValid("0812")) // Kurang dari 10 digit
+        assertFalse(PhoneNumberUtil.isValid("08123456789012345")) // Lebih dari 14 digit
+
+        // Format tampilan
+        assertEquals("0812 3456 7890", PhoneNumberUtil.formatDisplay("081234567890"))
+    }
+
+    @Test
+    fun `customerDao can insert, find by phone, and search customers`() = runBlocking {
+        val customer1 = CustomerEntity(
+            id = UUID.randomUUID().toString(),
+            name = "Budi Santoso",
+            phone = "081234567890"
+        )
+        val customer2 = CustomerEntity(
+            id = UUID.randomUUID().toString(),
+            name = "Sari Indah",
+            phone = "081211112222"
+        )
+        database.customerDao().insertCustomer(customer1)
+        database.customerDao().insertCustomer(customer2)
+
+        // Find by phone
+        val found = database.customerDao().findCustomerByPhone("081234567890")
+        assertNotNull(found)
+        assertEquals("Budi Santoso", found!!.name)
+
+        // Search by name query "sari"
+        val searchByName = database.customerDao().searchCustomers("sari").first()
+        assertEquals(1, searchByName.size)
+        assertEquals("Sari Indah", searchByName.first().name)
+
+        // Search by phone query "0812"
+        val searchByPhone = database.customerDao().searchCustomers("0812").first()
+        assertEquals(2, searchByPhone.size)
+    }
+
+    @Test
+    fun `createLaundryOrderWithCustomer for new customer saves customer and creates customer created in bundle`() = runBlocking {
+        val customerId = UUID.randomUUID().toString()
+        val customer = CustomerEntity(
+            id = customerId,
+            name = "Budi Santoso",
+            phone = "081234567890"
+        )
+
+        val orderId = UUID.randomUUID().toString()
+        val lineId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0001",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null, // Event customer.created dan laundry.* tidak mensyaratkan shift
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-laundry-1",
+            orderType = "laundry",
+            customerId = null,
+            subtotal = 53000L,
+            total = 53000L
+        )
+
+        val line = OrderLineEntity(
+            id = lineId,
+            orderId = orderId,
+            itemRefId = "svc-kiloan",
+            nameSnapshot = "Cuci Komplit Reguler",
+            quantity = 1,
+            unitPriceSnapshot = 28000L
+        )
+
+        // Buat order dengan pelanggan baru (isNewCustomer = true)
+        val outbox = transactionManager.createLaundryOrderWithCustomer(
+            order = order,
+            lines = listOf(line),
+            customer = customer,
+            isNewCustomer = true,
+            deviceId = "dev-laundry-1",
+            shiftId = null
+        )
+
+        // 1. Verifikasi Customer tersimpan di Room
+        val savedCustomer = database.customerDao().getCustomerById(customerId)
+        assertNotNull(savedCustomer)
+        assertEquals("Budi Santoso", savedCustomer!!.name)
+        assertEquals("081234567890", savedCustomer.phone)
+
+        // 2. Verifikasi Order tersimpan dengan customerId
+        val savedOrder = database.orderDao().getOrderWithLines(orderId)
+        assertNotNull(savedOrder)
+        assertEquals(customerId, savedOrder!!.order.customerId)
+        assertEquals("L1-0001", savedOrder.order.displayNumber)
+
+        // 3. Verifikasi Outbox memuat event customer.created dan order.created
+        val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
+        assertNotNull(savedOutbox)
+        assertTrue(savedOutbox!!.eventsJson.contains("\"type\":\"customer.created\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"customer_id\":\"$customerId\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"name\":\"Budi Santoso\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"phone\":\"081234567890\""))
+
+        assertTrue(savedOutbox.eventsJson.contains("\"type\":\"order.created\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"order_id\":\"$orderId\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"customer_id\":\"$customerId\""))
+    }
+
+    @Test
+    fun `createLaundryOrderWithCustomer for existing customer does not duplicate customer created event`() = runBlocking {
+        val existingCustomerId = UUID.randomUUID().toString()
+        val customer = CustomerEntity(
+            id = existingCustomerId,
+            name = "Sari Indah",
+            phone = "081211112222"
+        )
+        database.customerDao().insertCustomer(customer)
+
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0002",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-laundry-1",
+            orderType = "laundry",
+            customerId = existingCustomerId,
+            subtotal = 25000L,
+            total = 25000L
+        )
+
+        // Buat order dengan pelanggan yang sudah ada (isNewCustomer = false)
+        val outbox = transactionManager.createLaundryOrderWithCustomer(
+            order = order,
+            lines = emptyList(),
+            customer = customer,
+            isNewCustomer = false,
+            deviceId = "dev-laundry-1",
+            shiftId = null
+        )
+
+        // Verifikasi outbox HANYA berisi order.created tanpa customer.created
+        val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
+        assertNotNull(savedOutbox)
+        assertFalse("Tidak boleh ada customer.created untuk pelanggan lama", savedOutbox!!.eventsJson.contains("\"type\":\"customer.created\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"type\":\"order.created\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"customer_id\":\"$existingCustomerId\""))
+    }
+
+    @Test
+    fun `advanceLaundryOrderStatus advances status one-way and creates laundry status_changed outbox event without shift`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0003",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "open", // atau received
+            subtotal = 53000L,
+            total = 53000L
+        )
+        database.orderDao().insertOrder(order)
+
+        // 1. Transisi dari open -> processing
+        val outbox1 = transactionManager.advanceLaundryOrderStatus(orderId, "processing")
+        val updatedOrder1 = database.orderDao().getOrderById(orderId)
+        assertNotNull(updatedOrder1)
+        assertEquals("processing", updatedOrder1!!.status)
+
+        // Verifikasi event outbox laundry.status_changed
+        val savedOutbox1 = database.outboxDao().getByBundleId(outbox1.bundleId)
+        assertNotNull(savedOutbox1)
+        assertTrue(savedOutbox1!!.shiftId == null) // Tidak mensyaratkan shift
+        assertTrue(savedOutbox1.eventsJson.contains("\"type\":\"laundry.status_changed\""))
+        assertTrue(savedOutbox1.eventsJson.contains("\"status\":\"processing\""))
+
+        // 2. Transisi dari processing -> ready
+        val outbox2 = transactionManager.advanceLaundryOrderStatus(orderId, "ready")
+        val updatedOrder2 = database.orderDao().getOrderById(orderId)
+        assertNotNull(updatedOrder2)
+        assertEquals("ready", updatedOrder2!!.status)
+
+        val savedOutbox2 = database.outboxDao().getByBundleId(outbox2.bundleId)
+        assertNotNull(savedOutbox2)
+        assertTrue(savedOutbox2!!.eventsJson.contains("\"status\":\"ready\""))
+
+        // 3. Verifikasi query lookup berdasarkan nomor tampilan (L1-0003)
+        val lookupByNumber = transactionManager.getOrderByDisplayNumber("L1-0003")
+        assertNotNull(lookupByNumber)
+        assertEquals(orderId, lookupByNumber!!.id)
+    }
+
+    @Test
+    fun `advanceLaundryOrderStatus rejects illegal transition`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0004",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 53000L,
+            total = 53000L
+        )
+        database.orderDao().insertOrder(order)
+
+        // Mencoba melompati langsung dari open ke ready (ilegal)
+        var failed = false
+        try {
+            transactionManager.advanceLaundryOrderStatus(orderId, "ready")
+        } catch (_: IllegalStateException) {
+            failed = true
+        }
+        assertTrue("Harus menolak lompatan status ilegal", failed)
+    }
+
+    @Test
+    fun `advanceLaundryOrderStatus with rework reverts ready to processing with approval and reason`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0005",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "ready", // Status siap
+            subtotal = 25000L,
+            total = 25000L
+        )
+        database.orderDao().insertOrder(order)
+
+        // Cuci ulang (ready -> processing)
+        val outbox = transactionManager.advanceLaundryOrderStatus(
+            orderId = orderId,
+            targetStatus = "processing",
+            rework = true,
+            reworkReason = "Noda minyak belum hilang",
+            reworkApprovedBy = "u-manager-1"
+        )
+
+        val updated = database.orderDao().getOrderById(orderId)
+        assertNotNull(updated)
+        assertEquals("processing", updated!!.status)
+
+        val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
+        assertNotNull(savedOutbox)
+        assertTrue(savedOutbox!!.eventsJson.contains("\"rework\":true"))
+        assertTrue(savedOutbox.eventsJson.contains("\"reason\":\"Noda minyak belum hilang\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"approved_by\":\"u-manager-1\""))
+    }
+
+    @Test
+    fun `recordLaundryPickups partial pickup keeps order status ready until all lines completed (F22)`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val line1Id = UUID.randomUUID().toString()
+        val line2Id = UUID.randomUUID().toString()
+
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0006",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "ready", // Siap diambil
+            subtotal = 53000L,
+            total = 53000L,
+            paidAmount = 53000L // Lunas
+        )
+        val line1 = OrderLineEntity(id = line1Id, orderId = orderId, itemRefId = "svc-kiloan", nameSnapshot = "Kiloan", quantity = 1, unitPriceSnapshot = 28000L)
+        val line2 = OrderLineEntity(id = line2Id, orderId = orderId, itemRefId = "svc-selimut", nameSnapshot = "Selimut", quantity = 1, unitPriceSnapshot = 25000L)
+
+        database.orderDao().insertOrder(order)
+        database.orderDao().insertLines(listOf(line1, line2))
+
+        // 1. Ambil baris pertama saja (Kiloan) secara tuntas (isFinal = true)
+        val pickupLine1 = LaundryPickupItem(orderLineId = line1Id, quantity = 1, isFinal = true)
+        val outbox1 = transactionManager.recordLaundryPickups(orderId, listOf(pickupLine1))
+
+        // Verifikasi Room: baris tersimpan di laundry_pickups
+        val pickupsAfterFirst = database.laundryPickupDao().getPickupsByOrderId(orderId)
+        assertEquals(1, pickupsAfterFirst.size)
+        assertEquals(line1Id, pickupsAfterFirst.first().orderLineId)
+
+        // Verifikasi Status Order: Masih 'ready' karena baris 2 belum diambil
+        val orderAfterFirst = database.orderDao().getOrderById(orderId)
+        assertNotNull(orderAfterFirst)
+        assertEquals("ready", orderAfterFirst!!.status)
+
+        // Verifikasi event outbox laundry.picked_up
+        val savedOutbox1 = database.outboxDao().getByBundleId(outbox1.bundleId)
+        assertNotNull(savedOutbox1)
+        assertTrue(savedOutbox1!!.eventsJson.contains("\"type\":\"laundry.picked_up\""))
+        assertTrue(savedOutbox1.eventsJson.contains("\"order_line_id\":\"$line1Id\""))
+
+        // 2. Sekarang ambil baris kedua (Selimut) secara tuntas (isFinal = true)
+        val pickupLine2 = LaundryPickupItem(orderLineId = line2Id, quantity = 1, isFinal = true)
+        transactionManager.recordLaundryPickups(orderId, listOf(pickupLine2))
+
+        // Verifikasi Status Order: Sekarang menjadi 'picked_up' (Diambil) karena SEMUA baris tuntas
+        val orderAfterSecond = database.orderDao().getOrderById(orderId)
+        assertNotNull(orderAfterSecond)
+        assertEquals("picked_up", orderAfterSecond!!.status)
+    }
+
+    @Test
+    fun `recordLaundryPickups for unpaid order requires manager approval and throws exception without it (F24)`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val lineId = UUID.randomUUID().toString()
+
+        val unpaidOrder = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0007",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "ready",
+            subtotal = 53000L,
+            total = 53000L,
+            paidAmount = 20000L // Belum lunas (baru bayar DP 20k, sisa 33k)
+        )
+        val line = OrderLineEntity(id = lineId, orderId = orderId, itemRefId = "svc-kiloan", nameSnapshot = "Kiloan", quantity = 1, unitPriceSnapshot = 53000L)
+        database.orderDao().insertOrder(unpaidOrder)
+        database.orderDao().insertLines(listOf(line))
+
+        val pickupItem = LaundryPickupItem(orderLineId = lineId, quantity = 1, isFinal = true)
+
+        // 1. Coba ambil tanpa persetujuan Manager -> harus DITOLAK
+        var failedWithoutPin = false
+        try {
+            transactionManager.recordLaundryPickups(orderId, listOf(pickupItem), approvedBy = null)
+        } catch (_: IllegalStateException) {
+            failedWithoutPin = true
+        }
+        assertTrue("Pengambilan cucian belum lunas tanpa PIN Manager harus ditolak", failedWithoutPin)
+
+        // 2. Ambil DENGAN otorisasi Manager -> DITERIMA & dicatat di outbox
+        val outbox = transactionManager.recordLaundryPickups(
+            orderId = orderId,
+            items = listOf(pickupItem),
+            approvedBy = "u-manager-1"
+        )
+        val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
+        assertNotNull(savedOutbox)
+        assertTrue(savedOutbox!!.eventsJson.contains("\"type\":\"laundry.picked_up\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"approved_by\":\"u-manager-1\""))
+
+        // Status berubah menjadi picked_up karena baris tunggal ini selesai
+        val updatedOrder = database.orderDao().getOrderById(orderId)
+        assertEquals("picked_up", updatedOrder!!.status)
     }
 }

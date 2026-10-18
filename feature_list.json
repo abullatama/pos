@@ -187,9 +187,9 @@
       "app": "laundry",
       "description": "Cari atau buat pelanggan",
       "acceptance": "Pelanggan baru dikirim sebagai customer.created di bundel order",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "CustomerEntity dan CustomerDao selesai dibangun di :core:data dengan penjaminan keunikan nomor telepon ter-normalisasi (PhoneNumberUtil). OrderTransactionManager mengelola penulisan atomik order laundry + outbox bundle berisi event 'customer.created' (jika baru) dan 'order.created' tanpa mensyaratkan shift_id. Dialog L02 Pelanggan (CustomerSelectionDialog) di :feature:laundry mendukung pencarian nama/HP serta formulir pendaftaran pelanggan baru dengan tema Athia Laundry House. Teruji 100% pada RoomOutboxTransactionTest dan LaundryOrderViewModelTest."
     },
     {
       "id": "F20",
@@ -197,9 +197,9 @@
       "app": "laundry",
       "description": "Order laundry per kg dan per pcs dengan express",
       "acceptance": "Hasil sama dengan test vector L1 sampai L3",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Layar L03 Order Baru selesai dibangun dengan pola split-screen 60/40 tablet landscape 11 inci. Mendukung pemilihan layanan kiloan (berat bertahap 0,5 kg & berat minimum 1,0 kg) dan satuan pcs (LDR-02, LDR-03), saklar express (LDR-04), catatan khusus noda/rapuh, estimasi selesai dinamis, dan 3 opsi bayar (LDR-05). Teruji 100% pada LaundryOrderViewModelTest dan lulus Test Vector L1 (kiloan + pcs = Rp53.000), L2 (berat minimum = Rp7.000), dan L3 (express = Rp25.000) tanpa selisih 1 rupiah pun. Terintegrasi ke LaundryNavHost dan alur pembayaran."
     },
     {
       "id": "F21",
@@ -207,9 +207,9 @@
       "app": "laundry",
       "description": "Tag QR dicetak dan dipindai untuk ubah status",
       "acceptance": "Status satu arah; staf laundry bisa memindai tanpa shift terbuka",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": ""
+      "notes": "LaundryTagFormatter di :core:printer selesai dibangun dan teruji 100% (LaundryTagFormatterTest): format tag roll 58 mm memuat nomor order besar (L1-0012), nama & HP pelanggan, rincian pakaian, dan QR code 128x128 dots tanpa harga (PRT-03). OrderTransactionManager dan LaundryOrderRepository mendukung transisi status satu arah (received -> processing -> ready) dan mencatat event outbox 'laundry.status_changed' tanpa shift_id (diuji pada RoomOutboxTransactionTest). Layar L07 Scan Tag (LaundryScanScreen) dan LaundryScanViewModel mendukung scan kamera CameraX + ZXing HybridBinarizer dan input nomor nota manual dengan tombol transisi status dan cetak tag fisik (teruji pada LaundryScanViewModelTest)."
     },
     {
       "id": "F22",
@@ -217,9 +217,9 @@
       "app": "laundry",
       "description": "Pengambilan sebagian per baris (laundry_pickups)",
       "acceptance": "Order Diambil hanya setelah semua baris punya pengambilan terakhir",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Entitas LaundryPickupEntity dan LaundryPickupDao selesai dibuat di :core:data. OrderTransactionManager mencatat pengambilan per baris layanan (LDR-11) dan event outbox 'laundry.picked_up'. Status order tetap 'ready' selama masih ada baris yang belum diambil, dan bertransisi ke 'picked_up' (Diambil) hanya saat semua baris telah ditandai pengambilan terakhir (is_final = true). Layar L05/L06 Daftar & Detail Cucian dan Dialog L08 Pengambilan di :feature:laundry teruji 100% pada RoomOutboxTransactionTest dan LaundryOrdersViewModelTest."
     },
     {
       "id": "F23",
@@ -227,9 +227,9 @@
       "app": "laundry",
       "description": "Cuci ulang dengan alasan dan PIN manager",
       "acceptance": "Status Siap kembali ke Diproses tanpa tagihan baru",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Alur komplain cuci ulang (LDR-12) selesai dibangun di :core:data dan :feature:laundry. Status Siap ('ready') kembali ke Diproses ('processing') tanpa membuat tagihan baru, memilih alasan dari daftar audit tetap, dan diotorisasi PIN Manager lokal (Dialog S14). Menghasilkan event outbox 'laundry.status_changed' dengan flag rework: true, reason, dan approved_by. Teruji 100% pada RoomOutboxTransactionTest dan LaundryOrdersViewModelTest."
     },
     {
       "id": "F24",
@@ -237,9 +237,9 @@
       "app": "laundry",
       "description": "Ambil cucian belum lunas butuh PIN manager",
       "acceptance": "Ditolak tanpa PIN; masuk laporan pengecualian",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Proteksi penyerahan cucian belum lunas (LDR-10) diimplementasikan secara ketat di Room: penyerahan pakaian dengan sisa tagihan > 0 ditolak tanpa otorisasi PIN Manager (Dialog S14). Jika disetujui Manager, event 'laundry.picked_up' mencatat approved_by dan masuk pengecualian. Proteksi lockout 3x salah terkunci 5 menit (COR-07) terverifikasi. Teruji 100% pada RoomOutboxTransactionTest dan LaundryOrdersViewModelTest."
     },
     {
       "id": "F25",

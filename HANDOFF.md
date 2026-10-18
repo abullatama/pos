@@ -1,40 +1,72 @@
-# HANDOFF: Sesi Optimasi UI/UX & Performa POS Cafe Selesai
+# HANDOFF: Sesi Implementasi Track Transaksi Laundry M2 Selesai (F19–F24)
 
-## 1. Tujuan Tugas Saat Ini
-Menyelesaikan investigasi dan perbaikan komprehensif atas kendala UI/UX dan performa navigasi pada aplikasi POS AA Coffeeshop (Redmi Pad 2 landscape 11"), memastikan seluruh alur kasir instan, bebas lag, dan berstandar emas industri sebelum melangkah ke Track Laundry Milestone M2.
+## 1. Tujuan Sesi yang Telah Selesai
+Menyelesaikan seluruh alur fungsional, operasional, dan antarmuka untuk aplikasi kasir **Athia Laundry House** pada Milestone M2 (F19 sampai F24): pencarian/pembuatan pelanggan, form order per kg & per pcs dengan express (Test Vector L1–L3), cetak tag fisik QR 58 mm, pemindaian status CameraX, pengambilan pakaian sebagian (`laundry_pickups`), cuci ulang komplain dengan PIN manager, dan proteksi penyerahan cucian belum lunas.
 
-## 2. Yang Sudah Selesai (Termasuk Hasil Investigasi & Perbaikan UI/UX Terakhir)
-- **Non-blocking Hardware Execution (ADR D-19):** Menghilangkan delay 3–10 detik saat menekan "Langsung Bayar di Kasir" atau menggeser "Kirim ke Dapur". Pembuatan pesanan lokal di Room (< 2ms) langsung mengembalikan hasil seketika dan memicu navigasi 0 detik; pencetakan tiket dapur didelegasikan ke background worker asynchronous (`ioDispatcher`).
-- **Verifikasi Koneksi Fisik Printer Nyata (checkConnection):** Menghilangkan status "Printer Siap" palsu. `DefaultPrinterService` kini memverifikasi socket RFCOMM nyata di background. Jika printer mati atau tidak aktif, status akurat menampilkan "Printer Putus". Badge printer di `TopBar` kini interaktif (dapat diketuk kasir untuk cek ulang seketika setelah menyalakan printer) dan menampilkan status "Memeriksa...".
-- **Format Waktu Meja Terbuka Human-Friendly:** Mengubah tampilan durasi meja di `CafeOpenOrdersScreen` dari menit mentah (230 mnt) menjadi format jam dan menit yang ramah kasir (misal: "3 jam 50 menit", "1 jam", "Baru saja" jika < 1 mnt) baik di kartu ringkasan maupun di panel detail.
-- **Standardisasi Navigasi SingleTop & Eliminasi Tombol Macet:** Memastikan seluruh perpindahan layar top-level (`KASIR`, `PESANAN`, `HABIS`, `SHIFT`, `LAINNYA`) dan aksi cepat (Kirim ke Dapur, Pesanan Baru) memakai kontrak `popUpTo(findStartDestination().id) { saveState = true }`, `launchSingleTop = true`, dan `restoreState = true`. Menghilangkan duplikasi tumpukan rute (`[KASIR, PESANAN, KASIR]`) yang sebelumnya memblokir klik Navigation Rail.
-- **Standar Aksesibilitas Touch Target 44dp:** Tombol "Pesanan Baru" dan Segmented Tab di `CafeOpenOrdersScreen` diperbesar menjadi 44 dp (dari sebelumnya 29 dp) dengan padding 16 dp dan elevasi taktil sehingga sentuhan jari tablet tidak pernah meleset; teks anti-terpotong dengan pemisahan baris judul dan tab.
-- **Snappy Transitions (100ms in / 80ms out):** Transisi navigasi antar menu utama pada `CafeNavHost` dan `LaundryNavHost` diganti dari crossfade default Compose (~700ms) ke Fast Fade (100ms / 80ms), mengeliminasi beban *alpha blending* berat pada GPU Snapdragon 680 / Adreno 610.
-- **Eliminasi Keyboard Jitter (adjustPan):** `windowSoftInputMode="adjustPan"` di `AndroidManifest.xml` kedua app mencegah keyboard virtual menciutkan viewport split-screen 65/35 atau mengangkat panel struk secara paksa.
-- **Optimasi Recomposition & Banner Memoization:** `allProducts` dipisahkan dari `displayedProducts`; pemetaan ikon dan statistik kategori di-memoize dengan `remember(allProducts, categories)` sehingga perpindahan kategori menu instan tanpa flicker atau frame-drop.
-- **Tab Riwayat Selesai (Shift Ini):** Layar Pesanan (`CafeOpenOrdersScreen`) kini memiliki Segmented Tab `[Meja Terbuka]` dan `[Riwayat Selesai]` lengkap dengan ringkasan omzet shift ini dan tombol Cetak Ulang Salinan (`*** SALINAN ***` PRT-05).
-- **Semua Test Suite & Build Hijau:** Seluruh unit test di `core:printer`, `feature:cafe` (18 test), `feature:payment`, `core:ui`, serta build `:app-cafe:assembleDebug` dan `:app-laundry:assembleDebug` berhasil tuntas 100%.
+---
 
-## 3. Yang Belum Selesai / Masalah Terbuka
-- Track Laundry Milestone M2 (F19–F24) siap dikerjakan: pencarian/pembuatan pelanggan baru (`customer.created` & Dialog L02), order laundry per kg dan per pcs (L01/L03, test vector L1–L3), cetak tag QR 58 mm dan pemindaian status CameraX (L07), pengambilan sebagian (`laundry_pickups`), dan cuci ulang PIN manager.
-- Cetak struk belum mendukung antrean cetak otomatis saat printer putus di tengah jalan (F27).
-- Penerimaan flag server pada outbox sync (F28).
+## 2. Yang Sudah Selesai (Fitur F19–F24 Lengkap)
+
+- **F19: Cari atau Buat Pelanggan (LDR-01, Dialog L02):**
+  - Entitas `CustomerEntity` dan `CustomerDao` di `:core:data` dengan penjaminan keunikan nomor telepon ter-normalisasi (`PhoneNumberUtil`).
+  - Dialog L02 (`CustomerSelectionDialog`) dengan tab *Cari Pelanggan* dan form *Pelanggan Baru*.
+  - Event `customer.created` otomatis disertakan dalam bundel outbox pesanan baru secara atomik tanpa mensyaratkan `shift_id`.
+- **F20: Order Laundry per kg & pcs dengan Express (LDR-02–05, L03, Test Vector L1–L3):**
+  - Auto-seeding katalog awal `INITIAL_LAUNDRY_SERVICES` (Kiloan Reguler 7k/10k, Cuci Saja 5k, Setrika Saja 5k, Selimut 25k/35k, Bed Cover 40k/55k, Jas 35k, Sepatu 30k) di `DefaultLaundryOrderRepository`.
+  - Layar L03 (`LaundryOrderScreen`) pola split-screen 60/40 tablet landscape 11": stepper berat taktil (-/+ 0,5 kg), stepper pcs, saklar express, catatan khusus noda/rapuh, estimasi selesai dinamis, dan 3 opsi pembayaran (`Bayar saat Ambil`, `Lunas di Muka`, `DP`).
+  - Teruji 100% dan lulus presisi tanpa selisih 1 rupiah pun terhadap Test Vector: L1 (kiloan + pcs = Rp53.000), L2 (berat minimum = Rp7.000), dan L3 (express = Rp25.000).
+- **F21: Cetak Tag QR 58 mm & Scan Status Satu Arah (LDR-06, LDR-08, PRT-03, L07):**
+  - `LaundryTagFormatter` di `:core:printer`: format tag kertas roll thermal 58 mm memuat nomor order besar (`L1-0012`), nama & HP pelanggan, rincian pakaian/berat/pcs, catatan noda, dan QR code bitmap 128x128 terpusat **tanpa harga** (PRT-03).
+  - Transisi status satu arah (`received`/`open` $\to$ `processing` $\to$ `ready`) dan event outbox `laundry.status_changed` tanpa `shift_id` di `OrderTransactionManager`.
+  - Layar L07 (`LaundryScanScreen`) & `LaundryScanViewModel`: kamera viewfinder CameraX + ZXing HybridBinarizer dengan bingkai reticle 24 dp Velvet Rose, bilah pencarian nomor nota manual, kartu rincian pakaian, tombol transisi status satu ketukan, dan tombol cetak tag fisik.
+  - Auto-printing tag pakaian secara *non-blocking* saat pesanan baru disimpan di `LaundryOrderScreen`.
+- **F22: Pengambilan Sebagian Per Baris (LDR-11, `laundry_pickups`):**
+  - Entitas `LaundryPickupEntity` dan `LaundryPickupDao` di `:core:data`.
+  - `recordLaundryPickups` di `OrderTransactionManager`: mencatat pengambilan pakaian per baris layanan ke Room dan event outbox `laundry.picked_up`.
+  - Status pesanan tetap `ready` jika masih ada baris yang belum diambil, dan bertransisi ke `picked_up` (`Diambil`) hanya jika seluruh baris telah berstatus pengambilan terakhir (`is_final = true`).
+- **F23: Cuci Ulang Komplain Pelanggan (LDR-12, Dialog L09):**
+  - Status `ready` (Siap) dapat dikembalikan ke `processing` (Diproses) tanpa tagihan biaya baru.
+  - Wajib memilih alasan dari daftar audit tetap (`Noda belum hilang`, `Masih apek / bau`, `Kusut / setrika ulang`, dll) dan diotorisasi PIN Manager lokal (Dialog S14).
+  - Menghasilkan event outbox `laundry.status_changed` dengan flag `rework: true`, `reason`, dan `approved_by: "u-manager-1"`.
+- **F24: Proteksi Penyerahan Cucian Belum Lunas (LDR-10, Dialog S14):**
+  - Penyerahan pakaian dengan sisa tagihan > 0 wajib diotorisasi PIN Manager. Jika kasir mencoba menyerahkan tanpa PIN, transaksi ditolak seketika (`IllegalStateException`).
+  - Jika disetujui Manager, event `laundry.picked_up` menyertakan `approved_by: "u-manager-1"` dan masuk laporan pengecualian.
+  - Proteksi lockout salah PIN 3x terkunci 5 menit (COR-07) terintegrasi.
+- **Layar L05 (Daftar Cucian) & L06 (Detail Cucian):**
+  - `LaundryOrdersScreen` pola split 40/60:
+    - Panel kiri (40%): Segmented tab filter (`Semua`, `Diterima`, `Diproses`, `Siap`, `Diambil`), kartu cucian memuat nomor order, waktu, nama pelanggan, chip status cucian, dan chip status pembayaran (`Lunas`, `DP`, `Belum Lunas`).
+    - Panel kanan (60%): Detail pesanan, avatar inisial, ringkasan keuangan, timeline progres status, rincian pakaian per baris, tombol penyerahan L08, tombol cuci ulang L09, tombol cetak tag, dan tombol pelunasan pembayaran yang terhubung langsung ke `PaymentScreen` (S05–S08).
+- **Semua Test Suite & Build Hijau 100%:**
+  - Seluruh unit test di semua modul (`./gradlew test`) lulus 100% (termasuk `RoomOutboxTransactionTest`, `LaundryOrderViewModelTest`, `LaundryScanViewModelTest`, `LaundryOrdersViewModelTest`, `LaundryTagFormatterTest`).
+  - Build kedua APK debug sukses (`:app-cafe:assembleDebug` dan `:app-laundry:assembleDebug`).
+  - Aturan isolasi dependensi modul (`verifyModuleDependencies`) lulus tanpa pelanggaran.
+
+---
+
+## 3. Yang Belum Selesai (Langkah untuk Sesi Baru)
+
+Sisa fitur Milestone M2 yang siap dikerjakan di sesi berikutnya:
+1. **F27 (Struk, Nota, dan Antrean Cetak Otomatis saat Printer Putus):**
+   - Implementasi `PrintQueueManager` di `:core:printer` yang menampung antrean cetakan saat Bluetooth SPP putus dan otomatis mencetak ulang saat tersambung kembali.
+   - Penyematan watermark/label `*** SALINAN ***` pada cetak ulang struk/nota/tag (PRT-05).
+2. **F28 (Sinkron Menerima Flag Server tanpa Menganggap Gagal):**
+   - Menangani respons server `ACCEPTED` dengan `flags[]` (karantina) tanpa menandai outbox gagal.
+3. **F29 (Antrean Bermasalah REJECTED dengan Alasan & Retry):**
+   - Pengelolaan event yang ditolak server tanpa menghapus data secara diam-diam.
+
+---
 
 ## 4. Keputusan Teknis Penting
-- **ADR D-18 (Quiet Luxury & Left Nav Rail):** Transisi tablet landscape 11" ke Left Nav Rail 68 dp berlatar gelap `#141414`, item aktif putih murni, kanvas krem `#F4F2E6`, dan aksen Deep Forest Green (`#0A3D24`).
-- **ADR D-19 (Non-blocking Hardware & SingleTop Navigation):** Operasi printer eksternal wajib asynchronous; navigasi top-level wajib SingleTop; transisi snappy 100ms; touch target minimal 44dp; windowSoftInputMode adjustPan.
-- **Pemisahan Dapur & Kasir:** Tiket dapur termal 58 mm tidak memuat harga sama sekali (PRT-03) dan hanya mencetak item baru (CAF-07).
-- **Auto-Connect Bluetooth SPP:** Mengaitkan printer terpasang (`RPP02N`) secara otomatis begitu izin runtime `BLUETOOTH_CONNECT` diberikan.
 
-## 5. Langkah Berikutnya (Berurutan untuk Sesi Baru)
-1. **Memulai Track Laundry M2 (F19):** Tambahkan `CustomerEntity` dan `CustomerDao` di `:core:data`, buat Dialog L02 Cari/Buat Pelanggan dengan event `customer.created` di `:feature:laundry`.
-2. **Implementasi F20 (Order Laundry kg & pcs):** Bangun form order L01/L03 dengan perhitungan Test Vector L1–L3 di `LaundryOrderViewModel`.
-3. **Implementasi F21 (Tag QR & Scan Status):** Bangun `LaundryTagFormatter` 58 mm di `:core:printer` dan hubungkan `LaundryScanScreen` (CameraX L07).
-4. **Implementasi F22–F24:** Pengambilan sebagian (`laundry_pickups`), cuci ulang PIN manager, dan proteksi ambil belum lunas.
+- **Aturan Bebas Shift Staf Laundry:** Seluruh event `customer.created`, `laundry.status_changed`, dan `laundry.picked_up` tidak mensyaratkan `shift_id` (`shift_id = null`), sehingga staf laundry dapat memindai tag dan memperbarui status kapan saja tanpa membuka/menutup shift kasir.
+- **PRT-03 Strict Compliance:** Format tag fisik laundry dilarang memuat harga atau nominal rupiah sama sekali.
+- **Siklus Status Satu Arah:** Diterima $\to$ Diproses $\to$ Siap $\to$ Diambil. Mundur status hanya boleh melalui Cuci Ulang (`rework: true`) dengan PIN Manager.
+- **Status Pembayaran Terpisah dari Status Cucian:** Order laundry bisa berstatus `ready` (Siap) meskipun status pembayarannya masih `Belum Lunas` atau `DP`; penyerahannya diatur oleh proteksi F24.
 
-## 6. File yang Perlu Dibaca Pertama
-- `feature_list.json` (baris 184–240 untuk spesifikasi F19–F24)
-- `docs/spec/04-kebutuhan-fungsional-b-transaksi-cafe-da.md` (bagian transaksi laundry)
-- `docs/ui/DESIGN-laundry.md` (sistem desain Athia Laundry House)
-- `contracts/test-vectors.json` (test vectors L1–L4)
-- `docs/decisions.md` (khususnya D-18 dan D-19)
+---
+
+## 5. File yang Perlu Dibaca Pertama Kali di Sesi Baru
+- `HANDOFF.md` (dokumen ini)
+- `feature_list.json` (baris 260–294 untuk F27, F28, F29)
+- `docs/spec/05-kebutuhan-fungsional-c-pembayaran-struk-.md` (bagian PRT-03 dan PRT-05)
+- `docs/spec/12-sinkronisasi-dan-validasi-server.md` (bagian penanganan flag dan reject)

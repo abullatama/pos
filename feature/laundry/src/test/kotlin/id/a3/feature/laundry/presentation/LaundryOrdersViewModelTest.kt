@@ -1,0 +1,285 @@
+package id.a3.feature.laundry.presentation
+
+import id.a3.core.data.local.entity.CustomerEntity
+import id.a3.core.data.local.entity.LaundryPickupEntity
+import id.a3.core.data.local.entity.LaundryServiceEntity
+import id.a3.core.data.local.entity.OrderEntity
+import id.a3.core.data.local.entity.OrderLineEntity
+import id.a3.core.data.local.entity.OrderWithLines
+import id.a3.core.data.local.entity.OutboxEntity
+import id.a3.core.data.repository.LaundryPickupItem
+import id.a3.feature.laundry.repository.LaundryOrderRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import java.util.UUID
+
+class FakeLaundryOrdersRepository : LaundryOrderRepository {
+    val orders = mutableMapOf<String, OrderWithLines>()
+    val customers = mutableMapOf<String, CustomerEntity>()
+    val pickups = mutableListOf<LaundryPickupEntity>()
+    var lastRecordedPickups: List<LaundryPickupItem>? = null
+    var lastRecordedApprovedBy: String? = null
+    var lastReworkedOrderId: String? = null
+    var lastReworkedReason: String? = null
+    var lastReworkedApprovedBy: String? = null
+
+    override fun observeServices(): Flow<List<LaundryServiceEntity>> = flowOf(emptyList())
+    override suspend fun seedInitialServicesIfEmpty() {}
+    override fun observeOrders(): Flow<List<OrderEntity>> = flowOf(orders.values.map { it.order })
+    override fun observeOrdersByStatus(status: String): Flow<List<OrderEntity>> =
+        flowOf(orders.values.map { it.order }.filter { it.status == status })
+
+    override fun observeLaundryOrders(statusFilter: String?): Flow<List<OrderWithLines>> {
+        val list = if (statusFilter == null) orders.values.toList() else orders.values.filter { it.order.status == statusFilter }
+        return flowOf(list)
+    }
+
+    override fun observePickups(orderId: String): Flow<List<LaundryPickupEntity>> {
+        return flowOf(pickups.filter { it.orderId == orderId })
+    }
+
+    override suspend fun recordPickups(
+        orderId: String,
+        items: List<LaundryPickupItem>,
+        userId: String?,
+        approvedBy: String?,
+        deviceId: String
+    ): Result<OutboxEntity> {
+        lastRecordedPickups = items
+        lastRecordedApprovedBy = approvedBy
+        items.forEach { item ->
+            pickups.add(
+                LaundryPickupEntity(
+                    id = UUID.randomUUID().toString(),
+                    orderId = orderId,
+                    orderLineId = item.orderLineId,
+                    quantity = item.quantity,
+                    isFinal = item.isFinal,
+                    approvedBy = approvedBy
+                )
+            )
+        }
+        val existing = orders[orderId]
+        if (existing != null && items.all { it.isFinal }) {
+            orders[orderId] = existing.copy(order = existing.order.copy(status = "picked_up"))
+        }
+        return Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = deviceId, shiftId = null, eventsJson = "[]"))
+    }
+
+    override suspend fun reworkOrder(
+        orderId: String,
+        reason: String,
+        approvedBy: String,
+        deviceId: String
+    ): Result<OutboxEntity> {
+        lastReworkedOrderId = orderId
+        lastReworkedReason = reason
+        lastReworkedApprovedBy = approvedBy
+        val existing = orders[orderId]
+        if (existing != null) {
+            orders[orderId] = existing.copy(order = existing.order.copy(status = "processing"))
+        }
+        return Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = deviceId, shiftId = null, eventsJson = "[]"))
+    }
+
+    override suspend fun getOrderWithLines(orderId: String): OrderWithLines? = orders[orderId]
+    override suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity? = orders.values.find { it.order.displayNumber == displayNumber }?.order
+    override suspend fun getOrderWithLinesByDisplayNumber(displayNumber: String): OrderWithLines? = orders.values.find { it.order.displayNumber == displayNumber }
+    override suspend fun updateOrderStatus(orderId: String, newStatus: String): Result<Unit> = Result.success(Unit)
+    override suspend fun advanceOrderStatus(
+        orderId: String,
+        targetStatus: String,
+        rework: Boolean,
+        reworkReason: String?,
+        reworkApprovedBy: String?
+    ): Result<OutboxEntity> = Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = "dev-1", shiftId = null, eventsJson = "[]"))
+
+    override suspend fun saveOrderWithOutbox(order: OrderEntity, lines: List<OrderLineEntity>, eventsJson: String): Result<Unit> = Result.success(Unit)
+    override fun searchCustomers(query: String): Flow<List<CustomerEntity>> = flowOf(emptyList())
+    override fun observeRecentCustomers(limit: Int): Flow<List<CustomerEntity>> = flowOf(emptyList())
+    override suspend fun getCustomerById(id: String): CustomerEntity? = customers[id]
+    override suspend fun saveCustomerLocally(customer: CustomerEntity): Result<Unit> = Result.success(Unit)
+    override suspend fun createLaundryOrder(
+        order: OrderEntity,
+        lines: List<OrderLineEntity>,
+        customer: CustomerEntity?,
+        isNewCustomer: Boolean,
+        deviceId: String,
+        shiftId: String?
+    ): Result<OutboxEntity> = Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = deviceId, shiftId = shiftId, eventsJson = "[]"))
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class LaundryOrdersViewModelTest {
+
+    private val testDispatcher = UnconfinedTestDispatcher()
+    private lateinit var fakeRepository: FakeLaundryOrdersRepository
+    private lateinit var fakePrinter: FakePrinterService
+    private lateinit var viewModel: LaundryOrdersViewModel
+
+    private val customer1 = CustomerEntity(id = "cust-1", name = "Budi Santoso", phone = "081234567890")
+    private val line1 = OrderLineEntity(id = "line-1", orderId = "ord-1", itemRefId = "svc-kiloan", nameSnapshot = "Kiloan Reguler", quantity = 1, unitPriceSnapshot = 53000L)
+
+    private val paidOrder = OrderEntity(
+        id = "ord-1",
+        displayNumber = "L1-0001",
+        businessUnitId = "bu-laundry-01",
+        shiftId = null,
+        deviceId = "dev-1",
+        cashierId = "cashier-1",
+        orderType = "laundry",
+        customerId = "cust-1",
+        status = "ready",
+        subtotal = 53000L,
+        total = 53000L,
+        paidAmount = 53000L // LUNAS
+    )
+
+    private val unpaidOrder = OrderEntity(
+        id = "ord-2",
+        displayNumber = "L1-0002",
+        businessUnitId = "bu-laundry-01",
+        shiftId = null,
+        deviceId = "dev-1",
+        cashierId = "cashier-1",
+        orderType = "laundry",
+        customerId = "cust-1",
+        status = "ready",
+        subtotal = 40000L,
+        total = 40000L,
+        paidAmount = 15000L // BELUM LUNAS (DP 15k, sisa 25k)
+    )
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+        fakeRepository = FakeLaundryOrdersRepository()
+        fakePrinter = FakePrinterService()
+
+        fakeRepository.customers["cust-1"] = customer1
+        fakeRepository.orders["ord-1"] = OrderWithLines(paidOrder, listOf(line1))
+        fakeRepository.orders["ord-2"] = OrderWithLines(unpaidOrder, listOf(line1.copy(id = "line-2", orderId = "ord-2")))
+
+        viewModel = LaundryOrdersViewModel(fakeRepository, fakePrinter, testDispatcher)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    @Test
+    fun `initial state observes orders and selects first order`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        val state = viewModel.uiState.value
+        assertEquals(2, state.orders.size)
+        assertNotNull(state.selectedOrder)
+        assertEquals("ord-1", state.selectedOrder?.order?.id)
+        assertEquals("Budi Santoso", state.customer?.name)
+        assertTrue(state.isFullyPaid)
+        assertEquals(0L, state.remainingBalance)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `setFilterStatus filters orders`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        viewModel.setFilterStatus(LaundryFilterStatus.READY)
+        assertEquals(LaundryFilterStatus.READY, viewModel.uiState.value.filterStatus)
+        assertEquals(2, viewModel.uiState.value.orders.size)
+
+        viewModel.setFilterStatus(LaundryFilterStatus.PICKED_UP)
+        assertEquals(0, viewModel.uiState.value.orders.size)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `submitPickup for fully paid order executes directly without manager pin dialog`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        val pickupItem = LaundryPickupItem(orderLineId = "line-1", quantity = 1, isFinal = true)
+        viewModel.submitPickup(listOf(pickupItem))
+
+        // Langsung berhasil tanpa buka dialog PIN
+        assertFalse(viewModel.uiState.value.isManagerPinDialogOpen)
+        assertNull(fakeRepository.lastRecordedApprovedBy)
+        assertEquals(1, fakeRepository.lastRecordedPickups?.size)
+        assertNotNull(viewModel.uiState.value.successMessage)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `submitPickup for unpaid order triggers manager PIN dialog (F24)`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        // Pilih order belum lunas (ord-2)
+        viewModel.selectOrder(fakeRepository.orders["ord-2"]!!)
+        assertFalse(viewModel.uiState.value.isFullyPaid)
+        assertEquals(25000L, viewModel.uiState.value.remainingBalance)
+
+        val pickupItem = LaundryPickupItem(orderLineId = "line-2", quantity = 1, isFinal = true)
+        viewModel.submitPickup(listOf(pickupItem))
+
+        // Dialog PIN Manager terbuka dan menahan aksi UnpaidPickup
+        assertTrue(viewModel.uiState.value.isManagerPinDialogOpen)
+        assertTrue(viewModel.uiState.value.pendingAction is PendingManagerAction.UnpaidPickup)
+
+        // 1. Masukkan PIN salah
+        viewModel.verifyManagerPinAndExecute("0000")
+        assertNotNull(viewModel.uiState.value.pinErrorMessage)
+        assertTrue(viewModel.uiState.value.isManagerPinDialogOpen)
+
+        // 2. Masukkan PIN benar ("4444" bawaan seed)
+        viewModel.verifyManagerPinAndExecute("4444")
+        assertFalse(viewModel.uiState.value.isManagerPinDialogOpen)
+        assertEquals("u-manager-1", fakeRepository.lastRecordedApprovedBy)
+        assertNotNull(viewModel.uiState.value.successMessage)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `requestReworkWithPin opens pin dialog and correct pin executes rework (F23)`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        viewModel.openReworkDialog()
+        assertTrue(viewModel.uiState.value.isReworkDialogOpen)
+
+        viewModel.setReworkReason("Pakaian masih bau apek")
+        viewModel.requestReworkWithPin("Pakaian masih bau apek")
+
+        // Dialog Rework tertutup, Dialog PIN terbuka
+        assertFalse(viewModel.uiState.value.isReworkDialogOpen)
+        assertTrue(viewModel.uiState.value.isManagerPinDialogOpen)
+
+        // Otorisasi dengan PIN manager
+        viewModel.verifyManagerPinAndExecute("4444")
+        assertFalse(viewModel.uiState.value.isManagerPinDialogOpen)
+        assertEquals("ord-1", fakeRepository.lastReworkedOrderId)
+        assertEquals("Pakaian masih bau apek", fakeRepository.lastReworkedReason)
+        assertEquals("u-manager-1", fakeRepository.lastReworkedApprovedBy)
+        assertNotNull(viewModel.uiState.value.successMessage)
+
+        collectJob.cancel()
+    }
+}

@@ -29,6 +29,13 @@ interface OrderDao {
     @Query("SELECT * FROM orders WHERE id = :orderId")
     suspend fun getOrderById(orderId: String): OrderEntity?
 
+    @Query("SELECT * FROM orders WHERE displayNumber = :displayNumber LIMIT 1")
+    suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity?
+
+    @Transaction
+    @Query("SELECT * FROM orders WHERE displayNumber = :displayNumber LIMIT 1")
+    suspend fun getOrderWithLinesByDisplayNumber(displayNumber: String): OrderWithLines?
+
     @Query("SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC")
     fun observeOrdersByStatus(status: String): Flow<List<OrderEntity>>
 
@@ -39,6 +46,14 @@ interface OrderDao {
     @Transaction
     @Query("SELECT * FROM orders WHERE status = 'paid' ORDER BY createdAt DESC")
     fun observeCompletedOrdersWithLines(): Flow<List<OrderWithLines>>
+
+    @Transaction
+    @Query("SELECT * FROM orders WHERE orderType = 'laundry' ORDER BY createdAt DESC")
+    fun observeLaundryOrdersWithLines(): Flow<List<OrderWithLines>>
+
+    @Transaction
+    @Query("SELECT * FROM orders WHERE orderType = 'laundry' AND status = :status ORDER BY createdAt DESC")
+    fun observeLaundryOrdersWithLinesByStatus(status: String): Flow<List<OrderWithLines>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun updateOrder(order: OrderEntity)
