@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import id.a3.core.printer.PrinterService
 import id.a3.core.ui.theme.A3Theme
 import id.a3.feature.laundry.scanner.LaundryScanScreen
 
@@ -34,7 +35,8 @@ object LaundryDestinations {
 fun LaundryNavHost(
     navController: NavHostController,
     paddingValues: PaddingValues,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    printerService: PrinterService? = null
 ) {
     NavHost(
         navController = navController,

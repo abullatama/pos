@@ -1,9 +1,13 @@
 package id.tenang.kasir.laundry
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.outlined.AddCircle
@@ -26,6 +30,8 @@ import id.a3.core.auth.DeviceManager
 import id.a3.core.auth.DeviceManagerFactory
 import id.a3.core.auth.DeviceRegisterResult
 import id.a3.core.domain.device.DeviceStatus
+import id.a3.core.printer.PrinterStatus
+import id.a3.core.printer.connection.DefaultPrinterService
 import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
@@ -33,11 +39,13 @@ import id.a3.core.ui.component.SyncStatus
 import id.a3.core.ui.theme.LaundryTheme
 import id.tenang.kasir.laundry.navigation.LaundryDestinations
 import id.tenang.kasir.laundry.navigation.LaundryNavHost
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var deviceManager: DeviceManager
+    private lateinit var printerService: DefaultPrinterService
 
     private val laundryNavItems = listOf(
         NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home),
@@ -50,6 +58,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        printerService = DefaultPrinterService(this)
 
         deviceManager = DeviceManagerFactory.getOrCreate(
             context = this,
@@ -64,7 +74,32 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LaundryTheme {
+                val coroutineScope = rememberCoroutineScope()
                 val deviceStatus by deviceManager.deviceStatus.collectAsState()
+                val printerStatus by printerService.status.collectAsState()
+
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) {
+                    coroutineScope.launch(Dispatchers.IO) {
+                        printerService.checkConnection()
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        permissionLauncher.launch(
+                            arrayOf(
+                                Manifest.permission.BLUETOOTH_CONNECT,
+                                Manifest.permission.BLUETOOTH_SCAN
+                            )
+                        )
+                    } else {
+                        coroutineScope.launch(Dispatchers.IO) {
+                            printerService.checkConnection()
+                        }
+                    }
+                }
 
                 if (deviceStatus != DeviceStatus.ACTIVE) {
                     var deviceNameInput by remember { mutableStateOf(LaundryAppConfig.appName) }
@@ -72,7 +107,6 @@ class MainActivity : ComponentActivity() {
                     var isActionLoading by remember { mutableStateOf(false) }
                     var actionErrorMessage by remember { mutableStateOf<String?>(null) }
                     var deviceId by remember { mutableStateOf("") }
-                    val coroutineScope = rememberCoroutineScope()
 
                     LaunchedEffect(Unit) {
                         deviceId = deviceManager.getDeviceId()
@@ -142,7 +176,13 @@ class MainActivity : ComponentActivity() {
                         shiftInfo = "Shift Pagi",
                         syncStatus = SyncStatus.SYNCED,
                         pendingSyncCount = 0,
-                        isPrinterConnected = true,
+                        isPrinterConnected = printerStatus is PrinterStatus.Connected,
+                        isPrinterConnecting = printerStatus is PrinterStatus.Connecting,
+                        onPrinterClick = {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                printerService.checkConnection()
+                            }
+                        },
                         onAdminClick = {
                             navController.navigate(LaundryDestinations.LAINNYA) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -168,7 +208,8 @@ class MainActivity : ComponentActivity() {
                     ) { paddingValues ->
                         LaundryNavHost(
                             navController = navController,
-                            paddingValues = paddingValues
+                            paddingValues = paddingValues,
+                            printerService = printerService
                         )
                     }
                 }

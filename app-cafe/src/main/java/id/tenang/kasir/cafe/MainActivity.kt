@@ -39,6 +39,7 @@ import id.a3.core.ui.component.SyncStatus
 import id.a3.core.ui.theme.CafeTheme
 import id.tenang.kasir.cafe.navigation.CafeDestinations
 import id.tenang.kasir.cafe.navigation.CafeNavHost
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -73,13 +74,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             CafeTheme {
+                val coroutineScope = rememberCoroutineScope()
                 val deviceStatus by deviceManager.deviceStatus.collectAsState()
                 val printerStatus by printerService.status.collectAsState()
 
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) {
-                    printerService.autoConnectPairedPrinter()
+                    coroutineScope.launch(Dispatchers.IO) {
+                        printerService.checkConnection()
+                    }
                 }
 
                 LaunchedEffect(Unit) {
@@ -91,7 +95,9 @@ class MainActivity : ComponentActivity() {
                             )
                         )
                     } else {
-                        printerService.autoConnectPairedPrinter()
+                        coroutineScope.launch(Dispatchers.IO) {
+                            printerService.checkConnection()
+                        }
                     }
                 }
 
@@ -101,7 +107,6 @@ class MainActivity : ComponentActivity() {
                     var isActionLoading by remember { mutableStateOf(false) }
                     var actionErrorMessage by remember { mutableStateOf<String?>(null) }
                     var deviceId by remember { mutableStateOf("") }
-                    val coroutineScope = rememberCoroutineScope()
 
                     LaunchedEffect(Unit) {
                         deviceId = deviceManager.getDeviceId()
@@ -172,6 +177,12 @@ class MainActivity : ComponentActivity() {
                         syncStatus = SyncStatus.SYNCED,
                         pendingSyncCount = 0,
                         isPrinterConnected = printerStatus is PrinterStatus.Connected,
+                        isPrinterConnecting = printerStatus is PrinterStatus.Connecting,
+                        onPrinterClick = {
+                            coroutineScope.launch(Dispatchers.IO) {
+                                printerService.checkConnection()
+                            }
+                        },
                         onAdminClick = {
                             navController.navigate(CafeDestinations.LAINNYA) {
                                 popUpTo(navController.graph.findStartDestination().id) {

@@ -16,6 +16,7 @@ sealed interface PrinterStatus {
 interface PrinterService {
     val status: StateFlow<PrinterStatus>
     fun isConnected(): Boolean
+    suspend fun checkConnection(): Boolean
     suspend fun print(bytes: ByteArray): Result<Unit>
     suspend fun openCashDrawer(): Result<Unit>
 }

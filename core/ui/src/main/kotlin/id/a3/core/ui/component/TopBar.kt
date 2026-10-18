@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Print
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,6 +61,8 @@ fun TopBar(
     syncStatus: SyncStatus = SyncStatus.SYNCED,
     pendingSyncCount: Int = 0,
     isPrinterConnected: Boolean = false,
+    isPrinterConnecting: Boolean = false,
+    onPrinterClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -168,8 +171,12 @@ fun TopBar(
                     pendingCount = pendingSyncCount
                 )
 
-                // 3. Kapsul Status Printer Termal
-                PrinterStatusBadge(isConnected = isPrinterConnected)
+                // 3. Kapsul Status Printer Termal (Interaktif: dapat diketuk untuk cek ulang koneksi)
+                PrinterStatusBadge(
+                    isConnected = isPrinterConnected,
+                    isConnecting = isPrinterConnecting,
+                    onClick = onPrinterClick
+                )
 
                 // 4. Kapsul Tombol Admin
                 if (onAdminClick != null) {
@@ -253,33 +260,49 @@ fun SyncStatusBadge(
 @Composable
 fun PrinterStatusBadge(
     isConnected: Boolean,
+    isConnecting: Boolean = false,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = A3Theme.colors
     val statusColors = colors.status
-    val (iconColor, label) = if (isConnected) {
-        Pair(statusColors.success.text, "Printer Siap")
-    } else {
-        Pair(statusColors.warning.text, "Printer Putus")
+    val (iconColor, label) = when {
+        isConnecting -> Pair(statusColors.info.text, "Memeriksa...")
+        isConnected -> Pair(statusColors.success.text, "Printer Siap")
+        else -> Pair(statusColors.warning.text, "Printer Putus")
     }
 
     Surface(
         shape = RoundedCornerShape(9999.dp),
         color = colors.surface,
         shadowElevation = 1.dp,
-        modifier = modifier.border(0.5.dp, colors.border, RoundedCornerShape(9999.dp))
+        modifier = modifier
+            .border(0.5.dp, colors.border, RoundedCornerShape(9999.dp))
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else Modifier
+            )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Print,
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(15.dp)
-            )
+            if (isConnecting) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(13.dp),
+                    strokeWidth = 2.dp,
+                    color = iconColor
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Outlined.Print,
+                    contentDescription = null,
+                    tint = iconColor,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
             Text(
                 text = label,
                 color = colors.ink,

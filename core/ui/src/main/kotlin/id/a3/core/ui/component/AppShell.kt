@@ -45,6 +45,8 @@ fun AppShell(
     syncStatus: SyncStatus = SyncStatus.SYNCED,
     pendingSyncCount: Int = 0,
     isPrinterConnected: Boolean = false,
+    isPrinterConnecting: Boolean = false,
+    onPrinterClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
     navItems: List<NavItem> = emptyList(),
     selectedNavIndex: Int = 0,
@@ -76,6 +78,8 @@ fun AppShell(
                 syncStatus = syncStatus,
                 pendingSyncCount = pendingSyncCount,
                 isPrinterConnected = isPrinterConnected,
+                isPrinterConnecting = isPrinterConnecting,
+                onPrinterClick = onPrinterClick,
                 onAdminClick = onAdminClick,
                 modifier = Modifier
                     .padding(top = statusBarTop)

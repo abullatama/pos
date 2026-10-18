@@ -52,6 +52,7 @@ class FakePrinterService : PrinterService {
     private val _status = MutableStateFlow<PrinterStatus>(PrinterStatus.Connected("iWare C58BT", "00:11:22:33:44:55"))
     override val status: StateFlow<PrinterStatus> = _status.asStateFlow()
     override fun isConnected(): Boolean = true
+    override suspend fun checkConnection(): Boolean = true
     override suspend fun print(bytes: ByteArray): Result<Unit> {
         printedBytes.add(bytes)
         return Result.success(Unit)

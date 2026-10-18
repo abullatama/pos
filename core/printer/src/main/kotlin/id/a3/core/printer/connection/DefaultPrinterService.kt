@@ -53,21 +53,16 @@ class DefaultPrinterService(
 
     private var activeTarget: PrinterConnectionTarget? = null
 
-    fun setTarget(target: PrinterConnectionTarget) {
+    fun setTarget(target: PrinterConnectionTarget?) {
         activeTarget = target
-        when (target) {
-            is PrinterConnectionTarget.Bluetooth -> {
-                _status.value = PrinterStatus.Connected(target.name, target.address)
-            }
-            is PrinterConnectionTarget.Usb -> {
-                _status.value = PrinterStatus.Connected(target.name, target.address)
-            }
+        if (target == null) {
+            _status.value = PrinterStatus.Disconnected
         }
     }
 
     /**
-     * Otomatis mendeteksi dan mengaitkan printer termal yang sudah dipasangkan (paired/bonded)
-     * via Bluetooth atau printer yang terpasang via kabel USB OTG.
+     * Otomatis mendeteksi kandidat printer termal yang sudah dipasangkan (paired/bonded)
+     * via Bluetooth atau printer yang terpasang via kabel USB OTG tanpa mengubah status menjadi terhubung palsu.
      */
     @SuppressLint("MissingPermission")
     fun autoConnectPairedPrinter(): Boolean {
@@ -90,16 +85,13 @@ class DefaultPrinterService(
             val bonded = bluetoothAdapter?.bondedDevices
             android.util.Log.d("DefaultPrinterService", "Scanning bonded devices: ${bonded?.size ?: 0} devices found")
             if (!bonded.isNullOrEmpty()) {
-                bonded.forEach { dev ->
-                    android.util.Log.d("DefaultPrinterService", "Bonded device: ${dev.name} [${dev.address}]")
-                }
                 val printerKeywords = listOf("c58", "rpp", "pos", "printer", "mtp", "bt", "58", "thermal", "iware")
                 val matched = bonded.find { dev ->
                     val name = dev.name?.lowercase() ?: ""
                     printerKeywords.any { kw -> name.contains(kw) }
                 } ?: bonded.first()
 
-                android.util.Log.d("DefaultPrinterService", "Auto-selected printer: ${matched.name} [${matched.address}]")
+                android.util.Log.d("DefaultPrinterService", "Auto-selected printer candidate: ${matched.name} [${matched.address}]")
                 setTarget(PrinterConnectionTarget.Bluetooth(matched))
                 return true
             }
@@ -108,6 +100,62 @@ class DefaultPrinterService(
         }
 
         return false
+    }
+
+    /**
+     * Memverifikasi konektivitas fisik nyata ke printer termal (Bluetooth handshake atau USB ready).
+     * Jika printer mati atau tidak dapat dihubungi, status disetel ke Disconnected (Printer Putus).
+     */
+    @SuppressLint("MissingPermission")
+    override suspend fun checkConnection(): Boolean = withContext(Dispatchers.IO) {
+        if (activeTarget == null) {
+            autoConnectPairedPrinter()
+        }
+        val target = activeTarget
+        if (target == null) {
+            _status.value = PrinterStatus.Disconnected
+            return@withContext false
+        }
+
+        when (target) {
+            is PrinterConnectionTarget.Usb -> {
+                val hasPermission = usbManager.hasPermission(target.device)
+                val isAttached = usbManager.deviceList.containsValue(target.device)
+                if (isAttached && hasPermission) {
+                    _status.value = PrinterStatus.Connected(target.name, target.address)
+                    true
+                } else {
+                    _status.value = PrinterStatus.Disconnected
+                    false
+                }
+            }
+            is PrinterConnectionTarget.Bluetooth -> {
+                if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled) {
+                    _status.value = PrinterStatus.Disconnected
+                    return@withContext false
+                }
+                var socket: BluetoothSocket? = null
+                try {
+                    _status.value = PrinterStatus.Connecting
+                    bluetoothAdapter.cancelDiscovery()
+                    socket = try {
+                        target.device.createRfcommSocketToServiceRecord(sppUuid)
+                    } catch (_: Exception) {
+                        val m = target.device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                        m.invoke(target.device, 1) as BluetoothSocket
+                    }
+                    socket.connect()
+                    _status.value = PrinterStatus.Connected(target.name, target.address)
+                    true
+                } catch (e: Exception) {
+                    android.util.Log.d("DefaultPrinterService", "Printer check connection failed (offline): ${e.message}")
+                    _status.value = PrinterStatus.Disconnected
+                    false
+                } finally {
+                    try { socket?.close() } catch (_: Exception) {}
+                }
+            }
+        }
     }
 
     override fun isConnected(): Boolean {

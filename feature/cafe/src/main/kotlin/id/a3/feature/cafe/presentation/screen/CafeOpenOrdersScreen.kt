@@ -72,6 +72,20 @@ enum class CafeOrdersTab(val title: String) {
 }
 
 /**
+ * Format durasi pesanan terbuka ramah kasir (misal: 230 menit -> "3 jam 50 menit").
+ */
+fun formatOrderDuration(totalMinutes: Long): String {
+    if (totalMinutes < 1L) return "Baru saja"
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
+    return when {
+        hours > 0L && minutes > 0L -> "$hours jam $minutes menit"
+        hours > 0L -> "$hours jam"
+        else -> "$minutes menit"
+    }
+}
+
+/**
  * Layar C04 (Pesanan Terbuka) & C05 (Detail Pesanan Terbuka) — Tablet Landscape 11" A3 Coffeeshop.
  *
  * Mengakomodasi kebutuhan:
@@ -457,8 +471,13 @@ private fun OpenOrderCard(
     val itemCount = orderWithLines.lines.sumOf { it.quantity }
 
     // Hitung durasi sejak pesanan dibuat
-    val minutesAgo = ((System.currentTimeMillis() - order.createdAt) / 60000L).coerceAtLeast(1L)
-    val isLongWait = minutesAgo > 45L
+    val totalMinutes = remember(order.createdAt) {
+        ((System.currentTimeMillis() - order.createdAt) / 60000L).coerceAtLeast(0L)
+    }
+    val isLongWait = totalMinutes >= 45L
+    val durationText = remember(totalMinutes) {
+        formatOrderDuration(totalMinutes)
+    }
 
     Box(
         modifier = modifier
@@ -530,7 +549,7 @@ private fun OpenOrderCard(
                         modifier = Modifier.size(12.dp)
                     )
                     Text(
-                        text = "$minutesAgo mnt",
+                        text = durationText,
                         color = if (isLongWait) colors.status.danger.text else colors.inkMuted,
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.SemiBold
@@ -576,6 +595,12 @@ private fun OpenOrderDetailView(
     val colors = A3Theme.colors
     val order = orderWithLines.order
     val lines = orderWithLines.lines
+    val detailMinutes = remember(order.createdAt) {
+        ((System.currentTimeMillis() - order.createdAt) / 60000L).coerceAtLeast(0L)
+    }
+    val detailDuration = remember(detailMinutes) {
+        formatOrderDuration(detailMinutes)
+    }
 
     Column(
         modifier = modifier
@@ -617,7 +642,7 @@ private fun OpenOrderDetailView(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Pesanan #${order.displayNumber} • Status: Terbuka",
+                            text = "Pesanan #${order.displayNumber} • Terbuka • $detailDuration",
                             color = colors.inkMuted,
                             style = A3Theme.typography.bodySmall
                         )

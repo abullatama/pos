@@ -14,6 +14,7 @@ import id.a3.feature.cafe.model.CafeCartLine
 import id.a3.feature.cafe.model.CafeProduct
 import id.a3.feature.cafe.model.MenuOptionItem
 import id.a3.feature.cafe.model.OptionKind
+import id.a3.feature.cafe.presentation.screen.formatOrderDuration
 import id.a3.feature.cafe.repository.CafeMenuRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -101,6 +102,7 @@ class FakePrinterService : PrinterService {
     private val _status = MutableStateFlow<PrinterStatus>(PrinterStatus.Connected("iWare C58BT", "00:11:22:33:44:55"))
     override val status: StateFlow<PrinterStatus> = _status.asStateFlow()
     override fun isConnected(): Boolean = true
+    override suspend fun checkConnection(): Boolean = true
     override suspend fun print(bytes: ByteArray): Result<Unit> {
         printedPayloads.add(bytes)
         return Result.success(Unit)
@@ -573,5 +575,14 @@ class CafeMenuViewModelTest {
         assertTrue(printedText.contains("2x Caffe Latte"))
         assertTrue(printedText.contains("*** TANPA HARGA ***"))
         assertFalse(printedText.contains("Rp"))
+    }
+
+    @Test
+    fun `formatOrderDuration converts raw minutes to friendly hours and minutes`() {
+        assertEquals("Baru saja", formatOrderDuration(0L))
+        assertEquals("25 menit", formatOrderDuration(25L))
+        assertEquals("1 jam", formatOrderDuration(60L))
+        assertEquals("3 jam 50 menit", formatOrderDuration(230L))
+        assertEquals("2 jam 5 menit", formatOrderDuration(125L))
     }
 }
