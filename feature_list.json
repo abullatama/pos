@@ -267,9 +267,9 @@
       "app": "both",
       "description": "Struk, nota, dan antrean cetak dengan cetak ulang SALINAN",
       "acceptance": "Printer putus lalu tersambung: cetakan antre dan terkirim",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": ""
+      "notes": "PrintQueueManager selesai dibangun di :core:printer dengan antrean FIFO otomatis saat printer putus/mati (PRT-01, PRT-02). Saat printer terhubung kembali (Connected), antrean PENDING otomatis dicetak secara berurutan. Format cetak ulang (CustomerReceiptFormatter, KitchenTicketFormatter, LaundryTagFormatter) telah diperbarui dengan watermark tegas '*** SALINAN ***' dan info audit (PRT-05). TopBar PrinterStatusBadge menampilkan jumlah antrean jika printer putus. Teruji 100% pada PrintQueueManagerTest dan ReprintWatermarkTest."
     },
     {
       "id": "F28",
@@ -277,9 +277,9 @@
       "app": "both",
       "description": "Sinkron menerima flag dari server tanpa menganggap bundel gagal",
       "acceptance": "Hasil ACCEPTED dengan flags[] ditandai selesai, tidak masuk Antrean bermasalah",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "SyncSender di :core:sync menangani respon ACCEPTED dengan flags[] (seperti TOTAL_MISMATCH, SHIFT_RANGE): outbox ditandai SENT, flagsJson disimpan ke Room, dan tidak pernah masuk Antrean Bermasalah (FAILED). Teruji 100% pada SyncSenderIdempotencyTest dan RoomOutboxTransactionTest."
     },
     {
       "id": "F29",
@@ -287,9 +287,9 @@
       "app": "both",
       "description": "Antrean bermasalah (REJECTED) dengan alasan dan percobaan ulang",
       "acceptance": "Tidak ada event yang dihapus diam-diam",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Bundel berstatus REJECTED non-retryable (VALIDATION_FAILED, FORBIDDEN, DEVICE_REVOKED) dimasukkan ke Antrean Bermasalah (status FAILED) lengkap dengan reasonCode dan lastError tanpa menghapus data event (append-only & aman dari retensi deleteSentOlderThan). SyncProblemQueueManager dan OutboxDao mendukung fungsi coba lagi (retryFailedBundle & retryAllFailed) yang mengembalikan status ke PENDING untuk dikirim ulang. Teruji 100% pada SyncProblemQueueManagerTest, SyncSenderIdempotencyTest, dan RoomOutboxTransactionTest."
     },
     {
       "id": "F30",

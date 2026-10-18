@@ -1,5 +1,6 @@
 package id.a3.core.printer
 
+import id.a3.core.printer.queue.PrintQueueManager
 import kotlinx.coroutines.flow.StateFlow
 
 sealed interface PrinterStatus {
@@ -19,4 +20,7 @@ interface PrinterService {
     suspend fun checkConnection(): Boolean
     suspend fun print(bytes: ByteArray): Result<Unit>
     suspend fun openCashDrawer(): Result<Unit>
+
+    // Pengelola antrean cetak saat printer offline/putus (PRT-02 & F27)
+    val queueManager: PrintQueueManager? get() = null
 }

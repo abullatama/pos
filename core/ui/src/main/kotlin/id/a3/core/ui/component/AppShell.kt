@@ -46,6 +46,7 @@ fun AppShell(
     pendingSyncCount: Int = 0,
     isPrinterConnected: Boolean = false,
     isPrinterConnecting: Boolean = false,
+    pendingPrintCount: Int = 0,
     onPrinterClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
     navItems: List<NavItem> = emptyList(),
@@ -79,6 +80,7 @@ fun AppShell(
                 pendingSyncCount = pendingSyncCount,
                 isPrinterConnected = isPrinterConnected,
                 isPrinterConnecting = isPrinterConnecting,
+                pendingPrintCount = pendingPrintCount,
                 onPrinterClick = onPrinterClick,
                 onAdminClick = onAdminClick,
                 modifier = Modifier

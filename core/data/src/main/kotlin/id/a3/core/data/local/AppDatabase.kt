@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import id.a3.core.data.local.dao.CustomerDao
 import id.a3.core.data.local.dao.LaundryPickupDao
 import id.a3.core.data.local.dao.MasterDataDao
@@ -30,7 +32,7 @@ import id.a3.core.data.local.entity.SyncStateEntity
         CustomerEntity::class,
         LaundryPickupEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -45,12 +47,20 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         const val DATABASE_NAME = "a3_pos.db"
 
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE outbox ADD COLUMN reasonCode TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE outbox ADD COLUMN flagsJson TEXT DEFAULT NULL")
+            }
+        }
+
         fun build(context: Context): AppDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 DATABASE_NAME
-            ).fallbackToDestructiveMigration(false)
+            ).addMigrations(MIGRATION_1_2)
+                .fallbackToDestructiveMigration(false)
                 .build()
         }
 

@@ -14,6 +14,8 @@ import android.hardware.usb.UsbManager
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.PrinterStatus
 import id.a3.core.printer.escpos.EscPosBuilder
+import id.a3.core.printer.queue.PrintJobStatus
+import id.a3.core.printer.queue.PrintQueueManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -158,11 +160,19 @@ class DefaultPrinterService(
         }
     }
 
+    override val queueManager: PrintQueueManager by lazy {
+        PrintQueueManager(
+            printDirect = { printDirect(it) },
+            isConnected = { isConnected() },
+            statusFlow = status
+        )
+    }
+
     override fun isConnected(): Boolean {
         return _status.value is PrinterStatus.Connected
     }
 
-    override suspend fun print(bytes: ByteArray): Result<Unit> {
+    suspend fun printDirect(bytes: ByteArray): Result<Unit> {
         if (activeTarget == null) {
             autoConnectPairedPrinter()
         }
@@ -173,9 +183,18 @@ class DefaultPrinterService(
         }
     }
 
+    override suspend fun print(bytes: ByteArray): Result<Unit> {
+        val job = queueManager.printOrEnqueue(payload = bytes)
+        return if (job.status == PrintJobStatus.FAILED) {
+            Result.failure(Exception(job.lastError ?: "Gagal mencetak serial"))
+        } else {
+            Result.success(Unit)
+        }
+    }
+
     override suspend fun openCashDrawer(): Result<Unit> {
         val drawerCmd = EscPosBuilder().openCashDrawer().build()
-        return print(drawerCmd)
+        return printDirect(drawerCmd)
     }
 
     @SuppressLint("MissingPermission")

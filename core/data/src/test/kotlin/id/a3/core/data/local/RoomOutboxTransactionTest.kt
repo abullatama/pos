@@ -804,4 +804,68 @@ class RoomOutboxTransactionTest {
         val updatedOrder = database.orderDao().getOrderById(orderId)
         assertEquals("picked_up", updatedOrder!!.status)
     }
+
+    @Test
+    fun `OutboxDao supports flags on SENT, reasonCode on FAILED, and retry without data loss`() = runBlocking {
+        val bundle1 = UUID.randomUUID().toString()
+        val bundle2 = UUID.randomUUID().toString()
+
+        database.outboxDao().insert(
+            OutboxEntity(
+                bundleId = bundle1,
+                deviceId = "dev-1",
+                shiftId = null,
+                eventsJson = """[{"event_id":"e1","type":"order.created"}]""",
+                status = OutboxStatus.PENDING
+            )
+        )
+        database.outboxDao().insert(
+            OutboxEntity(
+                bundleId = bundle2,
+                deviceId = "dev-1",
+                shiftId = null,
+                eventsJson = """[{"event_id":"e2","type":"payment.recorded"}]""",
+                status = OutboxStatus.PENDING
+            )
+        )
+
+        // 1. Mark bundle1 as SENT with flags
+        val flags = """["TOTAL_MISMATCH","CLOCK_SKEW"]"""
+        database.outboxDao().markSent(bundle1, flagsJson = flags)
+
+        val saved1 = database.outboxDao().getByBundleId(bundle1)
+        assertNotNull(saved1)
+        assertEquals(OutboxStatus.SENT, saved1!!.status)
+        assertEquals(flags, saved1.flagsJson)
+
+        // 2. Mark bundle2 as FAILED with reasonCode (Antrean Bermasalah)
+        database.outboxDao().markFailed(bundle2, error = "Item snapshot missing", reasonCode = "VALIDATION_FAILED")
+
+        val saved2 = database.outboxDao().getByBundleId(bundle2)
+        assertNotNull(saved2)
+        assertEquals(OutboxStatus.FAILED, saved2!!.status)
+        assertEquals("VALIDATION_FAILED", saved2.reasonCode)
+        assertEquals("Item snapshot missing", saved2.lastError)
+
+        val failedList = database.outboxDao().getFailedOutbox()
+        assertEquals(1, failedList.size)
+        assertEquals(bundle2, failedList[0].bundleId)
+
+        // 3. Retry bundle2 -> resets status to PENDING
+        database.outboxDao().retryFailedBundle(bundle2)
+        val retried2 = database.outboxDao().getByBundleId(bundle2)
+        assertNotNull(retried2)
+        assertEquals(OutboxStatus.PENDING, retried2!!.status)
+        assertEquals(0, retried2.attempts)
+        org.junit.Assert.assertNull(retried2.lastError)
+        org.junit.Assert.assertNull(retried2.reasonCode)
+
+        // 4. Verify retention cleaner preserves PENDING and FAILED
+        database.outboxDao().markFailed(bundle2, error = "Failed again", reasonCode = "FORBIDDEN")
+        val deleted = database.outboxDao().deleteSentOlderThan(System.currentTimeMillis() + 10000)
+        assertEquals(1, deleted) // only bundle1 (SENT) deleted
+
+        org.junit.Assert.assertNull(database.outboxDao().getByBundleId(bundle1))
+        assertNotNull(database.outboxDao().getByBundleId(bundle2)) // bundle2 PRESERVED
+    }
 }

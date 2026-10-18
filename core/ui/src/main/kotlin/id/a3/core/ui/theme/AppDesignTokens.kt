@@ -8,6 +8,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import id.a3.core.ui.R
 
 @Immutable
 data class StatusColor(
@@ -101,6 +102,7 @@ val LaundryShapes = AppShapes(
 val LocalAppColors = staticCompositionLocalOf { CafeColors }
 val LocalAppShapes = staticCompositionLocalOf { CafeShapes }
 val LocalAppTypography = staticCompositionLocalOf { CafeTypography }
+val LocalAppLogo = staticCompositionLocalOf { R.drawable.ic_a3_logo }
 
 object A3Theme {
     val colors: AppColors
@@ -114,6 +116,10 @@ object A3Theme {
     val typography: AppTypography
         @Composable
         get() = LocalAppTypography.current
+
+    val logoRes: Int
+        @Composable
+        get() = LocalAppLogo.current
 }
 
 @Composable
@@ -122,6 +128,7 @@ fun CafeTheme(content: @Composable () -> Unit) {
         LocalAppColors provides CafeColors,
         LocalAppShapes provides CafeShapes,
         LocalAppTypography provides CafeTypography,
+        LocalAppLogo provides R.drawable.ic_a3_logo,
         content = content
     )
 }
@@ -132,6 +139,7 @@ fun LaundryTheme(content: @Composable () -> Unit) {
         LocalAppColors provides LaundryColors,
         LocalAppShapes provides LaundryShapes,
         LocalAppTypography provides LaundryTypography,
+        LocalAppLogo provides R.drawable.ic_laundry_logo,
         content = content
     )
 }

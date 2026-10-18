@@ -18,7 +18,9 @@ data class LaundryTagData(
     val estimatedCompletion: String? = null,
     val isExpress: Boolean = false,
     val lines: List<LaundryTagLine>,
-    val cashierOrStaffName: String? = null
+    val cashierOrStaffName: String? = null,
+    val isCopy: Boolean = false,
+    val reprintInfo: String? = null
 )
 
 /**
@@ -41,7 +43,19 @@ object LaundryTagFormatter {
 
         // 1. Header Toko & Tag Cucian
         builder.reset()
-            .alignCenter()
+
+        if (data.isCopy) {
+            builder.alignCenter()
+                .boldOn()
+                .textLine("*** SALINAN TAG CUCIAN ***")
+                .boldOff()
+            if (!data.reprintInfo.isNullOrBlank()) {
+                builder.textLine(data.reprintInfo)
+            }
+            builder.feed(1)
+        }
+
+        builder.alignCenter()
             .boldOn()
             .textLine("ATHIA LAUNDRY HOUSE")
             .textSize(widthMultiplier = 1, heightMultiplier = 2)

@@ -62,6 +62,7 @@ fun TopBar(
     pendingSyncCount: Int = 0,
     isPrinterConnected: Boolean = false,
     isPrinterConnecting: Boolean = false,
+    pendingPrintCount: Int = 0,
     onPrinterClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -96,10 +97,10 @@ fun TopBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Logo A3 Transparan murni (hanya garis segitiga geometris 3 A saling mengunci)
+                // Logo grafis transparan murni (A3 Coffeeshop atau Athia Laundry House sesuai tema aktif)
                 Image(
-                    painter = painterResource(id = R.drawable.ic_a3_logo),
-                    contentDescription = "Logo A3",
+                    painter = painterResource(id = A3Theme.logoRes),
+                    contentDescription = "Logo Usaha",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.size(38.dp)
                 )
@@ -175,6 +176,7 @@ fun TopBar(
                 PrinterStatusBadge(
                     isConnected = isPrinterConnected,
                     isConnecting = isPrinterConnecting,
+                    pendingCount = pendingPrintCount,
                     onClick = onPrinterClick
                 )
 
@@ -261,6 +263,7 @@ fun SyncStatusBadge(
 fun PrinterStatusBadge(
     isConnected: Boolean,
     isConnecting: Boolean = false,
+    pendingCount: Int = 0,
     onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -269,6 +272,7 @@ fun PrinterStatusBadge(
     val (iconColor, label) = when {
         isConnecting -> Pair(statusColors.info.text, "Memeriksa...")
         isConnected -> Pair(statusColors.success.text, "Printer Siap")
+        pendingCount > 0 -> Pair(statusColors.warning.text, "Printer Putus ($pendingCount antre)")
         else -> Pair(statusColors.warning.text, "Printer Putus")
     }
 

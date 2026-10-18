@@ -26,12 +26,26 @@ object KitchenTicketFormatter {
         items: List<KitchenTicketItem>,
         orderType: String = "DINE IN",
         staffName: String? = null,
-        charsPerLine: Int = 32
+        charsPerLine: Int = 32,
+        isCopy: Boolean = false,
+        reprintInfo: String? = null
     ): ByteArray {
         val builder = EscPosBuilder(charsPerLine = charsPerLine)
 
         builder.reset()
-            .alignCenter()
+
+        if (isCopy) {
+            builder.alignCenter()
+                .boldOn()
+                .textLine("*** SALINAN TIKET DAPUR ***")
+                .boldOff()
+            if (!reprintInfo.isNullOrBlank()) {
+                builder.textLine(reprintInfo)
+            }
+            builder.feed(1)
+        }
+
+        builder.alignCenter()
             .boldOn()
             .textSize(widthMultiplier = 2, heightMultiplier = 2)
             .textLine("TIKET DAPUR")

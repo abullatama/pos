@@ -188,7 +188,12 @@ class SyncSenderIdempotencyTest {
         val outboxResult = database.outboxDao().getByBundleId(bundleId)
         assertNotNull(outboxResult)
         assertEquals(OutboxStatus.FAILED, outboxResult!!.status)
+        assertEquals("VALIDATION_FAILED", outboxResult.reasonCode)
         assertEquals("Field wajib kosong", outboxResult.lastError)
+
+        val failedList = database.outboxDao().getFailedOutbox()
+        assertEquals(1, failedList.size)
+        assertEquals(bundleId, failedList[0].bundleId)
     }
 
     @Test
@@ -228,5 +233,162 @@ class SyncSenderIdempotencyTest {
         assertEquals(OutboxStatus.PENDING, outboxResult!!.status)
         assertEquals(1, outboxResult.attempts)
         assertEquals("Shift belum sinkron", outboxResult.lastError)
+
+        // Retryable bundle must NOT be in failed queue
+        val failedList = database.outboxDao().getFailedOutbox()
+        assertEquals(0, failedList.size)
+    }
+
+    @Test
+    fun `F28 - accepted bundle with flags marks outbox as SENT and records flags without entering failed queue`() = runBlocking {
+        val bundleId = UUID.randomUUID().toString()
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-cafe-1",
+            shiftId = "shift-001",
+            eventsJson = """[{"event_id":"evt-1","type":"order.created","occurred_at":"2026-10-18T10:00:00Z","payload":{}}]""",
+            status = OutboxStatus.PENDING
+        )
+        database.outboxDao().insert(outbox)
+
+        // Server responds with ACCEPTED carrying quarantine flags (TOTAL_MISMATCH, SHIFT_RANGE)
+        val flagsResponse = """
+            {
+                "results": [
+                    {
+                        "bundle_id": "$bundleId",
+                        "status": "ACCEPTED",
+                        "flags": ["TOTAL_MISMATCH", "SHIFT_RANGE"],
+                        "server_received_at": "2026-10-18T10:00:01Z"
+                    }
+                ],
+                "server_time": "2026-10-18T10:00:01Z"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(flagsResponse))
+
+        val summary = syncSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+        assertEquals(0, summary.failed)
+
+        val savedOutbox = database.outboxDao().getByBundleId(bundleId)
+        assertNotNull(savedOutbox)
+        assertEquals(OutboxStatus.SENT, savedOutbox!!.status)
+        assertNotNull(savedOutbox.flagsJson)
+        org.junit.Assert.assertTrue(savedOutbox.flagsJson!!.contains("TOTAL_MISMATCH"))
+        org.junit.Assert.assertTrue(savedOutbox.flagsJson!!.contains("SHIFT_RANGE"))
+
+        // Must NOT enter failed problem queue
+        val failedList = database.outboxDao().getFailedOutbox()
+        org.junit.Assert.assertTrue("ACCEPTED with flags must not enter problem queue", failedList.isEmpty())
+    }
+
+    @Test
+    fun `F29 - retryFailedBundle resets FAILED bundle to PENDING and next sync succeeds`() = runBlocking {
+        val bundleId = UUID.randomUUID().toString()
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-cafe-1",
+            shiftId = "shift-001",
+            eventsJson = """[{"event_id":"evt-1","type":"order.created","occurred_at":"2026-10-18T10:00:00Z","payload":{}}]""",
+            status = OutboxStatus.FAILED,
+            attempts = 3,
+            lastError = "Validation failed: invalid amount",
+            reasonCode = "VALIDATION_FAILED"
+        )
+        database.outboxDao().insert(outbox)
+
+        // Verify initial state: failed queue has 1 item
+        val initialFailed = database.outboxDao().getFailedOutbox()
+        assertEquals(1, initialFailed.size)
+
+        // Trigger manual retry
+        database.outboxDao().retryFailedBundle(bundleId)
+
+        val retriedOutbox = database.outboxDao().getByBundleId(bundleId)
+        assertNotNull(retriedOutbox)
+        assertEquals(OutboxStatus.PENDING, retriedOutbox!!.status)
+        assertEquals(0, retriedOutbox.attempts)
+        org.junit.Assert.assertNull(retriedOutbox.lastError)
+        org.junit.Assert.assertNull(retriedOutbox.reasonCode)
+
+        // Now next sync picks it up
+        val successResponse = """
+            {
+                "results": [
+                    {
+                        "bundle_id": "$bundleId",
+                        "status": "ACCEPTED",
+                        "server_received_at": "2026-10-18T10:05:00Z"
+                    }
+                ],
+                "server_time": "2026-10-18T10:05:00Z"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(successResponse))
+
+        val summary = syncSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+        assertEquals(0, summary.failed)
+
+        val finalOutbox = database.outboxDao().getByBundleId(bundleId)
+        assertNotNull(finalOutbox)
+        assertEquals(OutboxStatus.SENT, finalOutbox!!.status)
+    }
+
+    @Test
+    fun `F29 - retention cleanup only deletes SENT bundles and never deletes FAILED or PENDING bundles`() = runBlocking {
+        val oldTimestamp = 1000L
+        val cutoffTimestamp = 5000L
+
+        val sentBundle = OutboxEntity(
+            bundleId = "bundle-sent",
+            deviceId = "dev-1",
+            shiftId = null,
+            eventsJson = "[]",
+            status = OutboxStatus.SENT,
+            createdAt = oldTimestamp
+        )
+        val failedBundle = OutboxEntity(
+            bundleId = "bundle-failed",
+            deviceId = "dev-1",
+            shiftId = null,
+            eventsJson = """[{"event_id":"evt-failed","type":"payment.recorded"}]""",
+            status = OutboxStatus.FAILED,
+            reasonCode = "VALIDATION_FAILED",
+            lastError = "Total mismatch",
+            createdAt = oldTimestamp
+        )
+        val pendingBundle = OutboxEntity(
+            bundleId = "bundle-pending",
+            deviceId = "dev-1",
+            shiftId = null,
+            eventsJson = "[]",
+            status = OutboxStatus.PENDING,
+            createdAt = oldTimestamp
+        )
+
+        database.outboxDao().insert(sentBundle)
+        database.outboxDao().insert(failedBundle)
+        database.outboxDao().insert(pendingBundle)
+
+        // Perform retention cleanup for records older than cutoff
+        val deletedCount = database.outboxDao().deleteSentOlderThan(cutoffTimestamp)
+        assertEquals(1, deletedCount)
+
+        // SENT bundle was deleted
+        org.junit.Assert.assertNull(database.outboxDao().getByBundleId("bundle-sent"))
+
+        // FAILED bundle was PRESERVED completely (tidak ada event yang dihapus diam-diam)
+        val preservedFailed = database.outboxDao().getByBundleId("bundle-failed")
+        assertNotNull(preservedFailed)
+        assertEquals(OutboxStatus.FAILED, preservedFailed!!.status)
+        assertEquals("VALIDATION_FAILED", preservedFailed.reasonCode)
+        org.junit.Assert.assertTrue(preservedFailed.eventsJson.contains("payment.recorded"))
+
+        // PENDING bundle was PRESERVED completely
+        val preservedPending = database.outboxDao().getByBundleId("bundle-pending")
+        assertNotNull(preservedPending)
+        assertEquals(OutboxStatus.PENDING, preservedPending!!.status)
     }
 }

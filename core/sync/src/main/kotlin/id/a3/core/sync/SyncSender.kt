@@ -78,7 +78,8 @@ class SyncSender(
 
             when (result.status) {
                 "ACCEPTED" -> {
-                    outboxDao.markSent(outbox.bundleId)
+                    val flagsJson = result.flags?.takeIf { it.isNotEmpty() }?.let { json.encodeToString(it) }
+                    outboxDao.markSent(outbox.bundleId, flagsJson)
                     sentCount++
                 }
                 "DUPLICATE" -> {
@@ -90,7 +91,11 @@ class SyncSender(
                     if (result.retryable == true) {
                         outboxDao.incrementAttempts(outbox.bundleId, result.message ?: result.reasonCode)
                     } else {
-                        outboxDao.markFailed(outbox.bundleId, result.message ?: (result.reasonCode ?: "REJECTED"))
+                        outboxDao.markFailed(
+                            bundleId = outbox.bundleId,
+                            error = result.message ?: (result.reasonCode ?: "REJECTED"),
+                            reasonCode = result.reasonCode
+                        )
                     }
                     failedCount++
                 }

@@ -13,6 +13,8 @@ data class OutboxEntity(
     val status: OutboxStatus = OutboxStatus.PENDING,
     val attempts: Int = 0,
     val lastError: String? = null,
+    val reasonCode: String? = null,
+    val flagsJson: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 )

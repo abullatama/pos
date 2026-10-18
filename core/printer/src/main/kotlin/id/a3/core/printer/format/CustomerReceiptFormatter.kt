@@ -31,7 +31,8 @@ data class CustomerReceiptData(
     val paymentMethodName: String,
     val tendered: Long? = null,
     val change: Long = 0L,
-    val isCopy: Boolean = false
+    val isCopy: Boolean = false,
+    val reprintInfo: String? = null
 )
 
 /**
@@ -57,6 +58,10 @@ object CustomerReceiptFormatter {
                 .boldOn()
                 .textLine("*** SALINAN ***")
                 .boldOff()
+            if (!data.reprintInfo.isNullOrBlank()) {
+                builder.textLine(data.reprintInfo)
+            }
+            builder.feed(1)
         }
 
         // 2. Header Toko
