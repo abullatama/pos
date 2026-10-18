@@ -117,3 +117,15 @@ Payment gateway, QRIS Dinamis, webhook pembayaran, rekonsiliasi dinamis, antar-j
   5. Struk pesanan: Purchase receipt drawer 24 dp melayang tanpa border hitam kaku luar, auto-expand saat item ditambahkan dan collapse saat kosong, segmented pill `[Dine In] [Take Away] [Order Online]`, rincian add-on terurai bertingkat, dan tombol geser taktil adaptif `A3SwipeButton` (Solusi B).
   6. Modal verifikasi pesanan C02: Setiap item menu yang diketuk (baik bervarian maupun standar) wajib membuka modal sheet untuk kuantitas dan catatan barista/dapur sebelum masuk ke struk.
 - Berkas rujukan: `docs/ui/DESIGN-cafe.md`, `docs/ui/layout-standard.md`, `design2.md`, `contoh.jpeg`.
+
+## D-19 Standar Performa POS Tablet: Non-blocking Hardware Execution, Snappy Transitions, dan SingleTop Navigation
+
+- Status: Diterima (2026-10-18)
+- Konteks: Pada tablet Redmi Pad 2 (Snapdragon 680, Adreno 610, 90Hz), ditemukan delay perpindahan layar beberapa detik saat kasir menekan "Langsung Bayar di Kasir" atau menggeser "Kirim ke Dapur", tombol navigasi kadang macet/perlu ditekan berkali-kali, keyboard virtual mengangkat panel struk, dan animasi perpindahan halaman terasa patah-patah.
+- Keputusan:
+  1. **Non-blocking Hardware Execution:** Operasi hardware fisik eksternal (koneksi dan pencetakan ESC/POS via Bluetooth SPP/USB yang memakan 1,5–5 detik) DILARANG menahan (*suspend/block*) navigasi kasir. Pencatatan pesanan ke database Room lokal (< 5ms) langsung menyelesaikan aksi dan memicu navigasi seketika (0 detik delay); tugas cetak tiket fisik didelegasikan ke background worker coroutine (`viewModelScope.launch(ioDispatcher)`).
+  2. **Clean SingleTop Navigation:** Seluruh navigasi top-level (Kasir, Pesanan, Menu Habis, Shift) dan pemicu aksi antar layar (Kirim ke Dapur $\rightarrow$ Pesanan, Pesanan Baru $\rightarrow$ Kasir) WAJIB menggunakan kontrak `popUpTo(findStartDestination().id) { saveState = true }`, `launchSingleTop = true`, dan `restoreState = true`. Dilarang melakukan *raw navigate* tanpa SingleTop yang menyebabkan tumpukan rute duplikat (`[KASIR, PESANAN, KASIR]`) yang merusak sinkronisasi rute aktif dan memblokir klik Navigation Rail.
+  3. **Snappy Navigation Transitions:** Transisi navigasi top-level menggunakan Fast Fade (100ms enter / 80ms exit) menggantikan crossfade default Compose (~700ms). Menghilangkan beban *alpha blending* berat dua layar 11" penuh pada GPU tablet, menghasilkan perpindahan menu yang terasa instan dan taktil.
+  4. **Touch Target Standard (Aksesibilitas Tablet):** Seluruh elemen interaktif tombol dan tab (seperti tombol "Pesanan Baru" dan tab "Meja Terbuka / Riwayat Selesai") wajib memiliki tinggi sentuh minimal 44–48 dp.
+  5. **Soft Input Pan Mode:** `android:windowSoftInputMode="adjustPan"` diterapkan pada manifest kedua aplikasi agar keyboard virtual tidak menciutkan viewport layout split-screen atau mengangkat panel struk secara paksa saat kasir mengetik.
+- Berkas rujukan: `feature/cafe/src/main/kotlin/id/a3/feature/cafe/presentation/CafeMenuViewModel.kt`, `app-cafe/src/main/java/id/tenang/kasir/cafe/navigation/CafeNavHost.kt`, `app-cafe/src/main/java/id/tenang/kasir/cafe/MainActivity.kt`.

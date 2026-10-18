@@ -35,6 +35,11 @@ class OrderTransactionManager(
     fun observeOpenOrders(): Flow<List<OrderWithLines>> = orderDao.observeOpenOrdersWithLines()
 
     /**
+     * Mengamati seluruh pesanan yang sudah selesai/lunas (completed orders).
+     */
+    fun observeCompletedOrders(): Flow<List<OrderWithLines>> = orderDao.observeCompletedOrdersWithLines()
+
+    /**
      * Mengambil satu pesanan beserta baris itemnya berdasarkan ID.
      */
     suspend fun getOrderWithLines(orderId: String): OrderWithLines? = orderDao.getOrderWithLines(orderId)

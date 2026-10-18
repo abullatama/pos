@@ -36,6 +36,10 @@ interface OrderDao {
     @Query("SELECT * FROM orders WHERE status = 'open' ORDER BY createdAt DESC")
     fun observeOpenOrdersWithLines(): Flow<List<OrderWithLines>>
 
+    @Transaction
+    @Query("SELECT * FROM orders WHERE status = 'paid' ORDER BY createdAt DESC")
+    fun observeCompletedOrdersWithLines(): Flow<List<OrderWithLines>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun updateOrder(order: OrderEntity)
 

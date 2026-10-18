@@ -46,11 +46,13 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.EmojiFoodBeverage
 import androidx.compose.material.icons.outlined.LocalCafe
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Percent
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ShoppingBag
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -112,6 +114,7 @@ fun CafePosScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val isCheckingOut by viewModel.isCheckingOut.collectAsState()
     val colors = A3Theme.colors
     val coroutineScope = rememberCoroutineScope()
 
@@ -139,7 +142,8 @@ fun CafePosScreen(
                     .fillMaxHeight()
             ) {
                 MenuCatalogPanel(
-                    allProducts = uiState.products,
+                    allProducts = uiState.allProducts.ifEmpty { uiState.products },
+                    displayedProducts = uiState.products,
                     categories = uiState.categories,
                     selectedCategory = uiState.selectedCategory,
                     searchQuery = uiState.searchQuery,
@@ -172,6 +176,7 @@ fun CafePosScreen(
                         cartLines = uiState.cartLines,
                         calculation = uiState.calculation,
                         appliedDiscount = uiState.appliedDiscount,
+                        isCheckingOut = isCheckingOut,
                         onOpenDiscountDialog = { viewModel.openDiscountDialog() },
                         onRemoveDiscount = { viewModel.removeDiscount() },
                         onOpenMoveTableDialog = { viewModel.openMoveTableDialog() },
@@ -235,6 +240,7 @@ fun CafePosScreen(
 @Composable
 internal fun MenuCatalogPanel(
     allProducts: List<CafeProduct>,
+    displayedProducts: List<CafeProduct>,
     categories: List<String>,
     selectedCategory: String,
     searchQuery: String,
@@ -320,7 +326,7 @@ internal fun MenuCatalogPanel(
         )
 
         // 3. GRID PRODUK ADAPTIF (4 atau 5 Kolom)
-        if (allProducts.isEmpty()) {
+        if (displayedProducts.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -359,7 +365,7 @@ internal fun MenuCatalogPanel(
                 contentPadding = PaddingValues(bottom = 16.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(allProducts, key = { it.id }) { product ->
+                items(displayedProducts, key = { it.id }) { product ->
                     ProductGridItem(
                         product = product,
                         onClick = { onProductClick(product) }
@@ -469,6 +475,29 @@ private fun DynamicCategoryBannersRow(
     onCategorySelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Memoize perhitungan jumlah dan status ketersediaan kategori agar tidak dihitung ulang setiap recomposition
+    val categoryStats = remember(allProducts, categories) {
+        categories.associateWith { category ->
+            val count = if (category.equals("Semua", ignoreCase = true)) {
+                allProducts.size
+            } else {
+                allProducts.count { it.category.equals(category, ignoreCase = true) }
+            }
+            val hasAvailable = if (category.equals("Semua", ignoreCase = true)) {
+                allProducts.any { !it.soldOut }
+            } else {
+                allProducts.any { it.category.equals(category, ignoreCase = true) && !it.soldOut }
+            }
+            val icon: ImageVector = when {
+                category.contains("Kopi", ignoreCase = true) || category.contains("Coffee", ignoreCase = true) -> Icons.Outlined.LocalCafe
+                category.contains("Teh", ignoreCase = true) || category.contains("Tea", ignoreCase = true) || category.contains("Non-kopi", ignoreCase = true) -> Icons.Outlined.EmojiFoodBeverage
+                category.contains("Roti", ignoreCase = true) || category.contains("Pastry", ignoreCase = true) || category.contains("Makanan", ignoreCase = true) || category.contains("Snack", ignoreCase = true) -> Icons.Outlined.BakeryDining
+                else -> Icons.Outlined.Restaurant
+            }
+            Triple(count, hasAvailable, icon)
+        }
+    }
+
     Row(
         modifier = modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -476,24 +505,8 @@ private fun DynamicCategoryBannersRow(
     ) {
         categories.forEach { category ->
             val isSelected = category.equals(selectedCategory, ignoreCase = true)
-            val count = if (category.equals("Semua", ignoreCase = true)) {
-                allProducts.size
-            } else {
-                allProducts.count { it.category.equals(category, ignoreCase = true) }
-            }
-
-            val icon: ImageVector = when {
-                category.contains("Kopi", ignoreCase = true) || category.contains("Coffee", ignoreCase = true) -> Icons.Outlined.LocalCafe
-                category.contains("Teh", ignoreCase = true) || category.contains("Tea", ignoreCase = true) || category.contains("Non-kopi", ignoreCase = true) -> Icons.Outlined.EmojiFoodBeverage
-                category.contains("Roti", ignoreCase = true) || category.contains("Pastry", ignoreCase = true) || category.contains("Makanan", ignoreCase = true) || category.contains("Snack", ignoreCase = true) -> Icons.Outlined.BakeryDining
-                else -> Icons.Outlined.Restaurant
-            }
-
-            val hasAvailable = if (category.equals("Semua", ignoreCase = true)) {
-                allProducts.any { !it.soldOut }
-            } else {
-                allProducts.any { it.category.equals(category, ignoreCase = true) && !it.soldOut }
-            }
+            val stats = categoryStats[category] ?: Triple(0, true, Icons.Outlined.Restaurant)
+            val (count, hasAvailable, icon) = stats
             val statusLabel = if (hasAvailable) "Available" else "Habis"
 
             CategoryBannerCard(
@@ -619,10 +632,12 @@ private fun ProductGridItem(
     val colors = A3Theme.colors
     val isSoldOut = product.soldOut
 
-    val categoryIcon: ImageVector = when {
-        product.category.contains("Kopi", ignoreCase = true) -> Icons.Outlined.LocalCafe
-        product.category.contains("Roti", ignoreCase = true) || product.category.contains("Makanan", ignoreCase = true) -> Icons.Outlined.BakeryDining
-        else -> Icons.Outlined.EmojiFoodBeverage
+    val categoryIcon: ImageVector = remember(product.category) {
+        when {
+            product.category.contains("Kopi", ignoreCase = true) -> Icons.Outlined.LocalCafe
+            product.category.contains("Roti", ignoreCase = true) || product.category.contains("Makanan", ignoreCase = true) -> Icons.Outlined.BakeryDining
+            else -> Icons.Outlined.EmojiFoodBeverage
+        }
     }
 
     Surface(
@@ -774,6 +789,7 @@ internal fun PurchaseReceiptCard(
     onCheckoutClick: () -> Unit,
     onSendToKitchenClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isCheckingOut: Boolean = false,
     appliedDiscount: AppliedDiscount? = null,
     onOpenDiscountDialog: () -> Unit = {},
     onRemoveDiscount: () -> Unit = {},
@@ -1027,17 +1043,51 @@ internal fun PurchaseReceiptCard(
 
                 // Pintasan untuk tamu Dine-in yang ingin langsung melunasi di awal
                 if (orderHeader.orderType == CafeOrderType.DINE_IN && cartLines.isNotEmpty()) {
-                    Text(
-                        text = "Atau langsung bayar di kasir",
-                        color = colors.inkMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center,
+                    Surface(
+                        shape = RoundedCornerShape(9999.dp),
+                        color = Color.White,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.accent.copy(alpha = 0.6f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onCheckoutClick() }
-                            .padding(top = 2.dp)
-                    )
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(9999.dp))
+                            .clickable(enabled = !isCheckingOut, onClick = onCheckoutClick)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (isCheckingOut) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = colors.accent
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Menyiapkan Pembayaran...",
+                                    color = colors.accent,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Outlined.Payments,
+                                    contentDescription = null,
+                                    tint = colors.accent,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Langsung Bayar di Kasir",
+                                    color = colors.accent,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

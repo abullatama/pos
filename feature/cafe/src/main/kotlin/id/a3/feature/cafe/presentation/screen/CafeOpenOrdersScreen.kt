@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Print
 import androidx.compose.material.icons.outlined.TableBar
 import androidx.compose.material3.Icon
@@ -50,14 +51,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.ui.component.A3Button
+import id.a3.core.ui.component.A3MoneyText
+import id.a3.core.ui.component.A3StatusChip
 import id.a3.core.ui.component.ButtonVariant
+import id.a3.core.ui.component.StatusToken
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
 import id.a3.feature.cafe.presentation.CafeMenuViewModel
 import id.a3.feature.cafe.presentation.component.CafeMoveTableDialog
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 const val CAFE_OPEN_ORDERS_SCREEN_TAG = "cafe_open_orders_screen"
 const val CAFE_NEW_ORDER_BTN_TAG = "cafe_new_order_btn"
+
+enum class CafeOrdersTab(val title: String) {
+    OPEN_TABLES("Meja Terbuka"),
+    COMPLETED_HISTORY("Riwayat Selesai")
+}
 
 /**
  * Layar C04 (Pesanan Terbuka) & C05 (Detail Pesanan Terbuka) — Tablet Landscape 11" A3 Coffeeshop.
@@ -74,15 +86,18 @@ fun CafeOpenOrdersScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = A3Theme.colors
+    var activeTab by remember { mutableStateOf(CafeOrdersTab.OPEN_TABLES) }
     val openOrders by viewModel.openOrders.collectAsState()
+    val completedOrders by viewModel.completedOrders.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
-    var selectedOrderId by remember { mutableStateOf<String?>(null) }
+    var selectedOpenOrderId by remember { mutableStateOf<String?>(null) }
+    var selectedCompletedOrderId by remember { mutableStateOf<String?>(null) }
     var moveTableTargetOrder by remember { mutableStateOf<OrderWithLines?>(null) }
     var printStatusMessage by remember { mutableStateOf<String?>(null) }
 
-    // Jika order yang terpilih tidak ada lagi (misal sudah dibayar), reset pilihan
-    val selectedOrder = openOrders.find { it.order.id == selectedOrderId } ?: openOrders.firstOrNull()
+    val selectedOpenOrder = openOrders.find { it.order.id == selectedOpenOrderId } ?: openOrders.firstOrNull()
+    val selectedCompletedOrder = completedOrders.find { it.order.id == selectedCompletedOrderId } ?: completedOrders.firstOrNull()
 
     Surface(
         modifier = modifier
@@ -96,122 +111,223 @@ fun CafeOpenOrdersScreen(
                 .padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // ==================== PANEL KIRI (38%): DAFTAR MEJA TERBUKA (C04) ====================
+            // ==================== PANEL KIRI (38%): DAFTAR PESANAN & TAB ====================
             Column(
                 modifier = Modifier
                     .weight(0.38f)
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Header Panel Kiri
+                // Header Panel Kiri: Tab Switcher & Tombol Pesanan Baru
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text(
-                            text = "Pesanan Terbuka",
-                            color = colors.ink,
-                            style = A3Theme.typography.headline.copy(fontSize = 20.sp),
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "${openOrders.size} meja sedang aktif",
-                            color = colors.inkMuted,
-                            style = A3Theme.typography.bodySmall
-                        )
-                    }
-
-                    // Tombol Pesanan Baru (Navigasi kembali ke POS C01)
+                    // Segmented Tabs Pill (Tinggi standar sentuh tablet 44dp)
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
+                            .height(44.dp)
                             .clip(RoundedCornerShape(9999.dp))
-                            .background(colors.accent)
-                            .clickable(onClick = onNavigateToPos)
-                            .padding(horizontal = 12.dp, vertical = 7.dp)
-                            .testTag(CAFE_NEW_ORDER_BTN_TAG)
+                            .background(Color(0xFFE5E7EB))
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Add,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Text(
-                            text = "Pesanan Baru",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Daftar Kartu Pesanan Terbuka
-                if (openOrders.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White)
-                            .padding(20.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        CafeOrdersTab.values().forEach { tab ->
+                            val isSelected = activeTab == tab
+                            val count = if (tab == CafeOrdersTab.OPEN_TABLES) openOrders.size else completedOrders.size
                             Box(
                                 modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(colors.surfaceAlt),
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(9999.dp))
+                                    .background(if (isSelected) colors.accent else Color.Transparent)
+                                    .clickable {
+                                        activeTab = tab
+                                        printStatusMessage = null
+                                    }
+                                    .padding(horizontal = 14.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Outlined.ReceiptLong,
-                                    contentDescription = null,
-                                    tint = colors.inkMuted,
-                                    modifier = Modifier.size(26.dp)
+                                Text(
+                                    text = "${tab.title} ($count)",
+                                    color = if (isSelected) Color.White else colors.ink,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
-                            Text(
-                                text = "Tidak Ada Pesanan Terbuka",
-                                color = colors.ink,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
+                        }
+                    }
+
+                    // Tombol Pesanan Baru (Tinggi standar sentuh tablet 44dp dengan touch target luas & elevasi)
+                    Surface(
+                        shape = RoundedCornerShape(9999.dp),
+                        color = colors.accent,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(9999.dp))
+                            .clickable(onClick = onNavigateToPos)
+                            .testTag(CAFE_NEW_ORDER_BTN_TAG)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Add,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "Semua meja kosong. Buat pesanan baru dari layar kasir.",
-                                color = colors.inkMuted,
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Center
+                                text = "Pesanan Baru",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
+                }
+
+                // Sub-header ringkasan
+                Text(
+                    text = if (activeTab == CafeOrdersTab.OPEN_TABLES) {
+                        "${openOrders.size} meja sedang aktif"
+                    } else {
+                        "${completedOrders.size} pesanan lunas • Total ${formatRupiah(completedOrders.sumOf { it.order.total })}"
+                    },
+                    color = colors.inkMuted,
+                    style = A3Theme.typography.bodySmall
+                )
+
+                // Konten Daftar: Pesanan Terbuka ATAU Riwayat Selesai
+                if (activeTab == CafeOrdersTab.OPEN_TABLES) {
+                    if (openOrders.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White)
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                        .background(colors.surfaceAlt),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.ReceiptLong,
+                                        contentDescription = null,
+                                        tint = colors.inkMuted,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "Tidak Ada Pesanan Terbuka",
+                                    color = colors.ink,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Semua meja kosong. Buat pesanan baru dari layar kasir.",
+                                    color = colors.inkMuted,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(openOrders, key = { it.order.id }) { item ->
+                                val isSelected = item.order.id == selectedOpenOrder?.order?.id
+                                OpenOrderCard(
+                                    orderWithLines = item,
+                                    isSelected = isSelected,
+                                    onClick = { selectedOpenOrderId = item.order.id }
+                                )
+                            }
+                        }
+                    }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(openOrders, key = { it.order.id }) { item ->
-                            val isSelected = item.order.id == selectedOrder?.order?.id
-                            OpenOrderCard(
-                                orderWithLines = item,
-                                isSelected = isSelected,
-                                onClick = { selectedOrderId = item.order.id }
-                            )
+                    // TAB: RIWAYAT SELESAI
+                    if (completedOrders.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White)
+                                .padding(20.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .clip(CircleShape)
+                                        .background(colors.surfaceAlt),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.CheckCircle,
+                                        contentDescription = null,
+                                        tint = colors.status.success.text,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "Belum Ada Transaksi Selesai",
+                                    color = colors.ink,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Seluruh transaksi yang telah dilunasi selama shift ini akan tersimpan dan tampil di sini.",
+                                    color = colors.inkMuted,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(completedOrders, key = { it.order.id }) { item ->
+                                val isSelected = item.order.id == selectedCompletedOrder?.order?.id
+                                CompletedOrderCard(
+                                    orderWithLines = item,
+                                    isSelected = isSelected,
+                                    onClick = { selectedCompletedOrderId = item.order.id }
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            // ==================== PANEL KANAN (62%): DETAIL PESANAN TERPILIH (C05) ====================
+            // ==================== PANEL KANAN (62%): DETAIL PESANAN TERPILIH ====================
             Surface(
                 modifier = Modifier
                     .weight(0.62f)
@@ -220,40 +336,75 @@ fun CafeOpenOrdersScreen(
                 color = Color.White,
                 shadowElevation = 4.dp
             ) {
-                if (selectedOrder == null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Pilih salah satu meja di panel kiri untuk melihat rincian pesanan.",
-                            color = colors.inkMuted,
-                            fontSize = 13.sp,
-                            textAlign = TextAlign.Center
+                if (activeTab == CafeOrdersTab.OPEN_TABLES) {
+                    if (selectedOpenOrder == null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Pilih salah satu meja di panel kiri untuk melihat rincian pesanan.",
+                                color = colors.inkMuted,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        OpenOrderDetailView(
+                            orderWithLines = selectedOpenOrder,
+                            onOpenMoveTable = { moveTableTargetOrder = selectedOpenOrder },
+                            onProceedToPayment = {
+                                onProceedToPayment(selectedOpenOrder.order.id, selectedOpenOrder.order.total)
+                            },
+                            onReprintKitchenTicket = {
+                                coroutineScope.launch {
+                                    val res = viewModel.reprintKitchenTicket(selectedOpenOrder.order.id)
+                                    printStatusMessage = if (res.isSuccess) {
+                                        "Tiket dapur dikirim ke printer"
+                                    } else {
+                                        val err = res.exceptionOrNull()?.message ?: "Printer belum terhubung"
+                                        "Gagal cetak: $err"
+                                    }
+                                }
+                            },
+                            printStatusMessage = printStatusMessage
                         )
                     }
                 } else {
-                    OpenOrderDetailView(
-                        orderWithLines = selectedOrder,
-                        onOpenMoveTable = { moveTableTargetOrder = selectedOrder },
-                        onProceedToPayment = {
-                            onProceedToPayment(selectedOrder.order.id, selectedOrder.order.total)
-                        },
-                        onReprintKitchenTicket = {
-                            coroutineScope.launch {
-                                val res = viewModel.reprintKitchenTicket(selectedOrder.order.id)
-                                printStatusMessage = if (res.isSuccess) {
-                                    "Tiket dapur dikirim ke printer"
-                                } else {
-                                    val err = res.exceptionOrNull()?.message ?: "Printer belum terhubung"
-                                    "Gagal cetak: $err"
+                    // TAB: RIWAYAT SELESAI DETAIL
+                    if (selectedCompletedOrder == null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Pilih transaksi di panel kiri untuk melihat rincian pembayaran atau mencetak ulang struk.",
+                                color = colors.inkMuted,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        CompletedOrderDetailView(
+                            orderWithLines = selectedCompletedOrder,
+                            onReprintReceipt = {
+                                coroutineScope.launch {
+                                    val res = viewModel.reprintCompletedOrderReceipt(selectedCompletedOrder)
+                                    printStatusMessage = if (res.isSuccess) {
+                                        "Struk salinan #${selectedCompletedOrder.order.displayNumber} berhasil dikirim ke printer"
+                                    } else {
+                                        val err = res.exceptionOrNull()?.message ?: "Printer belum terhubung"
+                                        "Gagal cetak: $err"
+                                    }
                                 }
-                            }
-                        },
-                        printStatusMessage = printStatusMessage
-                    )
+                            },
+                            printStatusMessage = printStatusMessage
+                        )
+                    }
                 }
             }
         }
@@ -652,6 +803,368 @@ private fun OpenOrderDetailView(
                     variant = ButtonVariant.PRIMARY,
                     onClick = onProceedToPayment,
                     modifier = Modifier.width(220.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Kartu Ringkasan Pesanan Selesai / Lunas di Panel Kiri
+ */
+@Composable
+private fun CompletedOrderCard(
+    orderWithLines: OrderWithLines,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = A3Theme.colors
+    val order = orderWithLines.order
+    val tableOrType = order.tableLabel ?: if (order.orderType == "dine_in") "Dine In" else "Take Away"
+    val itemCount = orderWithLines.lines.sumOf { it.quantity }
+    val timeFormatted = remember(order.createdAt) {
+        SimpleDateFormat("HH:mm 'WIB'", Locale.forLanguageTag("id-ID")).format(Date(order.createdAt))
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (isSelected) colors.surfaceAlt else Color.White)
+            .border(
+                width = if (isSelected) 1.5.dp else 0.8.dp,
+                color = if (isSelected) colors.accent else Color(0xFFE5E7EB),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(14.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(if (isSelected) colors.accent else colors.surfaceAlt),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CheckCircle,
+                            contentDescription = null,
+                            tint = if (isSelected) Color.White else colors.status.success.text,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "#${order.displayNumber}",
+                            color = colors.ink,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "$tableOrType • $timeFormatted",
+                            color = colors.inkMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                A3StatusChip(
+                    token = StatusToken.SUCCESS,
+                    label = "Lunas",
+                    icon = Icons.Outlined.CheckCircle
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$itemCount item",
+                    color = colors.inkMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = formatRupiah(order.total),
+                    color = colors.ink,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Rincian Detail Transaksi Selesai & Cetak Ulang Salinan di Panel Kanan
+ */
+@Composable
+private fun CompletedOrderDetailView(
+    orderWithLines: OrderWithLines,
+    onReprintReceipt: () -> Unit,
+    printStatusMessage: String? = null,
+    modifier: Modifier = Modifier
+) {
+    val colors = A3Theme.colors
+    val order = orderWithLines.order
+    val lines = orderWithLines.lines
+    val tableOrType = order.tableLabel ?: if (order.orderType == "dine_in") "Dine In" else "Take Away"
+    val dateStr = remember(order.createdAt) {
+        SimpleDateFormat("dd MMMM yyyy, HH:mm 'WIB'", Locale.forLanguageTag("id-ID")).format(Date(order.createdAt))
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(colors.status.success.background),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CheckCircle,
+                            contentDescription = null,
+                            tint = colors.status.success.text,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Column {
+                        Text(
+                            text = "Struk #${order.displayNumber}",
+                            color = colors.ink,
+                            style = A3Theme.typography.headline.copy(fontSize = 18.sp),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "$tableOrType • $dateStr",
+                            color = colors.inkMuted,
+                            style = A3Theme.typography.bodySmall
+                        )
+                    }
+                }
+
+                // Tombol Cetak Ulang (SALINAN)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(colors.surfaceAlt)
+                        .clickable(onClick = onReprintReceipt)
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Print,
+                        contentDescription = "Cetak Salinan",
+                        tint = colors.accent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Cetak Ulang (SALINAN)",
+                        color = colors.accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (!printStatusMessage.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFE8F5E9))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = printStatusMessage,
+                        color = colors.accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(Color(0xFFE5E7EB))
+            )
+
+            // Header Daftar Item
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "RINCIAN ITEM PESANAN",
+                    color = colors.ink,
+                    style = A3Theme.typography.label.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = "${lines.size} jenis menu",
+                    color = colors.inkMuted,
+                    fontSize = 11.sp
+                )
+            }
+
+            // List item
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(lines, key = { it.id }) { line ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(colors.surfaceAlt.copy(alpha = 0.5f))
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "${line.quantity}x ${line.nameSnapshot}",
+                                color = colors.ink,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val lineNote = line.note
+                            if (!lineNote.isNullOrBlank()) {
+                                Text(
+                                    text = lineNote,
+                                    color = colors.inkMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = formatRupiah(line.unitPriceSnapshot * line.quantity),
+                            color = colors.ink,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // Seksi Bawah: Rincian Keuangan
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(Color(0xFFE5E7EB))
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(text = "Subtotal", color = colors.inkMuted, fontSize = 12.sp)
+                Text(text = formatRupiah(order.subtotal), color = colors.ink, fontSize = 12.sp)
+            }
+
+            if (order.discount > 0L) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "Diskon", color = colors.inkMuted, fontSize = 12.sp)
+                    Text(text = "-${formatRupiah(order.discount)}", color = colors.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            if (order.serviceCharge > 0L) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "Biaya Layanan", color = colors.inkMuted, fontSize = 12.sp)
+                    Text(text = formatRupiah(order.serviceCharge), color = colors.ink, fontSize = 12.sp)
+                }
+            }
+
+            if (order.tax > 0L) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "Pajak", color = colors.inkMuted, fontSize = 12.sp)
+                    Text(text = formatRupiah(order.tax), color = colors.ink, fontSize = 12.sp)
+                }
+            }
+
+            if (order.rounding != 0L) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "Pembulatan", color = colors.inkMuted, fontSize = 12.sp)
+                    Text(text = formatRupiah(order.rounding), color = colors.ink, fontSize = 12.sp)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Total Dibayar:",
+                        color = colors.inkMuted,
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        text = formatRupiah(order.total),
+                        color = colors.ink,
+                        style = A3Theme.typography.headline.copy(fontSize = 20.sp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                A3StatusChip(
+                    token = StatusToken.SUCCESS,
+                    label = "Lunas",
+                    icon = Icons.Outlined.CheckCircle
                 )
             }
         }

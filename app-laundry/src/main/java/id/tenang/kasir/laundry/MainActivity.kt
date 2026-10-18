@@ -126,11 +126,14 @@ class MainActivity : ComponentActivity() {
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route ?: LaundryDestinations.BERANDA
 
-                    val selectedIndex = laundryNavItems.indexOfFirst { it.id == currentRoute }.let {
-                        if (it >= 0) it else 0
+                    val selectedIndex = remember(currentRoute) {
+                        val idx = laundryNavItems.indexOfFirst { it.id == currentRoute }
+                        if (idx >= 0) idx else 0
                     }
 
-                    val isFocusFlowActive = currentRoute == LaundryDestinations.PEMBAYARAN
+                    val isFocusFlowActive = remember(currentRoute) {
+                        currentRoute == LaundryDestinations.PEMBAYARAN
+                    }
 
                     AppShell(
                         businessName = "ATHIA LAUNDRY HOUSE",
@@ -153,14 +156,12 @@ class MainActivity : ComponentActivity() {
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
                             val targetRoute = laundryNavItems[index].id
-                            if (targetRoute != currentRoute) {
-                                navController.navigate(targetRoute) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
+                            navController.navigate(targetRoute) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
                                 }
+                                launchSingleTop = true
+                                restoreState = true
                             }
                         },
                         isFocusFlowActive = isFocusFlowActive

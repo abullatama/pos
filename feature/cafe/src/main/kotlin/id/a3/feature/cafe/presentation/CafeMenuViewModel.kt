@@ -13,6 +13,9 @@ import id.a3.core.domain.cafe.CafeOrderLine
 import id.a3.core.domain.cafe.OrderDiscount
 import id.a3.core.domain.cafe.TaxMode
 import id.a3.core.printer.PrinterService
+import id.a3.core.printer.format.CustomerReceiptData
+import id.a3.core.printer.format.CustomerReceiptFormatter
+import id.a3.core.printer.format.CustomerReceiptLine
 import id.a3.core.printer.format.KitchenTicketFormatter
 import id.a3.core.printer.format.KitchenTicketItem
 import id.a3.feature.cafe.model.AppliedDiscount
@@ -24,6 +27,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class CafeOrderHeader(
     val orderId: String = UUID.randomUUID().toString(),
@@ -44,6 +50,7 @@ data class CafeOrderHeader(
 
 data class CafeMenuUiState(
     val products: List<CafeProduct> = emptyList(),
+    val allProducts: List<CafeProduct> = emptyList(),
     val categories: List<String> = listOf("Semua", "Kopi", "Non-kopi", "Roti & Makanan"),
     val selectedCategory: String = "Semua",
     val searchQuery: String = "",
@@ -68,7 +75,8 @@ data class CafeMenuUiState(
 class CafeMenuViewModel(
     private val menuRepository: CafeMenuRepository,
     private val transactionManager: OrderTransactionManager? = null,
-    val printerService: PrinterService? = null
+    val printerService: PrinterService? = null,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
 
     private val _selectedCategory = MutableStateFlow("Semua")
@@ -138,6 +146,7 @@ class CafeMenuViewModel(
 
         CafeMenuUiState(
             products = filtered,
+            allProducts = products,
             categories = dynamicCategories,
             selectedCategory = category,
             searchQuery = query,
@@ -166,6 +175,23 @@ class CafeMenuViewModel(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    /**
+     * Aliran data seluruh pesanan yang sudah lunas/selesai secara reaktif dari Room.
+     */
+    val completedOrders: StateFlow<List<OrderWithLines>> = (transactionManager?.observeCompletedOrders() ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    private val _isCheckingOut = MutableStateFlow(false)
+    val isCheckingOut: StateFlow<Boolean> = _isCheckingOut.asStateFlow()
+
+    fun setCheckingOut(checkingOut: Boolean) {
+        _isCheckingOut.value = checkingOut
+    }
 
     fun selectCategory(category: String) {
         _selectedCategory.value = category
@@ -235,6 +261,8 @@ class CafeMenuViewModel(
         _cartLines.value = emptyList()
         _discount.value = null
         _appliedDiscount.value = null
+        _orderHeader.value = CafeOrderHeader()
+        _isCheckingOut.value = false
     }
 
     fun applyDiscount(discount: OrderDiscount?) {
@@ -419,9 +447,12 @@ class CafeMenuViewModel(
             items = kitchenItems,
             orderType = if (header.isDineIn) "DINE IN" else "TAKE AWAY"
         )
-        try {
-            printerService?.print(ticketBytes)
-        } catch (_: Exception) {}
+        // Cetak tiket dapur secara asynchronous di background worker agar tidak memblokir antarmuka kasir
+        viewModelScope.launch(ioDispatcher) {
+            try {
+                printerService?.print(ticketBytes)
+            } catch (_: Exception) {}
+        }
 
         val sentOrderId = header.orderId
 
@@ -432,6 +463,126 @@ class CafeMenuViewModel(
         _orderHeader.value = CafeOrderHeader()
 
         return Result.success(sentOrderId)
+    }
+
+    /**
+     * Mempersiapkan order untuk pembayaran langsung di kasir (Dine In langsung bayar / Take Away).
+     * Menyimpan order ke Room dan mencetak tiket dapur jika Dine In, tetapi TIDAK membersihkan keranjang.
+     * Keranjang hanya dibersihkan saat pembayaran berhasil diselesaikan di PaymentScreen.
+     */
+    suspend fun directCheckout(calculation: CafeCalculationResult): Result<String> {
+        val cart = _cartLines.value
+        if (cart.isEmpty()) {
+            return Result.failure(IllegalStateException("Keranjang masih kosong"))
+        }
+        val header = _orderHeader.value
+
+        val orderEntity = OrderEntity(
+            id = header.orderId,
+            displayNumber = header.receiptId,
+            businessUnitId = "bu-cafe-01",
+            shiftId = "shift-001",
+            deviceId = "dev-cafe-1",
+            cashierId = "cashier-1",
+            orderType = header.orderType.name.lowercase(),
+            tableLabel = header.tableOrQueueLabel,
+            status = "open",
+            subtotal = calculation.subtotal,
+            discount = calculation.discount,
+            serviceCharge = calculation.serviceCharge,
+            tax = calculation.tax,
+            rounding = calculation.rounding,
+            total = calculation.total
+        )
+
+        val lineEntities = cart.map { line ->
+            val optionsStr = (listOfNotNull(line.selectedVariant?.name) + line.selectedAddons.map { it.name }).joinToString(", ")
+            val fullNote = listOfNotNull(optionsStr.ifBlank { null }, line.note.ifBlank { null }).joinToString(" | ")
+            OrderLineEntity(
+                id = line.id,
+                orderId = header.orderId,
+                itemRefId = line.product.id,
+                nameSnapshot = line.product.name,
+                quantity = line.quantity,
+                unitPriceSnapshot = line.unitPrice,
+                costSnapshot = 0L,
+                note = fullNote.ifBlank { null }
+            )
+        }
+
+        try {
+            transactionManager?.createOpenOrderWithKitchenTicket(
+                order = orderEntity,
+                lines = lineEntities
+            )
+        } catch (e: Exception) {
+            return Result.failure(e)
+        }
+
+        // Jika Dine-in, kirim tiket dapur di latar belakang
+        if (header.isDineIn) {
+            val kitchenItems = cart.map { line ->
+                val optionsStr = (listOfNotNull(line.selectedVariant?.name) + line.selectedAddons.map { it.name }).joinToString(", ")
+                KitchenTicketItem(
+                    name = line.product.name,
+                    quantity = line.quantity,
+                    optionsSummary = optionsStr.ifBlank { null },
+                    note = line.note.ifBlank { null }
+                )
+            }
+            val currentTimeStr = SimpleDateFormat("HH:mm 'WIB'", Locale.forLanguageTag("id-ID")).format(Date())
+            val ticketBytes = KitchenTicketFormatter.format(
+                orderDisplayNumber = header.receiptId,
+                tableLabel = header.tableOrQueueLabel,
+                occurredAt = currentTimeStr,
+                items = kitchenItems,
+                orderType = "DINE IN"
+            )
+            // Cetak tiket dapur secara asynchronous di background worker agar kasir langsung masuk ke pembayaran tanpa menunggu printer
+            viewModelScope.launch(ioDispatcher) {
+                try {
+                    printerService?.print(ticketBytes)
+                } catch (_: Exception) {}
+            }
+        }
+
+        return Result.success(header.orderId)
+    }
+
+    /**
+     * Mencetak ulang struk pelanggan dengan tanda *** SALINAN *** (PRT-05) dari riwayat pesanan yang sudah lunas.
+     */
+    suspend fun reprintCompletedOrderReceipt(orderWithLines: OrderWithLines): Result<Unit> {
+        val printer = printerService ?: return Result.failure(IllegalStateException("Printer belum terhubung"))
+        val order = orderWithLines.order
+        val lines = orderWithLines.lines.map { line ->
+            CustomerReceiptLine(
+                name = line.nameSnapshot,
+                quantity = line.quantity,
+                unitPrice = line.unitPriceSnapshot,
+                lineTotal = line.unitPriceSnapshot * line.quantity,
+                optionsOrNote = line.note
+            )
+        }
+        val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.forLanguageTag("id-ID")).format(Date(order.createdAt))
+        val receiptData = CustomerReceiptData(
+            orderDisplayNumber = order.displayNumber,
+            tableOrQueueLabel = order.tableLabel,
+            occurredAt = dateStr,
+            lines = lines,
+            subtotal = order.subtotal,
+            discount = order.discount,
+            serviceCharge = order.serviceCharge,
+            tax = order.tax,
+            rounding = order.rounding,
+            total = order.total,
+            paymentMethodName = "Lunas",
+            isCopy = true
+        )
+        val bytes = CustomerReceiptFormatter.format(receiptData)
+        return withContext(Dispatchers.IO) {
+            printer.print(bytes)
+        }
     }
 
     /**

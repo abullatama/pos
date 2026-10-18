@@ -102,12 +102,12 @@ fun A3NavigationRail(
 
                         val animatedBg by animateColorAsState(
                             targetValue = targetBg,
-                            animationSpec = tween(durationMillis = 180),
+                            animationSpec = tween(durationMillis = 100),
                             label = "floating_rail_item_bg"
                         )
                         val animatedContent by animateColorAsState(
                             targetValue = targetContent,
-                            animationSpec = tween(durationMillis = 180),
+                            animationSpec = tween(durationMillis = 100),
                             label = "floating_rail_item_content"
                         )
 

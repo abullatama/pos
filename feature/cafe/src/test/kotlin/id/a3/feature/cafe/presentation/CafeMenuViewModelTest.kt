@@ -121,7 +121,7 @@ class CafeMenuViewModelTest {
         Dispatchers.setMain(testDispatcher)
         fakeRepository = FakeCafeMenuRepository()
         fakePrinter = FakePrinterService()
-        viewModel = CafeMenuViewModel(fakeRepository, null, fakePrinter)
+        viewModel = CafeMenuViewModel(fakeRepository, null, fakePrinter, testDispatcher)
     }
 
     @After

@@ -155,11 +155,14 @@ class MainActivity : ComponentActivity() {
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route ?: CafeDestinations.KASIR
 
-                    val selectedIndex = cafeNavItems.indexOfFirst { it.id == currentRoute }.let {
-                        if (it >= 0) it else 0
+                    val selectedIndex = remember(currentRoute) {
+                        val idx = cafeNavItems.indexOfFirst { it.id == currentRoute }
+                        if (idx >= 0) idx else 0
                     }
 
-                    val isFocusFlowActive = currentRoute == CafeDestinations.PEMBAYARAN
+                    val isFocusFlowActive = remember(currentRoute) {
+                        currentRoute == CafeDestinations.PEMBAYARAN
+                    }
 
                     AppShell(
                         businessName = "AA COFFEESHOP",
@@ -182,14 +185,12 @@ class MainActivity : ComponentActivity() {
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
                             val targetRoute = cafeNavItems[index].id
-                            if (targetRoute != currentRoute) {
-                                navController.navigate(targetRoute) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
+                            navController.navigate(targetRoute) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
                                 }
+                                launchSingleTop = true
+                                restoreState = true
                             }
                         },
                         isFocusFlowActive = isFocusFlowActive

@@ -57,6 +57,7 @@ fun CafePosScreenPreview() {
                 Box(modifier = Modifier.weight(0.64f)) {
                     MenuCatalogPanel(
                         allProducts = sampleProducts,
+                        displayedProducts = sampleProducts,
                         categories = listOf("Semua", "Kopi", "Non-kopi", "Roti & Makanan"),
                         selectedCategory = "Semua",
                         searchQuery = "",

@@ -1,5 +1,10 @@
 package id.tenang.kasir.laundry.navigation
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,6 +39,34 @@ fun LaundryNavHost(
     NavHost(
         navController = navController,
         startDestination = LaundryDestinations.BERANDA,
+        enterTransition = {
+            if (targetState.destination.route == LaundryDestinations.PEMBAYARAN) {
+                slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(220)) + fadeIn(animationSpec = tween(220))
+            } else {
+                fadeIn(animationSpec = tween(100))
+            }
+        },
+        exitTransition = {
+            if (targetState.destination.route == LaundryDestinations.PEMBAYARAN) {
+                slideOutHorizontally(targetOffsetX = { -it / 4 }, animationSpec = tween(220)) + fadeOut(animationSpec = tween(150))
+            } else {
+                fadeOut(animationSpec = tween(80))
+            }
+        },
+        popEnterTransition = {
+            if (initialState.destination.route == LaundryDestinations.PEMBAYARAN) {
+                slideInHorizontally(initialOffsetX = { -it / 4 }, animationSpec = tween(220)) + fadeIn(animationSpec = tween(150))
+            } else {
+                fadeIn(animationSpec = tween(100))
+            }
+        },
+        popExitTransition = {
+            if (initialState.destination.route == LaundryDestinations.PEMBAYARAN) {
+                slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(220)) + fadeOut(animationSpec = tween(220))
+            } else {
+                fadeOut(animationSpec = tween(80))
+            }
+        },
         modifier = modifier
             .fillMaxSize()
             .padding(paddingValues)
