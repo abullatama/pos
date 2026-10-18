@@ -118,48 +118,37 @@ fun CafeOpenOrdersScreen(
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Header Panel Kiri: Tab Switcher & Tombol Pesanan Baru
+                // Baris 1: Judul Halaman & Tombol Aksi Utama "Pesanan Baru"
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Segmented Tabs Pill (Tinggi standar sentuh tablet 44dp)
-                    Row(
-                        modifier = Modifier
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(9999.dp))
-                            .background(Color(0xFFE5E7EB))
-                            .padding(4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CafeOrdersTab.values().forEach { tab ->
-                            val isSelected = activeTab == tab
-                            val count = if (tab == CafeOrdersTab.OPEN_TABLES) openOrders.size else completedOrders.size
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(9999.dp))
-                                    .background(if (isSelected) colors.accent else Color.Transparent)
-                                    .clickable {
-                                        activeTab = tab
-                                        printStatusMessage = null
-                                    }
-                                    .padding(horizontal = 14.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "${tab.title} ($count)",
-                                    color = if (isSelected) Color.White else colors.ink,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                )
-                            }
-                        }
+                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                        Text(
+                            text = "Daftar Pesanan",
+                            color = colors.ink,
+                            style = A3Theme.typography.headline.copy(fontSize = 20.sp),
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        Text(
+                            text = if (activeTab == CafeOrdersTab.OPEN_TABLES) {
+                                "${openOrders.size} meja sedang aktif"
+                            } else {
+                                "${completedOrders.size} pesanan lunas • ${formatRupiah(completedOrders.sumOf { it.order.total })}"
+                            },
+                            color = colors.inkMuted,
+                            style = A3Theme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
 
-                    // Tombol Pesanan Baru (Tinggi standar sentuh tablet 44dp dengan touch target luas & elevasi)
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    // Tombol Pesanan Baru (Tinggi standar sentuh tablet 44dp dengan touch target luas & anti-terpotong)
                     Surface(
                         shape = RoundedCornerShape(9999.dp),
                         color = colors.accent,
@@ -185,22 +174,51 @@ fun CafeOpenOrdersScreen(
                                 text = "Pesanan Baru",
                                 color = Color.White,
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
                 }
 
-                // Sub-header ringkasan
-                Text(
-                    text = if (activeTab == CafeOrdersTab.OPEN_TABLES) {
-                        "${openOrders.size} meja sedang aktif"
-                    } else {
-                        "${completedOrders.size} pesanan lunas • Total ${formatRupiah(completedOrders.sumOf { it.order.total })}"
-                    },
-                    color = colors.inkMuted,
-                    style = A3Theme.typography.bodySmall
-                )
+                // Baris 2: Segmented Tabs Pill Penuh (Meja Terbuka vs Riwayat Selesai)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(9999.dp))
+                        .background(Color(0xFFE5E7EB))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CafeOrdersTab.values().forEach { tab ->
+                        val isSelected = activeTab == tab
+                        val count = if (tab == CafeOrdersTab.OPEN_TABLES) openOrders.size else completedOrders.size
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(9999.dp))
+                                .background(if (isSelected) colors.accent else Color.Transparent)
+                                .clickable {
+                                    activeTab = tab
+                                    printStatusMessage = null
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${tab.title} ($count)",
+                                color = if (isSelected) Color.White else colors.ink,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
 
                 // Konten Daftar: Pesanan Terbuka ATAU Riwayat Selesai
                 if (activeTab == CafeOrdersTab.OPEN_TABLES) {
