@@ -43,11 +43,15 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import id.a3.core.data.local.AppDatabase
 import id.a3.core.printer.PrinterService
 import id.a3.core.ui.component.A3Button
 import id.a3.core.ui.component.ButtonVariant
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
+import id.a3.feature.admin.presentation.AdminMenuScreen
+import id.a3.feature.admin.presentation.AdminViewModel
+import id.a3.feature.admin.presentation.AdminViewModelFactory
 import id.a3.feature.laundry.LaundryViewModelFactory
 import id.a3.feature.laundry.presentation.LaundryHomeScreen
 import id.a3.feature.laundry.presentation.LaundryHomeViewModel
@@ -76,6 +80,7 @@ object LaundryDestinations {
     const val CUCIAN = "cucian"
     const val SCAN = "scan"
     const val LAINNYA = "lainnya"
+    const val ADMIN = "admin"
     const val PEMBAYARAN = "pembayaran"
 }
 
@@ -111,6 +116,15 @@ fun LaundryNavHost(
     )
     val cashOutViewModel: CashOutViewModel = viewModel(
         factory = ShiftViewModelFactory(context, printerService)
+    )
+    val adminViewModel: AdminViewModel = viewModel(
+        factory = AdminViewModelFactory(
+            database = AppDatabase.build(context),
+            printerService = printerService,
+            deviceId = "L1-DEV-01",
+            businessUnitId = "bu-laundry-01",
+            appVersion = "1.0.0"
+        )
     )
 
     val uiState by laundryViewModel.uiState.collectAsState()
@@ -312,6 +326,15 @@ fun LaundryNavHost(
                     }
                 )
             }
+        }
+
+        composable(LaundryDestinations.ADMIN) {
+            AdminMenuScreen(
+                viewModel = adminViewModel,
+                onBackClick = {
+                    navController.popBackStack()
+                }
+            )
         }
 
         composable(LaundryDestinations.PEMBAYARAN) {

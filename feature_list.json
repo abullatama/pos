@@ -387,9 +387,9 @@
       "app": "both",
       "description": "Mode kios dan pembaruan app",
       "acceptance": "Update tidak berjalan saat shift aktif atau outbox tidak kosong",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": ""
+      "notes": "Penegakan aturan OPS-03 dan pengelolaan mode kios (SET-04, SET-05) selesai dibangun di :feature:admin, :app-cafe, dan :app-laundry: (1) UpdatePreconditionValidator memvalidasi kepatuhan OPS-03: update diblokir bila ada shift aktif (ActiveShiftRunning) atau bila outbox belum kosong (UnsyncedOutboxPending); (2) KioskManager mengelola aktivasi dan pelepasan LockTask (Screen Pinning); (3) Layar S15 Menu Admin Tablet (AdminMenuScreen & AdminViewModel) dengan proteksi PIN Owner ('9999' & lockout 3x salah), kontrol mode kios, pintasan Wi-Fi, uji cetak printer 58 mm, status antrean outbox, serta evaluasi kelayakan pembaruan APK via PackageInstaller API; (4) Terintegrasi penuh ke navigasi CafeNavHost dan LaundryNavHost; (5) Teruji 100% pada UpdatePreconditionValidatorTest (4 kombinasi kasus)."
     },
     {
       "id": "F40",
@@ -397,9 +397,9 @@
       "app": "both",
       "description": "Migrasi Room diuji dengan data lama",
       "acceptance": "Database versi lama berisi outbox bermigrasi tanpa kehilangan data",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Pengujian migrasi Room komprehensif selesai dibangun di :core:data (RoomMigrationTest.kt). Menguji migrasi berurutan v1 -> v2 -> v3 -> v4 -> v5 -> v6 menggunakan database riil berisi data legacy (pesanan selesai C1-0001, baris item pesanan, pelanggan legacy Ibu Nurhayati, menu, dan outbox berstatus PENDING). Hasil pengujian membuktikan: (1) Data legacy outbox dan seluruh transaksi bermigrasi 100% tanpa ada data yang hilang; (2) Kolom baru reasonCode dan flagsJson ditambahkan dengan default NULL yang aman; (3) Tabel-tabel baru (shifts, payments, corrections, cash_outs) dan seluruh indeksnya berhasil dibuat serta mampu menerima transaksi baru; (4) Query getUnsyncedCount membaca akurat data pending lama dan baru. Lulus 100% test."
     },
     {
       "id": "F41",

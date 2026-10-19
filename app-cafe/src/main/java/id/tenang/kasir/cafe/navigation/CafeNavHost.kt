@@ -44,11 +44,15 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import id.a3.core.data.local.AppDatabase
 import id.a3.core.printer.PrinterService
 import id.a3.core.ui.component.A3Button
 import id.a3.core.ui.component.ButtonVariant
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
+import id.a3.feature.admin.presentation.AdminMenuScreen
+import id.a3.feature.admin.presentation.AdminViewModel
+import id.a3.feature.admin.presentation.AdminViewModelFactory
 import id.a3.feature.cafe.CafeMenuViewModelFactory
 import id.a3.feature.cafe.presentation.CafeMenuViewModel
 import id.a3.feature.cafe.presentation.screen.CafeOpenOrdersScreen
@@ -101,6 +105,15 @@ fun CafeNavHost(
     )
     val cashOutViewModel: CashOutViewModel = viewModel(
         factory = ShiftViewModelFactory(context, printerService)
+    )
+    val adminViewModel: AdminViewModel = viewModel(
+        factory = AdminViewModelFactory(
+            database = AppDatabase.build(context),
+            printerService = printerService,
+            deviceId = "C1-DEV-01",
+            businessUnitId = "bu-cafe-01",
+            appVersion = "1.0.0"
+        )
     )
 
     NavHost(
@@ -274,7 +287,15 @@ fun CafeNavHost(
             }
         }
         composable(CafeDestinations.LAINNYA) {
-            CafePlaceholderView("Layar Pengaturan & Menu Admin")
+            AdminMenuScreen(
+                viewModel = adminViewModel,
+                onBackClick = {
+                    navController.navigate(CafeDestinations.KASIR) {
+                        popUpTo(CafeDestinations.KASIR) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            )
         }
         composable(CafeDestinations.PEMBAYARAN) {
             PaymentScreen(

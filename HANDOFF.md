@@ -1,106 +1,98 @@
-# HANDOFF: Sesi Pengendalian Kas Penuh, Koreksi & Tutup Shift (F35, F36, F37, F38)
+# HANDOFF: Sesi Tuntas Milestone M3 Penuh (F39 & F40 Selesai)
 
 ## 1. Tujuan Sesi yang Telah Selesai
-Mengimplementasikan 4 fitur utama siklus pengendalian kas, koreksi transaksi, dan penutupan shift pada Milestone M3:
-1. **F35 (Void, Refund Tunai, dan Diskon Manual dengan PIN Manager Lokal):**
-   - Catatan pembalik append-only di Room (`CorrectionEntity` & `CorrectionDao`, Room v5 `MIGRATION_4_5`).
-   - Penegakan COR-04: Refund selalu tunai (`refund_method: "cash"`), mengurangi kas laci shift berjalan (`ShiftCashInput.cashRefunds`).
-   - Otorisasi PIN Manager lokal offline (PIN `"4444"`, lockout 3x salah terkunci 5 menit COR-07).
-   - Event outbox atomik `correction.recorded` sesuai skema OpenAPI.
-   - Format cetak struk refund termal 58 mm (`RefundReceiptFormatter`).
-2. **F36 (Refund Transaksi Shift Sebelumnya dengan Batas Nilai dan Umur):**
-   - Penegakan batas COR-05 & OQ-22 di tablet: transaksi shift lampau dengan nilai $\le \text{Rp } 100.000$ dan umur $\le 14$ hari disetujui di tablet (`isOldTransactionRefund = true`).
-   - Transaksi $> \text{Rp } 100.000$ atau $> 14$ hari ditolak di tablet dengan arahan ke Owner Web Dashboard.
-3. **F37 (Kas Keluar Operasional dengan Foto Nota dan Batas tanpa PIN):**
-   - Entitas Room `CashOutEntity` & `CashOutDao` (Room v6 `MIGRATION_5_6`).
-   - Penegakan ambang batas KAS-01, KAS-02 & OQ-08: nominal $\le \text{Rp } 50.000$ bebas PIN; nominal $> \text{Rp } 50.000$ wajib otorisasi PIN Manager (S14) dan wajib foto nota via kamera tablet.
-   - Mengurangi kas laci shift berjalan (`cashOuts` pada rumus K1 di `ShiftRepository`).
-   - Event outbox atomik `cashout.recorded`.
-   - Layar S12 Kas Keluar (`CashOutScreen` & `CashOutViewModel`) dan format struk bukti kas keluar 58 mm (`CashOutReceiptFormatter`).
-4. **F38 (Tutup Shift Offline dan Tutup Paksa dari Tablet):**
-   - Banner kepatuhan offline TUP-08 (*"Menunggu sinkron, jangan reset tablet"*) pada `CloseShiftScreen` (S11).
-   - Dialog tutup paksa `ForceCloseShiftDialog` di `:feature:shift`: catatan audit wajib (`note`), otorisasi PIN Manager, dan eksekusi atomik `OrderTransactionManager.forceCloseShift`.
-   - Status shift diperbarui ke `"force_closed"`, seketika membebaskan tablet (`getActiveShift() == null`) sehingga kasir baru dapat membuka shift berikutnya tanpa konflik.
-   - Event outbox atomik `shift.force_closed` sesuai skema OpenAPI.
+Menuntaskan **2 fitur penutup Milestone M3** sehingga **Milestone M3 resmi tuntas 100% (11 dari 11 fitur lulus)**:
+1. **F40 (Migrasi Room Diuji dengan Data Lama):**
+   - Penegakan kriteria penerimaan: *"Database versi lama berisi outbox bermigrasi tanpa kehilangan data"*.
+   - Uji migrasi otomatis berurutan v1 $\rightarrow$ v2 $\rightarrow$ v3 $\rightarrow$ v4 $\rightarrow$ v5 $\rightarrow$ v6 di `:core:data` (`RoomMigrationTest.kt`).
+   - Menyisipkan data legacy nyata pada skema v1: pesanan lunas `C1-0001`, baris item pesanan, pelanggan legacy `Ibu Nurhayati`, menu, dan outbox menunggu sinkron (`PENDING`).
+   - Membuktikan 100% data legacy utuh setelah migrasi v6, kolom baru `reasonCode` dan `flagsJson` default NULL aman, seluruh tabel baru (`shifts`, `payments`, `corrections`, `cash_outs`) beserta indeksnya terbentuk dan dapat menerima transaksi baru, serta `OutboxDao.getUnsyncedCount()` membaca data akurat.
+2. **F39 (Mode Kios dan Pembaruan App Sesuai Aturan OPS-03):**
+   - Penegakan kriteria penerimaan: *"Update tidak berjalan saat shift aktif atau outbox tidak kosong"*.
+   - `UpdatePreconditionValidator` di `:feature:admin`:
+     * Syarat 1: Tidak ada shift aktif (`ShiftDao.getActiveShift() == null`). Jika ada shift aktif, update diblokir: *"Shift aktif kasir '[Nama]' masih berjalan. Tutup shift terlebih dahulu sebelum memperbarui aplikasi."*
+     * Syarat 2: Antrean outbox harus bersih (`OutboxDao.getUnsyncedCount() == 0`). Jika ada data belum tersinkron, update diblokir: *"Terdapat X transaksi/event di outbox yang belum tersinkron ke server. Pastikan seluruh data tersinkron terlebih dahulu."*
+     * Jika kedua syarat terpenuhi: status `UpdateEligibility.Allowed` (Aman untuk diperbarui).
+   - `KioskManager` di `:feature:admin`:
+     * Mengelola aktivasi dan pelepasan mode Lock Task (`Activity.startLockTask()` dan `Activity.stopLockTask()`) untuk memblokir navigasi Back/Home/Recents kasir (SET-04, SET-05).
+     * Pintasan ke pengaturan Wi-Fi Android (`Settings.ACTION_WIFI_SETTINGS`).
+   - `ApkInstallerHelper` di `:feature:admin`:
+     * Penanganan sesi instalasi mandiri via `PackageInstaller.Session` untuk jalur distribusi APK privat tanpa Google Play.
+   - Layar S15 Menu Admin Tablet (`AdminMenuScreen`, `AdminViewModel`, `AdminViewModelFactory`):
+     * Proteksi PIN Owner (default `"9999"`, lockout salah 3x terkunci 5 menit).
+     * Panel 1: Pengaturan Hardware & Jaringan (Wi-Fi, status printer & tombol Uji Cetak struk 58 mm, status antrean outbox).
+     * Panel 2: Kontrol Mode Kios (Status Lock Task, tombol Kunci Layar Kios & Lepaskan Kios).
+     * Panel 3: Evaluasi Kepatuhan Pembaruan APK OPS-03 secara real-time dan pemilih berkas APK pembaruan.
+   - Navigasi & Integrasi Antarmuka:
+     * `app-cafe`: Rute `CafeDestinations.LAINNYA` dan tombol Admin di TopBar/Rail membuka `AdminMenuScreen`.
+     * `app-laundry`: Rute `LaundryDestinations.ADMIN` dan tombol Admin di TopBar/Rail membuka `AdminMenuScreen`.
 
-Progress M3 saat ini: **9 dari 11 fitur tuntas (81,8%)**. Total proyek: **38 dari 44 fitur tuntas (86,4%)**. Seluruh unit test lulus 100% dan kedua APK debug sukses dibangun.
+Progress proyek saat ini: **Milestone M0 (5/5, 100%), Milestone M1 (9/9, 100%), Milestone M2 (15/15, 100%), Milestone M3 (11/11, 100%)**.
+Total fitur tuntas: **40 dari 44 fitur tuntas (90,9%)**. Seluruh unit test lulus 100% dan kedua APK debug sukses dibangun.
 
 ---
 
 ## 2. Yang Sudah Selesai di Sesi Ini
 
-### A. Modul `:core:data` (Database Room v6 & Outbox Atomik)
-- **Room Database v5 & v6:**
-  - `MIGRATION_4_5`: Penambahan tabel `corrections` (`CorrectionEntity`) dengan indeks `orderId` dan `shiftId`.
-  - `MIGRATION_5_6`: Penambahan tabel `cash_outs` (`CashOutEntity`) dengan indeks `shiftId`.
-  - Transaksi Room `OrderDao.observeCompletedOrdersWithLines` mencakup status `'paid'`, `'refunded'`, `'void'`, dan `'partial_refund'`.
-- **OrderTransactionManager:**
-  - `recordCorrection(...)`: Transaksi atomik koreksi (refund/void), penegakan aturan batas F36, update status order, dan outbox `correction.recorded`.
-  - `recordCashOut(...)`: Transaksi atomik kas keluar, penegakan ambang batas Rp 50.000 & foto nota, dan outbox `cashout.recorded`.
-  - `forceCloseShift(...)`: Transaksi atomik tutup paksa shift oleh manager dan outbox `shift.force_closed`.
+### A. Modul `:core:data` (F40 Migrasi Room & Query Outbox)
+- **`OutboxDao.kt`:**
+  - Penambahan query `getUnsyncedCount(): Int` dan `observeUnsyncedCount(): Flow<Int>` (`SELECT COUNT(*) FROM outbox WHERE status != 'SENT'`).
+- **`RoomMigrationTest.kt`:**
+  - Pengujian migrasi otomatis end-to-end v1 $\rightarrow$ v6 oleh Room Engine dengan data riil legacy outbox & transaksi.
+  - Pengujian migrasi inkremental per versi memvalidasi penambahan kolom `reasonCode`/`flagsJson`, tabel `shifts`, `payments`, `corrections`, `cash_outs`, dan seluruh indeks pendukungnya.
 
-### B. Modul `:feature:shift` (Penyempurnaan Penuh Rumus Kas K1 & Layar)
-- **Rumus Kas Seharusnya ($K_1$) 100% Lengkap:**
-  - `DefaultShiftRepository.getShiftSummary(shiftId)` secara dinamis menghubungkan refund riil dan kas keluar riil:
-    $$\text{Kas Seharusnya } (K_1) = \text{Kas Awal} + \text{Penjualan Tunai} + \text{DP Tunai} - \text{Refund Tunai} - \text{Kas Keluar}$$
-- **Layar S12 Kas Keluar (`CashOutScreen` & `CashOutViewModel`):**
-  - Layout split 50/50 tablet landscape 11" mengikuti prinsip Quiet Luxury dan antislop UI.
-  - Display nominal besar `A3MoneyText`, preset cepat (+10k, +20k, +50k, +100k), keypad numerik 3x4 taktil (`A3Keypad`), segmented chips kategori (*Bahan baku*, *Operasional*, *Perawatan*, *Kemasan*, *Lain-lain*), alasan detail (`A3TextField`), dan penangkap foto nota fisik via kamera tablet.
-  - Status ambang batas interaktif dan integrasi dialog otorisasi PIN Manager (S14).
-- **Banner Kepatuhan Offline (Aturan TUP-08):**
-  - Pada `CloseShiftScreen` (Tahap 3 S11): Banner peringatan oranye tegas mencegah reset tablet sebelum sinkron.
-- **Dialog Tutup Paksa (`ForceCloseShiftDialog`):**
-  - Input catatan audit alasan dan verifikasi PIN Manager lokal.
+### B. Modul `:feature:admin` (F39 Kiosk Mode & App Update OPS-03)
+- **`UpdatePreconditionValidator.kt`:**
+  - Evaluasi kelayakan update mematuhi aturan OPS-03 (`UpdateEligibility.Allowed` vs `UpdateEligibility.Blocked`).
+- **`KioskManager.kt`:**
+  - Pengendali `startLockTask()`, `stopLockTask()`, `isLockTaskActive()`, dan `openWifiSettings()`.
+- **`ApkInstallerHelper.kt`:**
+  - Instalasi paket APK privat mandiri via `PackageInstaller.Session`.
+- **`AdminViewModel.kt` & `AdminViewModelFactory.kt`:**
+  - Manajemen state S15: verifikasi PIN Owner, lockout proteksi, observasi reaktif shift aktif dan outbox, pengujian koneksi dan uji cetak printer 58 mm, evaluasi kelayakan update, serta eksekusi pemasangan APK.
+- **`AdminMenuScreen.kt` (Layar S15):**
+  - Layout tablet landscape 11" pola split 2-kolom mengikuti prinsip Quiet Luxury dan antislop UI (bebas emoji, touch target $\ge 48\text{ dp}$, kontras AA tinggi).
+  - Gerbang Otorisasi PIN Owner dengan 4-digit indicator dots dan `A3Keypad` taktil 3x4.
+  - Dashboard Admin: status perangkat, koneksi Wi-Fi, uji cetak printer, kontrol mode kios, indikator kepatuhan OPS-03, dan aksi pembaruan APK.
+- **`UpdatePreconditionValidatorTest.kt`:**
+  - 4 kasus uji unit test lulus 100% (bebas shift & outbox kosong, ada shift aktif, ada outbox pending, dan kombinasi keduanya).
 
-### C. Modul `:core:printer` (Format Struk Thermal ESC/POS 58 mm)
-- **`RefundReceiptFormatter` & `RefundReceiptData`:**
-  - Struk pengembalian dana tunai / pembatalan void 58 mm memuat alasan audit, nominal dana keluar tunai, approved by manager, tanda `[REFUND TRANSAKSI SHIFT LALU]`, dan watermark `*** SALINAN ***` saat dicetak ulang.
-- **`CashOutReceiptFormatter` & `CashOutReceiptData`:**
-  - Struk bukti kas keluar operasional 58 mm memuat kategori, alasan, nama kasir, approved by manager, status foto bukti nota, dan total dana keluar tunai.
-
-### D. Modul `:core:ui` (Komponen Dialog S14 Otorisasi PIN Manager)
-- **`ManagerPinApprovalDialog` (`S14`):**
-  - Dialog terpusat 2-kolom: kartu display nominal, banner informatif transaksi lampau, 6 pilihan alasan audit tetap (`wrong_input`, `customer_cancelled`, `quality_complaint`, `wrong_made`, `promo`, `other`), input catatan, 4 digit indikator PIN, keypad taktil 3x4 (`A3Keypad`), dan proteksi lockout 3x salah terkunci 5 menit (COR-07).
-
-### E. Navigasi & Integrasi Antarmuka (`feature:cafe`, `feature:laundry`, `app-cafe`, `app-laundry`)
-- **POS Cafe (`CafeOpenOrdersScreen` Tab Riwayat Selesai):**
-  - Kartu riwayat reaktif (Lunas, Refund, Void, Refund Sebagian) dan badge "Shift Lalu".
-  - Panel detail menyediakan tombol "Cetak Salinan", "Void", dan "Refund Tunai" dengan dialog penolakan batas F36 dan dialog S14.
-- **POS Laundry (`LaundryOrdersScreen` & `LaundryOrdersViewModel`):**
-  - Penambahan aksi `PendingManagerAction.Refund`.
-- **Kartu Shift Aktif (`ActiveShiftCard`):**
-  - Tombol aksi *"Catat Kas Keluar"* (Primary) dan link *"Tutup Paksa Shift (Manager)"* terhubung di kedua aplikasi.
+### C. Modul Cangkang (`app-cafe` & `app-laundry`)
+- **`CafeNavHost.kt`:**
+  - Integrasi `AdminViewModel` dan penggantian placeholder `CafeDestinations.LAINNYA` dengan `AdminMenuScreen`.
+- **`LaundryNavHost.kt` & `MainActivity.kt`:**
+  - Penambahan rute `LaundryDestinations.ADMIN` terhubung ke `AdminMenuScreen` via klik tombol Admin di TopBar dan Rail.
 
 ---
 
-## 3. Yang Belum Selesai (Langkah untuk Sesi Baru: Lanjutan Milestone M3)
+## 3. Yang Belum Selesai (Langkah untuk Sesi Baru: Memulai Milestone Terakhir M4)
 
-Sisa 2 fitur Milestone M3:
-1. **F39 (Mode Kios dan Pembaruan App):**
-   - Integrasi LockTask (Screen Pinning) dan pemblokiran update saat shift aktif atau outbox belum kosong (OPS-03).
-2. **F40 (Migrasi Room Diuji dengan Data Lama):**
-   - Unit test migrasi Room v1 $\rightarrow$ v2 $\rightarrow$ v3 $\rightarrow$ v4 $\rightarrow$ v5 $\rightarrow$ v6 memastikan tidak ada kehilangan data transaksi, shift, koreksi, petty cash, atau outbox.
+Sisa 4 fitur penutup proyek pada **Milestone M4 (Go-live, stabilisasi, dan operasional)**:
+1. **F41 (Heartbeat dan Crashlytics):**
+   - Telemetri status perangkat berkala (`POST /v1/devices/me/heartbeat`) dan integrasi pelaporan crash/galat tanpa data sensitif pelanggan (OPS-01, OPS-02).
+2. **F42 (Tombol Kirim via WA Manual dan Status Notifikasi):**
+   - Fitur spesifik laundry: tombol kirim WA manual dan tampilan status notifikasi server (`none`, `queued`, `sent`, `failed`) pada kartu rincian cucian (L06 / LDR-09).
+3. **F43 (Uji Offline 24 Jam):**
+   - Pengujian operasional offline 24 jam penuh: memastikan integritas transaksi lokal, rekonsiliasi kas, dan sinkronisasi tuntas saat koneksi pulih (`needs_device: true`).
+4. **F44 (Paket Go-live: Nota Kertas Cadangan dan SOP Darurat):**
+   - Dokumen SOP darurat satu halaman saat tablet/printer/internet mati dan template buku nota manual bernomor.
 
 ---
 
 ## 4. Keputusan Teknis Penting
 
-- **Dual Database Migration (v4 $\rightarrow$ v5 $\rightarrow$ v6):**
-  - v5 menambahkan tabel `corrections` (`CorrectionEntity`).
-  - v6 menambahkan tabel `cash_outs` (`CashOutEntity`).
-- **COR-04, COR-05 & OQ-22 Penegakan Batas Refund:**
-  - Refund selalu tunai mengurangi laci hari berjalan. Transaksi lampau dibatasi $\le \text{Rp } 100.000$ dan $\le 14$ hari di tablet.
-- **KAS-01, KAS-02 & OQ-08 Penegakan Batas Kas Keluar:**
-  - Batas kas keluar tanpa PIN: Rp 50.000. Di atas Rp 50.000 wajib otorisasi PIN Manager dan foto nota.
-- **Immediate Tablet Unlocking pada Tutup Paksa:**
-  - Status `force_closed` membebaskan tablet seketika sehingga kasir berikutnya dapat membuka shift baru tanpa terhalang SHF-03.
-- **TUP-08 Offline Warning:**
-  - Banner peringatan offline ditampilkan visual pada layar penutupan kasir untuk mencegah reset tablet yang menghilangkan data outbox.
+- **Aturan Pembaruan OPS-03:**
+  - Pembaruan aplikasi mandiri WAJIB ditolak bila ada kasir yang belum menutup shift atau ada data transaksi lokal yang belum terkirim ke server (`status != 'SENT'`). Hal ini mencegah terputusnya transaksi atau inkonsistensi saat APK dimuat ulang oleh sistem OS.
+- **Isolasi Mode Kios:**
+  - Mode Kios (Lock Task) diakses dan dikendalikan melalui PIN Owner (`"9999"`), bukan PIN kasir atau manager, memastikan staf kasir toko tetap terkunci di dalam antarmuka POS.
+- **Migrasi Maju Saja (Forward Migration):**
+  - Database Room versi 6 kompatibel mundur secara penuh dengan database versi 1 hingga 5, terbukti lolos pengujian tanpa kehilangan 1 baris pun data transaksi lama.
 
 ---
 
 ## 5. File yang Perlu Dibaca Pertama Kali di Sesi Baru
 - `HANDOFF.md` (dokumen ini)
-- `feature_list.json` (baris 380–405 untuk sisa fitur M3)
-- `docs/milestones/M3-shift-kas.md`
-- `docs/spec/06-kebutuhan-fungsional-d-tutup-shift-sync-.md` (bagian mode kios & update)
+- `feature_list.json` (baris 404–445 untuk Milestone M4)
+- `docs/milestones/M4-go-live.md`
+- `docs/spec/16-infrastruktur-deployment-backup-dan-pema.md`
+- `docs/spec/17-skenario-uji-dan-kriteria-lulus.md`

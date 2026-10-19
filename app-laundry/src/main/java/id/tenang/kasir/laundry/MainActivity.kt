@@ -191,12 +191,8 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onAdminClick = {
-                            navController.navigate(LaundryDestinations.LAINNYA) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
+                            navController.navigate(LaundryDestinations.ADMIN) {
                                 launchSingleTop = true
-                                restoreState = true
                             }
                         },
                         navItems = laundryNavItems,
