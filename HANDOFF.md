@@ -1,78 +1,101 @@
-# HANDOFF: Sesi Implementasi Milestone M2 Selesai Penuh (F15–F29) & Logo Laundry
+# HANDOFF: Sesi Buka/Tutup Shift Terpadu (F30–F34) & Penyempurnaan POS Laundry
 
 ## 1. Tujuan Sesi yang Telah Selesai
-Menyelesaikan seluruh alur fungsional, operasional, arsitektur sinkronisasi, antrean cetak offline, dan penyempurnaan UI untuk Milestone M2 (F15 sampai F29). Milestone M2 resmi tuntas 100% (15 dari 15 fitur lolos). Selain itu, logo resmi **Athia Laundry House** (`loundry.jpeg`) telah terintegrasi penuh ke dalam sistem desain tema tablet.
+1. Menyempurnakan alur operasional dan sistem desain POS Laundry (Layar Beranda L01, generator nomor urut harian otomatis, identitas toko dinamis struk, pembersihan label UI, dan alur pembayaran DP).
+2. Mengimplementasikan fitur siklus shift dan pengendalian kas Milestone M3:
+   - **F30:** Buka shift dengan kas awal per pecahan uang (Layar S04, Room `ShiftEntity` & `ShiftDao`, event `shift.opened`, validasi standar Rp200.000).
+   - **F31:** Tutup shift dengan hitung kas buta (S09), evaluasi selisih kas terhadap rumus K1 (S10), alasan selisih jika melebihi batas toleransi Rp2.000 (OQ-07), dan format cetak Laporan Z ESC/POS 58 mm (`ZReportFormatter`).
+   - **F32:** Catatan alokasi kas saat tutup shift (laci + setor ke owner) dengan validasi keseimbangan alokasi (TUP-06) dan pencatatan penerima uang (`cash_taken_by`).
+   - **F33:** Serah terima pesanan terbuka ke shift berikutnya (TUP-01: ID pesanan terbuka dibawa di `handover_order_ids` tanpa dibatalkan; pembayaran dicatat di shift penerima).
+   - **F34:** Ceklis verifikasi transaksi QRIS Statis saat tutup shift (TUP-04: daftar ID pembayaran QRIS dibawa di array `qris_checked_payment_ids` pada event `shift.closed`).
+
+Progress M3 saat ini: **5 dari 11 fitur tuntas (45,5%)**. Total proyek: **34 dari 44 fitur tuntas (77,3%)**. Seluruh unit test lulus 100% dan kedua APK debug sukses dibangun.
 
 ---
 
-## 2. Yang Sudah Selesai (Fitur M2 Tuntas 100%)
+## 2. Yang Sudah Selesai di Sesi Ini
 
-- **F15: Katalog Menu, Varian, & Add-on (C01 & C02):**
-  - Katalog kasir POS responsif landscape 11", varian single/multi-choice, kalkulasi realtime, dan struk keranjang.
-- **F16: Diskon Preset, Service Charge, Pajak, & Pembulatan (Dialog C06 & S14):**
-  - Kalkulasi presisi lolos Test Vector C1–C3 tanpa selisih 1 rupiah. Proteksi PIN Manager untuk diskon manual.
-- **F17: Dine-in, Takeaway, Pindah Meja (C05), & Tanda Habis (C07):**
-  - Event outbox atomik `order.table_moved` dan `menu.sold_out_changed`. Redup otomatis katalog menu habis.
-- **F18: Kirim ke Dapur & Tiket Dapur Tanpa Harga (PRT-03, C04/C05):**
-  - Format ESC/POS tiket dapur hanya memuat item baru tanpa harga sama sekali. Geser A3SwipeButton untuk kirim.
-- **F19: Cari atau Buat Pelanggan Laundry (L02):**
-  - Normalisasi nomor telepon 08 (`PhoneNumberUtil`), event outbox `customer.created` bebas shift.
-- **F20: Order Laundry per kg & pcs dengan Express (L03, Test Vector L1–L3):**
-  - Stepper taktil berat & pcs, saklar express, 3 opsi pembayaran (`Bayar saat Ambil`, `Lunas di Muka`, `DP`).
-- **F21: Cetak Tag QR 58 mm & Scan Status Satu Arah (L07):**
-  - Tag roll 58 mm tanpa harga (PRT-03), scan kamera CameraX + ZXing HybridBinarizer, tombol transisi status.
-- **F22: Pengambilan Sebagian Per Baris (`laundry_pickups`, L08):**
-  - Entitas `LaundryPickupEntity`, transisi ke `picked_up` hanya jika seluruh baris `is_final = true`.
-- **F23: Cuci Ulang Komplain Pelanggan (L09):**
-  - Status Siap kembali ke Diproses tanpa biaya baru, alasan audit tetap, dan PIN Manager.
-- **F24: Proteksi Penyerahan Cucian Belum Lunas (Dialog S14):**
-  - Penyerahan dengan sisa tagihan > 0 wajib PIN Manager; lockout salah PIN 3x terkunci 5 menit (COR-07).
-- **F25: Pembayaran Tunai & Kembalian (S06):**
-  - Tombol nominal cepat, kembalian akurat (CashCalculator, Test Vector K2), struk pelanggan 58 mm.
-- **F26: Pembayaran QRIS Statis Offline (S07):**
-  - Panduan merchant/soundbox offline tanpa payment gateway (PAY-03, PAY-04).
-- **F27: Antrean Cetak Otomatis saat Printer Putus & Cetak Ulang SALINAN (PRT-02, PRT-05):**
-  - `PrintQueueManager` di `:core:printer`: antrean FIFO otomatis saat printer putus/mati (PRT-01, PRT-02).
-  - Saat printer tersambung kembali (`Connected`), antrean `PENDING` otomatis dicetak berurutan (*auto-drain*).
-  - Format cetak ulang (`CustomerReceiptFormatter`, `KitchenTicketFormatter`, `LaundryTagFormatter`) menyematkan watermark tegas `*** SALINAN ***` dan catatan audit kasir/waktu (PRT-05), tetap patuh PRT-03 tanpa harga pada tiket & tag.
-  - `PrinterStatusBadge` di TopBar menampilkan indikator jumlah antrean jika printer putus (misal: *Printer Putus (2 antre)*).
-- **F28: Sinkron Menerima Flag Server tanpa Menganggap Gagal:**
-  - Respon server `ACCEPTED` dengan `flags[]` (karantina: `TOTAL_MISMATCH`, `SHIFT_RANGE`, dll) ditandai selesai (`SENT`), menyimpan `flagsJson` ke Room, dan tidak pernah masuk ke antrean bermasalah.
-- **F29: Antrean Bermasalah REJECTED dengan Alasan & Retry:**
-  - Bundel `REJECTED` non-retryable masuk status `FAILED` membawa `reasonCode` dan `lastError` tanpa menghapus payload event (append-only & aman dari retensi pembersihan).
-  - `SyncProblemQueueManager` dan `OutboxDao` menyediakan pemantauan reaktif (`observeFailedCount`, `observeProblemBundles`) serta aksi coba lagi (`retryFailedBundle`, `retryAllProblems`, `retryAndSync`) yang mereset status ke `PENDING`.
-- **Pembaruan Logo Laundry Resmi di TopBar (`loundry.jpeg`):**
-  - Berkas sumber `loundry.jpeg` dikonversi dan dipangkas bersih menjadi `ic_laundry_logo.png` (32-bit ARGB transparan) di `:core:ui`.
-  - Abstraksi multi-tema via `LocalAppLogo` di `AppDesignTokens.kt`: `CafeTheme` menyuplai logo A3, `LaundryTheme` menyuplai logo Athia Laundry. `TopBar` mengadopsi `A3Theme.logoRes` dinamis.
+### A. Penyempurnaan POS Laundry
+- **Layar Beranda L01 (`LaundryHomeScreen` & `LaundryHomeViewModel`):**
+  - Menggantikan placeholder kosong dengan dashboard metriks reaktif harian: *Order Hari Ini*, *Siap Diambil*, *Belum Lunas*.
+  - Dua tombol pintasan aksi cepat: *Order Baru* (Velvet Rose) dan *Scan Tag Cucian*.
+  - Daftar reaktif cucian siap diambil dengan penyerahan cepat ke detail pesanan.
+- **Generator Nomor Tampil Otomatis:**
+  - Menambahkan query `countOrdersForPrefixAndDate` di `OrderDao` untuk menghitung urutan harian per prefix (`L1-` dan `C1-`).
+  - Menghapus string hardcoded `"L1-0001"`. Nomor order baru kini otomatis bertambah secara dinamis (`L1-0001`, `L1-0002`, dst).
+- **Identitas Toko Dinamis pada Struk:**
+  - Mengabstraksi identitas toko pada `PaymentViewModel` dan `CustomerReceiptData`.
+  - Struk Laundry mencetak nama resmi **ATHIA LAUNDRY HOUSE**, alamat **Jl. Trans Sulawesi, Bintauna**, dan kontak **+62 823-4778-5986** (OQ-25), bukan AA Coffeeshop.
+- **Penyempurnaan Alur DP (Down Payment):**
+  - Menambahkan pilihan nominal DP (Rp 10.000, Rp 20.000, 50%) pada saat opsi *Uang Muka (DP)* dipilih di layar order baru.
+  - Mengirim nominal DP aktual dan flag `isDp = true` ke `PaymentViewModel`, sehingga status order di Room tersimpan sebagai `dp` (bukan langsung `paid`) dan sisa tagihan terhitung akurat.
+- **Pembersihan Teks Antarmuka Pengguna:**
+  - Menghapus seluruh kebocoran kode dokumen teknis spek dari UI kasir (seperti `(L05)`, `(L08)`, `(F22)`, `(F23)`, dan `(F24)`).
+
+### B. Milestone M3: Buka Shift (F30)
+- **Database Room (`AppDatabase` v3 & `MIGRATION_2_3`):**
+  - Entitas `ShiftEntity` dan `ShiftDao` di `:core:data`.
+  - Transaksi atomik `OrderTransactionManager.openShift(...)` menyimpan shift ke Room dan mencatat event outbox `shift.opened` membawa `opening_cash_breakdown`.
+  - Penegakan aturan **SHF-03**: Menolak membuka shift baru jika masih ada shift berstatus `open` pada tablet.
+- **Model Pecahan & Layar S04 Buka Shift (`OpenShiftScreen` & `ShiftViewModel`):**
+  - Model `CashDenomination` dan `StandardDenominations` dengan seluruh pecahan resmi Indonesia (Rp 100k s/d Rp 100 koin) serta preset bawaan Rp 200.000 (OQ-06).
+  - Layout split-screen 60/40 dengan stepper taktil 48dp, tombol pintasan *"Isi Standar (Rp 200.000)"*, dan validasi alasan selisih jika berbeda dari standar (SHF-04).
+  - Indikator shift di TopBar membaca status riil dari Room: menampilkan nama kasir & nominal kas awal jika aktif, atau status *"Belum Buka Shift"*.
+
+### C. Milestone M3: Tutup Shift Terpadu (F31, F32, F33, F34)
+- **Pencatatan Pembayaran Per Shift (`PaymentEntity`, `PaymentDao`, `AppDatabase` v4 & `MIGRATION_3_4`):**
+  - Tabel `payments` merekam `shiftId` yang menerima pembayaran kasir secara append-only.
+  - Query otomatis `getCashSalesForShift`, `getCashDpForShift`, `getQrisTotalForShift`, dan `getQrisPaymentsForShift`.
+- **Format Cetak Laporan Z ESC/POS 58 mm (`ZReportFormatter` di `:core:printer`):**
+  - Lebar 32 kolom kertas roll termal 58 mm untuk iWare C58BT.
+  - Memuat ringkasan penjualan, rincian per metode bayar, pengendalian kas fisik laci (K1), selisih kas, alokasi kas laci/setor, dan watermark tegas `*** SALINAN LAPORAN Z ***` (PRT-05).
+- **Layar CloseShiftScreen Wizard 3-Tahap di `:feature:shift`:**
+  - **Tahap 1 (S09 Hitung Kas Buta / TUP-02):** Tabel stepper taktil 48dp pecahan uang fisik dengan angka sistem disembunyikan 100%.
+  - **Tahap 2 (S10 Selisih K1 & Ceklis QRIS / TUP-03, TUP-04):** Pola 60/40 tablet: daftar transaksi QRIS Statis shift ini dengan checklist *"Sudah Dicek"* dan perbandingan Kas Seharusnya (K1) vs Dihitung, toleransi selisih Rp 2.000 (OQ-07), dan alasan wajib jika selisih > Rp 2.000.
+  - **Tahap 3 (S11 Alokasi Kas & Laporan Z / TUP-05, TUP-06):** Input uang ditinggal di laci (default Rp 200.000) dan disetor ke owner, validasi keseimbangan alokasi seimbang realtime, input penerima uang (`cash_taken_by`), dan pratinjau Laporan Z.
+- **Transaksi Atomik `OrderTransactionManager.closeShift(...)`:**
+  - Mengubah status `ShiftEntity` menjadi `"closed"`.
+  - Menyusun dan memasukkan event outbox `shift.closed` membawa `counted_cash`, `difference_reason`, `cash_left`, `cash_deposited`, `cash_taken_by`, `qris_checked_payment_ids`, dan `handover_order_ids`.
 
 ---
 
-## 3. Yang Belum Selesai (Langkah untuk Sesi Baru: Milestone M3)
+## 3. Yang Belum Selesai (Langkah untuk Sesi Baru: Lanjutan Milestone M3)
 
-Milestone M2 telah tuntas 100%. Langkah pengembangan selanjutnya beralih ke **Milestone M3 (Shift Kasir & Pengendalian Kas)**:
-1. **F30 (Buka Shift dengan Kas Awal per Pecahan):**
-   - Layar S02 Buka Shift: input pecahan uang kertas & logam, validasi kas awal bawaan (Rp200.000, OQ-06), alasan jika berbeda dari standar.
-2. **F31 (Tutup Shift: Hitung Kas Buta, Selisih, Alasan, Laporan Z):**
-   - Layar S10 Hitung Kas Fisik tanpa melihat total sistem, perhitungan selisih kas (Test Vector K1), cetak Laporan Z ESC/POS 58 mm.
-3. **F32 (Catatan Kas saat Tutup Shift dengan Validasi Alokasi):**
-   - Kas ditinggal di laci + kas disetor ke owner = kas dihitung fisik.
-4. **F33 (Serah Terima Pesanan Terbuka ke Shift Berikutnya - Cafe):**
-   - Pesanan meja yang belum lunas diserahkan ke shift baru; pembayaran dicatat di shift penerima.
-5. **F34–F40:** Rekonsiliasi QRIS saat tutup shift (F34), void/refund tunai offline PIN Manager (F35), refund transaksi lama (F36), kas keluar + foto nota (F37), tutup paksa (F38), mode kios & update APK (F39), migrasi Room data lama (F40).
+Sisa 6 fitur Milestone M3:
+1. **F35 (Void, Refund Tunai, dan Diskon Manual PIN Manager Lokal):**
+   - Layar S13 Riwayat Transaksi & Dialog S14 PIN Manager.
+   - Event outbox `correction.recorded` (tipe `refund` atau `void`, alasan dari daftar audit tetap, `approved_by` PIN Manager). Mengurangi kas seharusnya di shift berjalan (COR-04).
+2. **F36 (Refund Transaksi Shift Sebelumnya dengan Batas Nilai dan Umur):**
+   - Refund atas komplain transaksi lama: manager di tablet jika $\le \text{Rp } 100.000$ dan umur $\le 14$ hari (OQ-22); di atas itu diarahkan ke owner web (COR-05).
+3. **F37 (Kas Keluar dengan Foto Nota dan Batas tanpa PIN):**
+   - Layar S12 Kas Keluar: input nominal, alasan, kategori (Bahan baku, Operasional, dll), foto nota via kamera tablet. Batas tanpa PIN = Rp 50.000 (OQ-08); di atas itu wajib PIN Manager (KAS-01, KAS-02, event `cashout.recorded`).
+4. **F38 (Tutup Shift Offline dan Tutup Paksa dari Tablet):**
+   - Tutup shift offline dengan banner peringatan data menunggu sinkron (TUP-08).
+   - Tutup paksa shift kasir yang tidak hadir oleh Manager (`shift.force_closed` membawa `note` dan `approved_by`).
+5. **F39 (Mode Kios dan Pembaruan App):**
+   - Integrasi LockTask (Screen Pinning) dan pemblokiran update saat shift aktif atau outbox belum kosong (OPS-03).
+6. **F40 (Migrasi Room Diuji dengan Data Lama):**
+   - Unit test migrasi Room v1 $\rightarrow$ v2 $\rightarrow$ v3 $\rightarrow$ v4 memastikan tidak ada kehilangan data transaksi atau outbox.
 
 ---
 
 ## 4. Keputusan Teknis Penting
 
-- **Antrean Cetak Non-Blocking:** Kegagalan printer Bluetooth/USB tidak pernah membatalkan transaksi; cetakan ditampung di `PrintQueueManager` dan otomatis dicetak saat perangkat terhubung kembali.
-- **Audit Cetak Ulang:** Seluruh salinan cetak (`CustomerReceiptFormatter`, `KitchenTicketFormatter`, `LaundryTagFormatter`) menyertakan label `*** SALINAN ***` dan metadata siapa yang mencetak serta waktunya.
-- **Append-Only Sync Integrity:** Event bermasalah (`FAILED`) dan yang belum sinkron (`PENDING`) tidak pernah dihapus oleh retensi otomatis `deleteSentOlderThan`. Hanya event `SENT` berumur > 30 hari yang dibersihkan.
-- **Multi-Brand Design System:** `TopBar` menggunakan `A3Theme.logoRes` melalui CompositionLocal, menghasilkan tampilan logo brand yang berbeda secara otomatis untuk Cafe dan Laundry tanpa if-else di komponen.
+- **Dual Database Version Migration (v2 $\rightarrow$ v3 $\rightarrow$ v4):**
+  - v3 menambahkan tabel `shifts` (`ShiftEntity`).
+  - v4 menambahkan tabel `payments` (`PaymentEntity`) dengan indeks `orderId`, `shiftId`, dan `idempotencyKey` unik.
+- **Kepatuhan Test Vector K1 & Toleransi OQ-07:**
+  - Perhitungan kas seharusnya saat tutup shift patuh rumus: $\text{Kas Awal} + \text{Penjualan Tunai} + \text{DP/Lunas Tunai} - \text{Refund Tunai} - \text{Kas Keluar}$.
+  - Toleransi selisih kas $=\text{Rp } 2.000$. Selisih di atas itu mewajibkan kasir memasukkan alasan audit sebelum dapat melanjutkan wizard penutupan.
+- **TUP-06 Validasi Keseimbangan Kas:**
+  - `cashLeft + cashDeposited == countedCash` ditegakkan di level UI (`CloseShiftScreen`) dan level database transaksi (`OrderTransactionManager.closeShift`).
+  - Jika kas disetor $> 0$, nama penerima uang (`cashTakenBy`) wajib diisi.
 
 ---
 
 ## 5. File yang Perlu Dibaca Pertama Kali di Sesi Baru
 - `HANDOFF.md` (dokumen ini)
-- `feature_list.json` (baris 295–404 untuk Milestone M3)
+- `feature_list.json` (baris 340–405 untuk sisa fitur M3)
 - `docs/milestones/M3-shift-kas.md`
+- `docs/spec/05-kebutuhan-fungsional-c-pembayaran-struk-.md` (bagian koreksi & kas keluar)
 - `docs/spec/06-kebutuhan-fungsional-d-tutup-shift-sync-.md`

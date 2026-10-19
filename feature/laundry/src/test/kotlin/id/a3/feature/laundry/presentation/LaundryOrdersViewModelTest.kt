@@ -122,6 +122,12 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
         deviceId: String,
         shiftId: String?
     ): Result<OutboxEntity> = Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = deviceId, shiftId = shiftId, eventsJson = "[]"))
+
+    override suspend fun getNextDisplayNumber(prefix: String): String = "${prefix}0001"
+    override fun observeTodayOrdersCount(): Flow<Int> = flowOf(0)
+    override fun observeReadyOrdersCount(): Flow<Int> = flowOf(0)
+    override fun observeUnpaidOrdersCount(): Flow<Int> = flowOf(0)
+    override fun observeReadyOrders(limit: Int): Flow<List<OrderWithLines>> = flowOf(emptyList())
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

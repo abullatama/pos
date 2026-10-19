@@ -37,6 +37,9 @@ class LaundryViewModelFactory(
             modelClass.isAssignableFrom(LaundryOrdersViewModel::class.java) -> {
                 LaundryOrdersViewModel(repository, printerService) as T
             }
+            modelClass.isAssignableFrom(id.a3.feature.laundry.presentation.LaundryHomeViewModel::class.java) -> {
+                id.a3.feature.laundry.presentation.LaundryHomeViewModel(repository) as T
+            }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }
     }

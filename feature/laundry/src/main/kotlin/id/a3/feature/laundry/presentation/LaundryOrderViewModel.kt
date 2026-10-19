@@ -67,6 +67,7 @@ data class LaundryOrderUiState(
     val customerSearchResults: List<CustomerEntity> = emptyList(),
     val isCustomerDialogOpen: Boolean = false,
     val paymentOption: LaundryPaymentOption = LaundryPaymentOption.PAY_ON_PICKUP,
+    val dpAmount: Long = 0L,
     val estimatedCompletionText: String = "",
     val selectedServiceForInput: LaundryServiceEntity? = null,
     val inputWeightKg: Double = 1.0,
@@ -95,6 +96,7 @@ class LaundryOrderViewModel(
     private val _isCustomerDialogOpen = MutableStateFlow(false)
     private val _categoryFilter = MutableStateFlow(LaundryCategoryFilter.ALL)
     private val _paymentOption = MutableStateFlow(LaundryPaymentOption.PAY_ON_PICKUP)
+    private val _dpAmount = MutableStateFlow(0L)
     private val _selectedServiceForInput = MutableStateFlow<LaundryServiceEntity?>(null)
     private val _inputWeightKg = MutableStateFlow(1.0)
     private val _inputPieces = MutableStateFlow(1)
@@ -147,11 +149,15 @@ class LaundryOrderViewModel(
         Triple(q, res, open)
     }
 
+    private val _paymentFlow = combine(_paymentOption, _dpAmount) { opt, dp ->
+        opt to dp
+    }
+
     val uiState: StateFlow<LaundryOrderUiState> = combine(
         repository.observeServices(),
         _lines,
         _categoryFilter,
-        _paymentOption,
+        _paymentFlow,
         _orderSuccessNotification,
         _customerFlow,
         _searchFlow,
@@ -162,7 +168,9 @@ class LaundryOrderViewModel(
         @Suppress("UNCHECKED_CAST")
         val lines = (args[1] as? List<*>)?.filterIsInstance<LaundrySelectedLine>() ?: emptyList()
         val category = args[2] as? LaundryCategoryFilter ?: LaundryCategoryFilter.ALL
-        val paymentOpt = args[3] as? LaundryPaymentOption ?: LaundryPaymentOption.PAY_ON_PICKUP
+        val paymentPair = args[3] as? Pair<*, *>
+        val paymentOpt = paymentPair?.first as? LaundryPaymentOption ?: LaundryPaymentOption.PAY_ON_PICKUP
+        val rawDp = paymentPair?.second as? Long ?: 0L
         val successNotif = args[4] as? String
         val customerPair = args[5] as? Pair<*, *>
         val customer = customerPair?.first as? CustomerEntity
@@ -213,6 +221,8 @@ class LaundryOrderViewModel(
 
         val defaultSelectedService = formInput.service ?: filteredServices.firstOrNull()
 
+        val effectiveDp = if (rawDp > 0L) rawDp else (calculation.total / 2).coerceAtLeast(10000L).coerceAtMost(calculation.total.coerceAtLeast(10000L))
+
         LaundryOrderUiState(
             availableServices = services,
             categoryFilter = category,
@@ -225,6 +235,7 @@ class LaundryOrderViewModel(
             customerSearchResults = searchResults,
             isCustomerDialogOpen = isDialogOpen,
             paymentOption = paymentOpt,
+            dpAmount = effectiveDp,
             estimatedCompletionText = etaText,
             selectedServiceForInput = defaultSelectedService,
             inputWeightKg = formInput.weight,
@@ -344,6 +355,10 @@ class LaundryOrderViewModel(
         _paymentOption.value = option
     }
 
+    fun setDpAmount(amount: Long) {
+        _dpAmount.value = amount.coerceAtLeast(0L)
+    }
+
     fun setCustomerDialogOpen(isOpen: Boolean) {
         _isCustomerDialogOpen.value = isOpen
         if (isOpen) {
@@ -392,16 +407,21 @@ class LaundryOrderViewModel(
     }
 
     suspend fun submitOrder(
-        displayNumber: String,
+        displayNumber: String? = null,
         deviceId: String = "dev-laundry-1",
         shiftId: String? = null
     ): Result<OrderEntity> {
+        val finalDisplayNumber = if (!displayNumber.isNullOrBlank()) {
+            displayNumber
+        } else {
+            repository.getNextDisplayNumber("L1-")
+        }
         val currentState = uiState.value
         val orderId = UUID.randomUUID().toString()
 
         val order = OrderEntity(
             id = orderId,
-            displayNumber = displayNumber,
+            displayNumber = finalDisplayNumber,
             businessUnitId = "bu-laundry-01",
             shiftId = shiftId,
             deviceId = deviceId,

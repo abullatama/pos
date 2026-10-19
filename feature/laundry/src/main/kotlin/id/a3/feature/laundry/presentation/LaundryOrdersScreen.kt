@@ -116,7 +116,7 @@ fun LaundryOrdersScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Daftar Cucian (L05)",
+                        text = "Daftar Cucian",
                         style = A3Theme.typography.title,
                         fontWeight = FontWeight.Bold,
                         color = colors.ink
@@ -292,9 +292,9 @@ fun LaundryOrdersScreen(
     if (uiState.isManagerPinDialogOpen) {
         ManagerPinAuthDialog(
             title = if (uiState.pendingAction is PendingManagerAction.UnpaidPickup) {
-                "Otorisasi Penyerahan Belum Lunas (F24)"
+                "Otorisasi Penyerahan Belum Lunas"
             } else {
-                "Otorisasi Cuci Ulang Komplain (F23)"
+                "Otorisasi Cuci Ulang Komplain"
             },
             subtitle = if (uiState.pendingAction is PendingManagerAction.UnpaidPickup) {
                 "Pesanan memiliki sisa tagihan ${formatRupiah(uiState.remainingBalance)}. Wajib PIN Manager."
@@ -584,7 +584,7 @@ private fun OrderDetailPanel(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Rincian Pakaian & Pengambilan (F22):",
+                    text = "Rincian Pakaian & Pengambilan:",
                     style = A3Theme.typography.label,
                     fontWeight = FontWeight.Bold,
                     color = colors.ink
@@ -666,7 +666,7 @@ private fun OrderDetailPanel(
                 // Tombol Cuci Ulang (Hanya aktif jika status Siap F23)
                 if (order.status.lowercase() == "ready") {
                     A3Button(
-                        label = "Cuci Ulang (F23)",
+                        label = "Cuci Ulang",
                         variant = ButtonVariant.DANGER,
                         onClick = viewModel::openReworkDialog,
                         modifier = Modifier.weight(1f)
@@ -809,7 +809,7 @@ private fun LaundryPickupDialog(
                 ) {
                     Column {
                         Text(
-                            text = "Penyerahan Pakaian (L08)",
+                            text = "Penyerahan Pakaian",
                             style = A3Theme.typography.headline,
                             color = colors.ink,
                             fontWeight = FontWeight.Bold
@@ -843,7 +843,7 @@ private fun LaundryPickupDialog(
                             Icon(imageVector = Icons.Default.Lock, contentDescription = null, tint = colors.status.danger.text)
                             Column {
                                 Text(
-                                    text = "Belum Lunas: Butuh Otorisasi PIN Manager (F24)",
+                                    text = "Belum Lunas: Butuh Otorisasi PIN Manager",
                                     style = A3Theme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.status.danger.text

@@ -149,6 +149,12 @@ class FakeLaundryOrderRepository : LaundryOrderRepository {
         approvedBy: String,
         deviceId: String
     ): Result<OutboxEntity> = Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = deviceId, shiftId = null, eventsJson = "[]"))
+
+    override suspend fun getNextDisplayNumber(prefix: String): String = "${prefix}0001"
+    override fun observeTodayOrdersCount(): Flow<Int> = flowOf(0)
+    override fun observeReadyOrdersCount(): Flow<Int> = flowOf(0)
+    override fun observeUnpaidOrdersCount(): Flow<Int> = flowOf(0)
+    override fun observeReadyOrders(limit: Int): Flow<List<OrderWithLines>> = flowOf(emptyList())
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -346,6 +352,31 @@ class LaundryOrderViewModelTest {
         assertTrue(stateAfter.lines.isEmpty())
         assertNull(stateAfter.selectedCustomer)
         assertNotNull(stateAfter.orderSuccessNotification)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `submitOrder without displayNumber uses auto-generated sequence number`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        viewModel.addLine(fakeRepository.sampleServices.first())
+        viewModel.createAndSelectNewCustomer("Budi", "081234567890")
+
+        val result = viewModel.submitOrder()
+        assertTrue(result.isSuccess)
+
+        assertEquals("L1-0001", fakeRepository.lastCreatedOrder?.displayNumber)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `setDpAmount updates dpAmount in uiState`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        viewModel.setDpAmount(25000L)
+        assertEquals(25000L, viewModel.uiState.value.dpAmount)
 
         collectJob.cancel()
     }

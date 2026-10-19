@@ -7,12 +7,16 @@ import id.a3.core.data.local.dao.LaundryPickupDao
 import id.a3.core.data.local.dao.MasterDataDao
 import id.a3.core.data.local.dao.OrderDao
 import id.a3.core.data.local.dao.OutboxDao
+import id.a3.core.data.local.dao.PaymentDao
+import id.a3.core.data.local.dao.ShiftDao
 import id.a3.core.data.local.entity.CustomerEntity
 import id.a3.core.data.local.entity.LaundryPickupEntity
 import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
 import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.data.local.entity.OutboxEntity
+import id.a3.core.data.local.entity.PaymentEntity
+import id.a3.core.data.local.entity.ShiftEntity
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -32,7 +36,9 @@ class OrderTransactionManager(
     val outboxDao: OutboxDao = database.outboxDao(),
     val masterDataDao: MasterDataDao = database.masterDataDao(),
     val customerDao: CustomerDao = database.customerDao(),
-    val laundryPickupDao: LaundryPickupDao = database.laundryPickupDao()
+    val laundryPickupDao: LaundryPickupDao = database.laundryPickupDao(),
+    val shiftDao: ShiftDao = database.shiftDao(),
+    val paymentDao: PaymentDao = database.paymentDao()
 ) {
 
     /**
@@ -388,6 +394,18 @@ class OrderTransactionManager(
                 paidAmount = newPaidAmount
             )
 
+            val paymentEntity = PaymentEntity(
+                id = paymentId,
+                orderId = orderId,
+                method = method,
+                amount = amount,
+                tendered = tendered,
+                idempotencyKey = idempotencyKey,
+                shiftId = shiftId ?: currentOrder.shiftId,
+                isDp = isDp
+            )
+            paymentDao.insertPayment(paymentEntity)
+
             val bundleId = UUID.randomUUID().toString()
             val occurredAt = Instant.now().toString()
 
@@ -442,6 +460,18 @@ class OrderTransactionManager(
             if (lines.isNotEmpty()) {
                 orderDao.insertLines(lines)
             }
+
+            val paymentEntity = PaymentEntity(
+                id = paymentId,
+                orderId = paidOrder.id,
+                method = method,
+                amount = amount,
+                tendered = tendered,
+                idempotencyKey = idempotencyKey,
+                shiftId = shiftId ?: paidOrder.shiftId,
+                isDp = false
+            )
+            paymentDao.insertPayment(paymentEntity)
 
             val bundleId = UUID.randomUUID().toString()
             val occurredAt = Instant.now().toString()
@@ -799,6 +829,161 @@ class OrderTransactionManager(
             reworkReason = reason,
             reworkApprovedBy = approvedBy
         )
+    }
+
+    /**
+     * Mengamati shift aktif pada tablet ini secara reaktif.
+     */
+    fun observeActiveShift(): Flow<ShiftEntity?> = shiftDao.observeActiveShift()
+
+    /**
+     * Mengambil data shift aktif saat ini.
+     */
+    suspend fun getActiveShift(): ShiftEntity? = shiftDao.getActiveShift()
+
+    /**
+     * Membuka shift baru dengan kas awal per pecahan (F30, SHF-01 s/d SHF-04).
+     * Transaksi atomik:
+     * 1. Memeriksa aturan SHF-03: Hanya boleh ada 1 shift berstatus 'open' per tablet.
+     * 2. Menyimpan ShiftEntity ke Room.
+     * 3. Menyusun event outbox 'shift.opened' dengan breakdown pecahan uang.
+     */
+    suspend fun openShift(
+        shift: ShiftEntity,
+        breakdownMap: Map<String, Int>,
+        differenceReason: String? = null,
+        approvedBy: String? = null
+    ): OutboxEntity {
+        return database.withTransaction {
+            val existingActive = shiftDao.getActiveShift()
+            if (existingActive != null) {
+                throw IllegalStateException("Sudah ada shift aktif (${existingActive.id}) pada tablet ini (SHF-03)")
+            }
+
+            shiftDao.insertShift(shift)
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.ofEpochMilli(shift.openedAt).toString()
+
+            val breakdownJsonObj = buildJsonObject {
+                breakdownMap.forEach { (denom, count) ->
+                    if (count > 0) {
+                        put(denom, count)
+                    }
+                }
+            }
+
+            val payload = buildJsonObject {
+                put("shift_id", shift.id)
+                put("opening_cash", shift.openingCash)
+                put("opening_cash_breakdown", breakdownJsonObj)
+                differenceReason?.let { put("difference_reason", it) }
+                approvedBy?.let { put("approved_by", it) }
+            }
+
+            val event = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "shift.opened")
+                put("occurred_at", occurredAt)
+                put("payload", payload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(event)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = shift.deviceId,
+                shiftId = shift.id,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Menutup shift aktif dan mencatat event outbox 'shift.closed' secara atomik (TUP-01 s/d TUP-07, F31, F32, F34).
+     */
+    suspend fun closeShift(
+        shiftId: String,
+        countedCash: Long,
+        differenceReason: String? = null,
+        cashLeft: Long,
+        cashDeposited: Long,
+        cashTakenBy: String? = null,
+        qrisCheckedPaymentIds: List<String> = emptyList(),
+        handoverOrderIds: List<String> = emptyList(),
+        closedAt: Long = System.currentTimeMillis()
+    ): OutboxEntity {
+        return database.withTransaction {
+            val shift = shiftDao.getShiftById(shiftId)
+                ?: throw IllegalArgumentException("Shift dengan ID $shiftId tidak ditemukan")
+
+            if (shift.status != "open") {
+                throw IllegalStateException("Shift ${shift.id} tidak berstatus open (status: ${shift.status})")
+            }
+
+            // Validasi TUP-06: Kas ditinggal + kas disetor harus sama dengan kas dihitung fisik, atau selisih beralasan
+            val totalAllocated = cashLeft + cashDeposited
+            if (totalAllocated != countedCash && differenceReason.isNullOrBlank()) {
+                throw IllegalStateException("Alokasi kas ($totalAllocated) tidak sama dengan kas dihitung ($countedCash) dan tidak ada alasan selisih (TUP-06)")
+            }
+
+            // Perbarui entitas shift ke status closed
+            val closedShift = shift.copy(
+                status = "closed",
+                closedAt = closedAt,
+                countedCash = countedCash,
+                cashLeft = cashLeft,
+                cashDeposited = cashDeposited,
+                cashDifferenceReason = differenceReason
+            )
+            shiftDao.updateShift(closedShift)
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.ofEpochMilli(closedAt).toString()
+
+            val qrisCheckedArray = buildJsonArray {
+                qrisCheckedPaymentIds.forEach { add(JsonPrimitive(it)) }
+            }
+
+            val handoverOrdersArray = buildJsonArray {
+                handoverOrderIds.forEach { add(JsonPrimitive(it)) }
+            }
+
+            val payload = buildJsonObject {
+                put("shift_id", shiftId)
+                put("counted_cash", countedCash)
+                differenceReason?.let { put("difference_reason", it) }
+                put("cash_left", cashLeft)
+                put("cash_deposited", cashDeposited)
+                cashTakenBy?.let { put("cash_taken_by", it) }
+                put("qris_checked_payment_ids", qrisCheckedArray)
+                put("handover_order_ids", handoverOrdersArray)
+            }
+
+            val event = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "shift.closed")
+                put("occurred_at", occurredAt)
+                put("payload", payload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(event)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = shift.deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
     }
 }
 

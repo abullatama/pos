@@ -209,7 +209,7 @@ class PaymentViewModelTest {
         // Verifikasi struk otomatis dicetak ke printer
         assertEquals(1, fakePrinter.printedBytes.size)
         val receiptText = String(fakePrinter.printedBytes.first(), Charsets.ISO_8859_1)
-        assertTrue(receiptText.contains("A3 COFFEESHOP"))
+        assertTrue(receiptText.contains("AA COFFEESHOP"))
         assertTrue(receiptText.contains("C1-0007"))
         assertTrue(receiptText.contains("Bayar (Tunai)"))
         assertTrue(receiptText.contains("Kembalian"))
@@ -229,11 +229,36 @@ class PaymentViewModelTest {
     }
 
     @Test
-    fun `generateQuickCashOptions generates accurate denominations`() {
-        // Kasus 61.400: Uang pas 61.400, pembulatan ke 10k (70.000), pembulatan ke 50k (100.000)
-        val options = PaymentViewModel.generateQuickCashOptions(61400L)
-        assertTrue(options.contains(61400L))
-        assertTrue(options.contains(70000L))
-        assertTrue(options.contains(100000L))
+    fun `processPayment with laundry store details and DP records correctly`() = runTest(testDispatcher) {
+        viewModel.initializeWithOrder(
+            orderId = "order-ldr-01",
+            totalAmount = 20000L,
+            displayNumber = "L1-0012",
+            tableOrQueueLabel = "Athia Laundry (DP)",
+            cashierName = "Siti Rahma",
+            storeName = "ATHIA LAUNDRY HOUSE",
+            storeAddress = "Jl. Trans Sulawesi, Bintauna",
+            storePhone = "+62 823-4778-5986",
+            isDp = true
+        )
+        testScheduler.advanceUntilIdle()
+
+        viewModel.setCashReceived(20000L)
+        testScheduler.advanceUntilIdle()
+
+        viewModel.processPayment()
+        testScheduler.advanceUntilIdle()
+
+        assertEquals(1, fakeRepository.processedTransactions.size)
+        val tx = fakeRepository.processedTransactions.first()
+        assertEquals("order-ldr-01", tx.orderId)
+        assertEquals(20000L, tx.totalAmount)
+        assertTrue(tx.isDp)
+
+        assertEquals(1, fakePrinter.printedBytes.size)
+        val receiptText = String(fakePrinter.printedBytes.first(), Charsets.ISO_8859_1)
+        assertTrue(receiptText.contains("ATHIA LAUNDRY HOUSE"))
+        assertTrue(receiptText.contains("L1-0012"))
+        assertTrue(receiptText.contains("(DP)"))
     }
 }

@@ -29,6 +29,7 @@ import id.a3.core.auth.DeviceCheckResult
 import id.a3.core.auth.DeviceManager
 import id.a3.core.auth.DeviceManagerFactory
 import id.a3.core.auth.DeviceRegisterResult
+import id.a3.core.data.local.AppDatabase
 import id.a3.core.domain.device.DeviceStatus
 import id.a3.core.printer.PrinterStatus
 import id.a3.core.printer.connection.DefaultPrinterService
@@ -36,6 +37,7 @@ import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
+import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.LaundryTheme
 import id.tenang.kasir.laundry.navigation.LaundryDestinations
 import id.tenang.kasir.laundry.navigation.LaundryNavHost
@@ -160,6 +162,11 @@ class MainActivity : ComponentActivity() {
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentRoute = navBackStackEntry?.destination?.route ?: LaundryDestinations.BERANDA
 
+                    val activeShift by remember {
+                        val db = AppDatabase.build(this@MainActivity)
+                        db.shiftDao().observeActiveShift()
+                    }.collectAsState(initial = null)
+
                     val selectedIndex = remember(currentRoute) {
                         val idx = laundryNavItems.indexOfFirst { it.id == currentRoute }
                         if (idx >= 0) idx else 0
@@ -172,8 +179,8 @@ class MainActivity : ComponentActivity() {
                     AppShell(
                         businessName = "ATHIA LAUNDRY HOUSE",
                         monogramText = "AL",
-                        cashierName = "Siti Rahma",
-                        shiftInfo = "Shift Pagi",
+                        cashierName = activeShift?.cashierName ?: "Siti Rahma",
+                        shiftInfo = activeShift?.let { "Shift Aktif · Kas ${formatRupiah(it.openingCash)}" } ?: "Belum Buka Shift",
                         syncStatus = SyncStatus.SYNCED,
                         pendingSyncCount = 0,
                         isPrinterConnected = printerStatus is PrinterStatus.Connected,

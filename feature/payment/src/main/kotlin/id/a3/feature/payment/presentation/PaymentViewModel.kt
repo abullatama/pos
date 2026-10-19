@@ -31,7 +31,11 @@ data class PaymentUiState(
     val orderDisplayNumber: String = "C1-0001",
     val tableOrQueueLabel: String? = null,
     val cashierName: String = "Kasir",
+    val storeName: String = "AA COFFEESHOP",
+    val storeAddress: String = "Jl. Kopi Pilihan No. 3",
+    val storePhone: String = "0812-3456-7890",
     val totalAmount: Long = 0L,
+    val isDp: Boolean = false,
     val currentStep: PaymentStep = PaymentStep.METHOD_SELECTION,
     val selectedMethod: PaymentMethod = PaymentMethod.CASH,
     val cashReceived: Long = 0L,
@@ -57,7 +61,11 @@ class PaymentViewModel(
         totalAmount: Long,
         displayNumber: String = "C1-0001",
         tableOrQueueLabel: String? = null,
-        cashierName: String = "Kasir"
+        cashierName: String = "Kasir",
+        storeName: String = "AA COFFEESHOP",
+        storeAddress: String = "Jl. Kopi Pilihan No. 3",
+        storePhone: String = "0812-3456-7890",
+        isDp: Boolean = false
     ) {
         val quickOptions = generateQuickCashOptions(totalAmount)
         _uiState.value = PaymentUiState(
@@ -65,7 +73,11 @@ class PaymentViewModel(
             orderDisplayNumber = displayNumber,
             tableOrQueueLabel = tableOrQueueLabel,
             cashierName = cashierName,
+            storeName = storeName,
+            storeAddress = storeAddress,
+            storePhone = storePhone,
             totalAmount = totalAmount,
+            isDp = isDp,
             currentStep = PaymentStep.METHOD_SELECTION,
             selectedMethod = PaymentMethod.CASH,
             cashReceived = totalAmount,
@@ -81,8 +93,7 @@ class PaymentViewModel(
                 _uiState.value = _uiState.value.copy(
                     orderDetail = orderWithLines,
                     orderDisplayNumber = orderWithLines.order.displayNumber,
-                    tableOrQueueLabel = orderWithLines.order.tableLabel,
-                    totalAmount = orderWithLines.order.total
+                    tableOrQueueLabel = tableOrQueueLabel ?: orderWithLines.order.tableLabel
                 )
             }
         }
@@ -153,7 +164,7 @@ class PaymentViewModel(
                 totalAmount = current.totalAmount,
                 cashReceived = current.cashReceived,
                 change = current.change,
-                isDp = false
+                isDp = current.isDp
             )
 
             val result = repository.processPayment(transaction)
@@ -196,9 +207,9 @@ class PaymentViewModel(
         )
 
         val receiptData = CustomerReceiptData(
-            storeName = "A3 COFFEESHOP",
-            storeAddress = "Jl. Kopi Pilihan No. 3",
-            storePhone = "0812-3456-7890",
+            storeName = state.storeName,
+            storeAddress = state.storeAddress,
+            storePhone = state.storePhone,
             orderDisplayNumber = state.orderDisplayNumber,
             tableOrQueueLabel = state.tableOrQueueLabel,
             cashierName = state.cashierName,
@@ -210,10 +221,11 @@ class PaymentViewModel(
             tax = orderWithLines?.order?.tax ?: 0L,
             rounding = orderWithLines?.order?.rounding ?: 0L,
             total = state.totalAmount,
-            paymentMethodName = state.selectedMethod.label,
+            paymentMethodName = state.selectedMethod.label + if (state.isDp) " (DP)" else "",
             tendered = if (state.selectedMethod == PaymentMethod.CASH) state.cashReceived else null,
-            change = if (state.selectedMethod == PaymentMethod.CASH) state.change else 0L,
-            isCopy = isCopy
+            change = state.change,
+            isCopy = isCopy,
+            reprintInfo = if (isCopy) "Dicetak ulang oleh ${state.cashierName} · $currentTimeStr" else null
         )
 
         val bytes = CustomerReceiptFormatter.format(receiptData)

@@ -74,4 +74,20 @@ interface OrderDao {
 
     @Query("UPDATE orders SET status = :status, paidAmount = :paidAmount WHERE id = :orderId")
     suspend fun updatePaymentStatus(orderId: String, status: String, paidAmount: Long)
+
+    @Query("SELECT COUNT(*) FROM orders WHERE displayNumber LIKE :prefix || '%' AND createdAt >= :startOfDayMs AND createdAt < :endOfDayMs")
+    suspend fun countOrdersForPrefixAndDate(prefix: String, startOfDayMs: Long, endOfDayMs: Long): Int
+
+    @Query("SELECT COUNT(*) FROM orders WHERE orderType = :orderType AND createdAt >= :startOfDayMs AND createdAt < :endOfDayMs")
+    fun observeTodayOrderCount(orderType: String, startOfDayMs: Long, endOfDayMs: Long): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM orders WHERE orderType = 'laundry' AND status = :status")
+    fun observeLaundryCountByStatus(status: String): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM orders WHERE orderType = 'laundry' AND status != 'picked_up' AND paidAmount < total")
+    fun observeLaundryUnpaidCount(): Flow<Int>
+
+    @Transaction
+    @Query("SELECT * FROM orders WHERE orderType = 'laundry' AND status = 'ready' ORDER BY createdAt DESC LIMIT :limit")
+    fun observeReadyLaundryOrders(limit: Int = 10): Flow<List<OrderWithLines>>
 }

@@ -70,6 +70,13 @@ interface LaundryOrderRepository {
         approvedBy: String,
         deviceId: String = "dev-laundry-1"
     ): Result<OutboxEntity>
+
+    // Generator Nomor & Metriks Beranda (L01)
+    suspend fun getNextDisplayNumber(prefix: String = "L1-"): String
+    fun observeTodayOrdersCount(): Flow<Int>
+    fun observeReadyOrdersCount(): Flow<Int>
+    fun observeUnpaidOrdersCount(): Flow<Int>
+    fun observeReadyOrders(limit: Int = 10): Flow<List<OrderWithLines>>
 }
 
 class DefaultLaundryOrderRepository(
@@ -332,5 +339,34 @@ class DefaultLaundryOrderRepository(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun getNextDisplayNumber(prefix: String): String {
+        val zone = java.time.ZoneId.systemDefault()
+        val localDate = java.time.LocalDate.now(zone)
+        val startOfDay = localDate.atStartOfDay(zone).toInstant().toEpochMilli()
+        val endOfDay = localDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val count = orderDao.countOrdersForPrefixAndDate(prefix, startOfDay, endOfDay)
+        return "%s%04d".format(prefix, count + 1)
+    }
+
+    override fun observeTodayOrdersCount(): Flow<Int> {
+        val zone = java.time.ZoneId.systemDefault()
+        val localDate = java.time.LocalDate.now(zone)
+        val startOfDay = localDate.atStartOfDay(zone).toInstant().toEpochMilli()
+        val endOfDay = localDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        return orderDao.observeTodayOrderCount("laundry", startOfDay, endOfDay)
+    }
+
+    override fun observeReadyOrdersCount(): Flow<Int> {
+        return orderDao.observeLaundryCountByStatus("ready")
+    }
+
+    override fun observeUnpaidOrdersCount(): Flow<Int> {
+        return orderDao.observeLaundryUnpaidCount()
+    }
+
+    override fun observeReadyOrders(limit: Int): Flow<List<OrderWithLines>> {
+        return orderDao.observeReadyLaundryOrders(limit)
     }
 }

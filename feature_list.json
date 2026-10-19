@@ -297,9 +297,9 @@
       "app": "both",
       "description": "Buka shift dengan kas awal per pecahan",
       "acceptance": "Satu shift terbuka per tablet; kas awal berbeda dari standar wajib beralasan",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "ShiftEntity dan ShiftDao selesai dibangun di Room (:core:data, AppDatabase v3 dengan MIGRATION_2_3). OrderTransactionManager mencatat pembukaan shift dan event outbox 'shift.opened' secara atomik; aturan SHF-03 diverifikasi ketat (melempar IllegalStateException bila sudah ada shift aktif). Layar S04 Buka Shift (OpenShiftScreen & ShiftViewModel) selesai dengan pola split-screen 60/40 tablet 11\" landscape, tabel stepper pecahan uang taktil 48dp (Rp100k s/d Rp100), preset standar Rp200.000 (OQ-06), dan validasi alasan selisih wajib jika berbeda (SHF-04). Teruji 100% pada RoomOutboxTransactionTest dan ShiftViewModelTest; build kedua APK debug berhasil."
     },
     {
       "id": "F31",
@@ -307,9 +307,9 @@
       "app": "both",
       "description": "Tutup shift: hitung kas buta, selisih, alasan, laporan Z",
       "acceptance": "Kas seharusnya sama dengan K1; laporan Z tercetak",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": ""
+      "notes": "Alur tutup shift selesai dibangun: Tahap 1 (S09 Hitung Kas Buta per pecahan, angka sistem disembunyikan 100% TUP-02), Tahap 2 (S10 evaluasi selisih kas terhadap rumus K1, toleransi selisih Rp2.000 OQ-07, dan validasi alasan selisih jika melebihi toleransi TUP-03). ZReportFormatter di :core:printer menyusun format ESC/POS 58 mm memuat ringkasan penjualan, metode bayar, kas seharusnya, kas dihitung, selisih, dan watermark SALINAN (PRT-05). Teruji 100% pada ZReportFormatterTest, RoomOutboxTransactionTest, dan CloseShiftViewModelTest."
     },
     {
       "id": "F32",
@@ -317,9 +317,9 @@
       "app": "both",
       "description": "Catatan kas saat tutup shift dengan validasi alokasi",
       "acceptance": "Kas ditinggal + disetor atau dibawa sama dengan kas dihitung, atau selisih beralasan",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Tahap 3 S11 Catatan Alokasi Kas selesai dibangun di :feature:shift dan Room: input kas ditinggal di laci (modal shift berikutnya, default Rp200.000 OQ-06) dan kas disetor ke owner. Validasi TUP-06 ditegakkan ketat di UI dan OrderTransactionManager: kas ditinggal + kas disetor harus sama persis dengan kas fisik dihitung (atau selisih beralasan) dan uang yang dibawa wajib mencatat nama penerima (cash_taken_by). Teruji 100% pada CloseShiftViewModelTest dan RoomOutboxTransactionTest."
     },
     {
       "id": "F33",
@@ -327,9 +327,9 @@
       "app": "cafe",
       "description": "Serah terima pesanan terbuka ke shift berikutnya",
       "acceptance": "Pembayaran tercatat di shift yang menerima",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Sesuai TUP-01, pesanan cafe yang masih terbuka tidak menghalangi tutup shift: ID pesanan terbuka otomatis dibawa di array handover_order_ids pada event shift.closed. Pesanan tetap berstatus open di Room dan pembayaran dicatat di shift yang menerima pembayaran (OrderTransactionManager merekam shift_id kasir penerima saat recordPayment). Teruji pada RoomOutboxTransactionTest."
     },
     {
       "id": "F34",
@@ -337,9 +337,9 @@
       "app": "both",
       "description": "Cek QRIS Statis saat tutup shift",
       "acceptance": "Daftar ID dibawa di event shift.closed, tidak mengubah pembayaran",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Tahap 2 S10 menampilkan daftar transaksi QRIS Statis shift berjalan yang ditarik dari PaymentEntity di Room. Kasir mencentang kotak 'Sudah dicek' setelah mencocokkan dengan notifikasi merchant/soundbox (TUP-04). Daftar ID QRIS yang dicek dibawa dalam array qris_checked_payment_ids pada event outbox shift.closed tanpa memodifikasi entitas pembayaran asli (append-only). Teruji 100% pada CloseShiftViewModelTest dan RoomOutboxTransactionTest."
     },
     {
       "id": "F35",

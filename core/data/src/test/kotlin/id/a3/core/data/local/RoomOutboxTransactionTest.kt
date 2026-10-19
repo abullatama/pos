@@ -7,6 +7,7 @@ import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
 import id.a3.core.data.local.entity.OutboxEntity
 import id.a3.core.data.local.entity.OutboxStatus
+import id.a3.core.data.local.entity.ShiftEntity
 import id.a3.core.data.repository.LaundryPickupItem
 import id.a3.core.data.repository.OrderTransactionManager
 import id.a3.core.data.util.PhoneNumberUtil
@@ -867,5 +868,183 @@ class RoomOutboxTransactionTest {
 
         org.junit.Assert.assertNull(database.outboxDao().getByBundleId(bundle1))
         assertNotNull(database.outboxDao().getByBundleId(bundle2)) // bundle2 PRESERVED
+    }
+
+    @Test
+    fun `openShift saves shift entity and creates shift_opened outbox event atomically`(): Unit = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Santoso",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = """{"50000":2,"20000":4,"10000":2}""",
+            differenceReason = null,
+            openedAt = System.currentTimeMillis()
+        )
+
+        val breakdown = mapOf("50000" to 2, "20000" to 4, "10000" to 2)
+
+        val outbox = transactionManager.openShift(
+            shift = shift,
+            breakdownMap = breakdown,
+            differenceReason = null
+        )
+
+        // 1. Verifikasi entitas shift tersimpan di Room
+        val activeShift = database.shiftDao().getActiveShift()
+        assertNotNull(activeShift)
+        assertEquals(shiftId, activeShift!!.id)
+        assertEquals("open", activeShift.status)
+        assertEquals(200000L, activeShift.openingCash)
+        assertEquals("Budi Santoso", activeShift.cashierName)
+
+        // 2. Verifikasi outbox terbuat dengan event shift.opened
+        assertNotNull(outbox)
+        assertEquals(shiftId, outbox.shiftId)
+        assertEquals("dev-cafe-1", outbox.deviceId)
+        assertTrue(outbox.eventsJson.contains("shift.opened"))
+        assertTrue(outbox.eventsJson.contains(""""opening_cash":200000"""))
+        assertTrue(outbox.eventsJson.contains(""""50000":2"""))
+    }
+
+    @Test
+    fun `openShift throws IllegalStateException when another shift is already open`(): Unit = runBlocking {
+        val shift1 = ShiftEntity(
+            id = UUID.randomUUID().toString(),
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Santoso",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        transactionManager.openShift(shift1, emptyMap())
+
+        // Coba buka shift kedua saat shift1 masih open -> harus lempar IllegalStateException (SHF-03)
+        val shift2 = ShiftEntity(
+            id = UUID.randomUUID().toString(),
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-2",
+            cashierName = "Dewi Lestari",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        try {
+            transactionManager.openShift(shift2, emptyMap())
+            org.junit.Assert.fail("Harus melempar IllegalStateException saat shift aktif sudah ada")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("SHF-03"))
+        }
+    }
+
+    @Test
+    fun `closeShift updates shift entity and writes shift_closed outbox event atomically`(): Unit = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Santoso",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        // Buat pesanan terlebih dahulu
+        val order = OrderEntity(
+            id = "order-test-1",
+            displayNumber = "C1-0001",
+            businessUnitId = "bu-cafe-01",
+            shiftId = shiftId,
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            orderType = "dine_in",
+            subtotal = 100000L,
+            total = 100000L
+        )
+        database.orderDao().insertOrder(order)
+
+        // Catat pembayaran QRIS dan Tunai untuk shift ini
+        val payment1 = UUID.randomUUID().toString()
+        val outboxPayment = transactionManager.recordPayment(
+            orderId = "order-test-1",
+            method = "qris_static",
+            amount = 100000L,
+            shiftId = shiftId
+        )
+        assertNotNull(outboxPayment)
+
+        val paymentEntity = database.paymentDao().getPaymentsForShift(shiftId)
+        assertEquals(1, paymentEntity.size)
+        assertEquals("qris_static", paymentEntity[0].method)
+
+        // Eksekusi closeShift (K1: Counted 725k, Laci 200k, Setor 525k)
+        val outboxClose = transactionManager.closeShift(
+            shiftId = shiftId,
+            countedCash = 725000L,
+            differenceReason = null,
+            cashLeft = 200000L,
+            cashDeposited = 525000L,
+            cashTakenBy = "Pak Owner",
+            qrisCheckedPaymentIds = listOf(payment1),
+            handoverOrderIds = listOf("order-open-1")
+        )
+
+        // 1. Verifikasi status shift di Room berubah ke closed
+        val closedShift = database.shiftDao().getShiftById(shiftId)
+        assertNotNull(closedShift)
+        assertEquals("closed", closedShift!!.status)
+        assertEquals(725000L, closedShift.countedCash)
+        assertEquals(200000L, closedShift.cashLeft)
+        assertEquals(525000L, closedShift.cashDeposited)
+
+        // 2. Verifikasi outbox shift.closed
+        assertNotNull(outboxClose)
+        assertEquals(shiftId, outboxClose.shiftId)
+        assertTrue(outboxClose.eventsJson.contains("shift.closed"))
+        assertTrue(outboxClose.eventsJson.contains(""""counted_cash":725000"""))
+        assertTrue(outboxClose.eventsJson.contains(""""cash_left":200000"""))
+        assertTrue(outboxClose.eventsJson.contains(""""cash_deposited":525000"""))
+        assertTrue(outboxClose.eventsJson.contains(""""cash_taken_by":"Pak Owner""""))
+        assertTrue(outboxClose.eventsJson.contains(payment1))
+    }
+
+    @Test
+    fun `closeShift throws IllegalStateException when allocation does not equal counted cash without reason`(): Unit = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Santoso",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        // Kas dihitung 725k, tapi alokasi 200k + 500k = 700k (selisih 25k) tanpa alasan
+        try {
+            transactionManager.closeShift(
+                shiftId = shiftId,
+                countedCash = 725000L,
+                differenceReason = null,
+                cashLeft = 200000L,
+                cashDeposited = 500000L
+            )
+            org.junit.Assert.fail("Harus melempar IllegalStateException bila alokasi tidak sama dengan kas dihitung (TUP-06)")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("TUP-06"))
+        }
     }
 }

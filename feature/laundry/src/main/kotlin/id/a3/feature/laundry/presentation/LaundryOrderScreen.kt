@@ -80,7 +80,7 @@ import kotlinx.coroutines.launch
 fun LaundryOrderScreen(
     uiState: LaundryOrderUiState,
     viewModel: LaundryOrderViewModel,
-    onProceedToPayment: (orderId: String, totalAmount: Long, displayNumber: String) -> Unit,
+    onProceedToPayment: (orderId: String, totalAmount: Long, displayNumber: String, isDp: Boolean) -> Unit,
     onOrderSavedSuccessfully: (displayNumber: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -752,7 +752,7 @@ private fun ServiceConfigurationCard(
 private fun OrderReceiptPanel(
     uiState: LaundryOrderUiState,
     viewModel: LaundryOrderViewModel,
-    onProceedToPayment: (orderId: String, totalAmount: Long, displayNumber: String) -> Unit,
+    onProceedToPayment: (orderId: String, totalAmount: Long, displayNumber: String, isDp: Boolean) -> Unit,
     onOrderSavedSuccessfully: (displayNumber: String) -> Unit
 ) {
     val colors = A3Theme.colors
@@ -943,7 +943,7 @@ private fun OrderReceiptPanel(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = "Opsi Pembayaran (LDR-05)",
+                    text = "Opsi Pembayaran",
                     style = A3Theme.typography.label,
                     color = colors.ink
                 )
@@ -986,11 +986,73 @@ private fun OrderReceiptPanel(
                         }
                     }
                 }
+
+                // Input / Preset Nominal Uang Muka (DP) jika opsi DP dipilih
+                if (uiState.paymentOption == LaundryPaymentOption.DP) {
+                    val half = ((uiState.calculation.total / 2000L) * 1000L).coerceAtLeast(10000L)
+                    val quickDp = listOf(
+                        10000L to "Rp 10.000",
+                        20000L to "Rp 20.000",
+                        half to "50% (${formatRupiah(half)})"
+                    )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(shapes.cardShape)
+                            .background(colors.surfaceAlt)
+                            .padding(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Nominal DP yang Diterima:",
+                                style = A3Theme.typography.bodySmall,
+                                color = colors.ink
+                            )
+                            Text(
+                                text = formatRupiah(uiState.dpAmount),
+                                style = A3Theme.typography.body,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.accent
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            quickDp.forEach { (amount, label) ->
+                                val isSelected = uiState.dpAmount == amount
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(30.dp)
+                                        .clip(shapes.buttonShape)
+                                        .background(if (isSelected) colors.accent else colors.surface)
+                                        .border(1.dp, if (isSelected) colors.accent else colors.border, shapes.buttonShape)
+                                        .clickable { viewModel.setDpAmount(amount) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        style = A3Theme.typography.label,
+                                        color = if (isSelected) colors.onAccent else colors.ink,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Tombol Aksi Utama
             val isReady = uiState.isFormReadyToSubmit
             val isPayLater = uiState.paymentOption == LaundryPaymentOption.PAY_ON_PICKUP
+            val isDp = uiState.paymentOption == LaundryPaymentOption.DP
 
             A3Button(
                 label = when {
@@ -998,20 +1060,25 @@ private fun OrderReceiptPanel(
                     uiState.lines.isEmpty() -> "Tambahkan Layanan Terlebih Dahulu"
                     isPayLater -> "Simpan Order (Bayar saat Ambil)"
                     uiState.paymentOption == LaundryPaymentOption.PAID_UPFRONT -> "Lanjut ke Pembayaran Lunas"
-                    else -> "Lanjut ke Pembayaran DP"
+                    else -> "Lanjut ke Pembayaran DP (${formatRupiah(uiState.dpAmount)})"
                 },
                 variant = ButtonVariant.PRIMARY,
                 enabled = isReady,
                 onClick = {
-                    val displayNumber = "L1-0001" // Standar format nomor laundry offline
+                    val amountToPay = if (isDp) {
+                        if (uiState.dpAmount > 0L) uiState.dpAmount else (uiState.calculation.total / 2).coerceAtLeast(10000L)
+                    } else {
+                        uiState.calculation.total
+                    }
+
                     coroutineScope.launch {
-                        val result = viewModel.submitOrder(displayNumber)
+                        val result = viewModel.submitOrder()
                         if (result.isSuccess) {
                             val order = result.getOrNull()!!
                             if (isPayLater) {
                                 onOrderSavedSuccessfully(order.displayNumber)
                             } else {
-                                onProceedToPayment(order.id, order.total, order.displayNumber)
+                                onProceedToPayment(order.id, amountToPay, order.displayNumber, isDp)
                             }
                         }
                     }
