@@ -93,6 +93,24 @@ Sisa 4 fitur penutup proyek pada **Milestone M4 (Go-live, stabilisasi, dan opera
 ## 5. File yang Perlu Dibaca Pertama Kali di Sesi Baru
 - `HANDOFF.md` (dokumen ini)
 - `feature_list.json` (baris 404–445 untuk Milestone M4)
-- `docs/milestones/M4-go-live.md`
+- `docs/milestones/M4-laporan-golive.md`
+- `docs/spec/13-whatsapp-lewat-fonnte-dan-penjadwal.md`
 - `docs/spec/16-infrastruktur-deployment-backup-dan-pema.md`
 - `docs/spec/17-skenario-uji-dan-kriteria-lulus.md`
+
+---
+
+## 6. Panduan Pengujian Langsung Hardware (Tablet & Printer)
+
+Untuk pengujian fisik di perangkat Redmi Pad 2 dan printer iWare C58BT:
+- **Perintah Pasang APK:**
+  ```bash
+  ./gradlew :app-cafe:installDebug
+  ./gradlew :app-laundry:installDebug
+  ```
+- **Kredensial & PIN Sistem:**
+  * **Pintasan Demo:** Tombol *"Masuk Mode Demo / Lewati"* di layar pendaftaran perangkat awal.
+  * **PIN Kasir (Shift & Transaksi):** `1234`
+  * **PIN Manager (Otorisasi Khusus):** `4444` (Diskon manual, void/refund, kas keluar > 50rb, cuci ulang, ambil belum lunas, tutup paksa shift. Proteksi: salah 3x lockout 5 menit).
+  * **PIN Owner (Menu Admin S15):** `9999` (Uji cetak ESC/POS 58 mm, buka Wi-Fi, kunci/lepas mode kios LockTask, pasang APK update. Proteksi: salah 3x lockout 5 menit).
+
