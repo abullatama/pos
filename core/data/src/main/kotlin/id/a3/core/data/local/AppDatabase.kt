@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import id.a3.core.data.local.dao.CashOutDao
+import id.a3.core.data.local.dao.CorrectionDao
 import id.a3.core.data.local.dao.CustomerDao
 import id.a3.core.data.local.dao.LaundryPickupDao
 import id.a3.core.data.local.dao.MasterDataDao
@@ -14,6 +16,8 @@ import id.a3.core.data.local.dao.OutboxDao
 import id.a3.core.data.local.dao.PaymentDao
 import id.a3.core.data.local.dao.ShiftDao
 import id.a3.core.data.local.dao.SyncStateDao
+import id.a3.core.data.local.entity.CashOutEntity
+import id.a3.core.data.local.entity.CorrectionEntity
 import id.a3.core.data.local.entity.CustomerEntity
 import id.a3.core.data.local.entity.LaundryPickupEntity
 import id.a3.core.data.local.entity.LaundryServiceEntity
@@ -36,9 +40,11 @@ import id.a3.core.data.local.entity.SyncStateEntity
         CustomerEntity::class,
         LaundryPickupEntity::class,
         ShiftEntity::class,
-        PaymentEntity::class
+        PaymentEntity::class,
+        CorrectionEntity::class,
+        CashOutEntity::class
     ],
-    version = 4,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -51,6 +57,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun laundryPickupDao(): LaundryPickupDao
     abstract fun shiftDao(): ShiftDao
     abstract fun paymentDao(): PaymentDao
+    abstract fun correctionDao(): CorrectionDao
+    abstract fun cashOutDao(): CashOutDao
 
     companion object {
         const val DATABASE_NAME = "a3_pos.db"
@@ -111,12 +119,57 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `corrections` (
+                        `id` TEXT NOT NULL,
+                        `orderId` TEXT NOT NULL,
+                        `shiftId` TEXT DEFAULT NULL,
+                        `type` TEXT NOT NULL,
+                        `amount` INTEGER NOT NULL,
+                        `refundMethod` TEXT DEFAULT 'cash',
+                        `originalPaymentId` TEXT DEFAULT NULL,
+                        `orderLineIdsJson` TEXT NOT NULL DEFAULT '[]',
+                        `reasonCode` TEXT NOT NULL,
+                        `note` TEXT DEFAULT NULL,
+                        `approvedBy` TEXT NOT NULL,
+                        `isOldTransactionRefund` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_corrections_orderId` ON `corrections` (`orderId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_corrections_shiftId` ON `corrections` (`shiftId`)")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `cash_outs` (
+                        `id` TEXT NOT NULL,
+                        `shiftId` TEXT NOT NULL,
+                        `amount` INTEGER NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `receiptFileId` TEXT DEFAULT NULL,
+                        `receiptFilePath` TEXT DEFAULT NULL,
+                        `approvedBy` TEXT DEFAULT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_cash_outs_shiftId` ON `cash_outs` (`shiftId`)")
+            }
+        }
+
         fun build(context: Context): AppDatabase {
             return Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 DATABASE_NAME
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .fallbackToDestructiveMigration(false)
                 .build()
         }

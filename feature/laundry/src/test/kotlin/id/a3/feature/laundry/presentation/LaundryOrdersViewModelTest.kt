@@ -97,6 +97,21 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
         return Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = deviceId, shiftId = null, eventsJson = "[]"))
     }
 
+    override suspend fun recordCorrection(
+        orderId: String,
+        type: String,
+        amount: Long,
+        reasonCode: String,
+        approvedBy: String,
+        note: String?
+    ): Result<Unit> {
+        val existing = orders[orderId]
+        if (existing != null) {
+            orders[orderId] = existing.copy(order = existing.order.copy(status = "refunded"))
+        }
+        return Result.success(Unit)
+    }
+
     override suspend fun getOrderWithLines(orderId: String): OrderWithLines? = orders[orderId]
     override suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity? = orders.values.find { it.order.displayNumber == displayNumber }?.order
     override suspend fun getOrderWithLinesByDisplayNumber(displayNumber: String): OrderWithLines? = orders.values.find { it.order.displayNumber == displayNumber }

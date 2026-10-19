@@ -17,6 +17,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -1045,6 +1046,565 @@ class RoomOutboxTransactionTest {
             org.junit.Assert.fail("Harus melempar IllegalStateException bila alokasi tidak sama dengan kas dihitung (TUP-06)")
         } catch (e: IllegalStateException) {
             assertTrue(e.message!!.contains("TUP-06"))
+        }
+    }
+
+    // =========================================================================
+    // F35: Void, Refund Tunai, dan PIN Manager Lokal
+    // =========================================================================
+
+    @Test
+    fun `recordCorrection for refund in current shift creates correction entity and outbox event`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "C1-0010",
+            businessUnitId = "bu-cafe-01",
+            shiftId = shiftId,
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            orderType = "dine_in",
+            subtotal = 50000L,
+            total = 50000L,
+            paidAmount = 50000L,
+            status = "paid"
+        )
+        database.orderDao().insertOrder(order)
+
+        val outbox = transactionManager.recordCorrection(
+            orderId = orderId,
+            type = "refund",
+            amount = 50000L,
+            reasonCode = "quality_complaint",
+            approvedBy = "u-manager-1",
+            note = "Rasa kopi asam",
+            currentShiftId = shiftId
+        )
+
+        // 1. Verifikasi status order berubah menjadi 'refunded'
+        val updatedOrder = database.orderDao().getOrderById(orderId)
+        assertNotNull(updatedOrder)
+        assertEquals("refunded", updatedOrder!!.status)
+
+        // 2. Verifikasi entitas CorrectionEntity tersimpan di Room
+        val corrections = database.correctionDao().getCorrectionsForOrder(orderId)
+        assertEquals(1, corrections.size)
+        val correction = corrections.first()
+        assertEquals(orderId, correction.orderId)
+        assertEquals("refund", correction.type)
+        assertEquals(50000L, correction.amount)
+        assertEquals("cash", correction.refundMethod)
+        assertEquals("quality_complaint", correction.reasonCode)
+        assertEquals("Rasa kopi asam", correction.note)
+        assertEquals("u-manager-1", correction.approvedBy)
+        assertFalse(correction.isOldTransactionRefund)
+
+        // 3. Verifikasi kas laci berkurang (getCashRefundTotalForShift)
+        val refundTotal = database.correctionDao().getCashRefundTotalForShift(shiftId)
+        assertEquals(50000L, refundTotal)
+
+        // 4. Verifikasi event outbox 'correction.recorded'
+        assertNotNull(outbox)
+        assertTrue(outbox.eventsJson.contains("correction.recorded"))
+        assertTrue(outbox.eventsJson.contains("quality_complaint"))
+        assertTrue(outbox.eventsJson.contains("u-manager-1"))
+        assertTrue(outbox.eventsJson.contains(""""amount":50000"""))
+        assertTrue(outbox.eventsJson.contains(""""refund_method":"cash""""))
+    }
+
+    @Test
+    fun `recordCorrection for void marks order void and does not affect cash refund`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "C1-0011",
+            businessUnitId = "bu-cafe-01",
+            shiftId = shiftId,
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            orderType = "dine_in",
+            subtotal = 30000L,
+            total = 30000L,
+            paidAmount = 0L,
+            status = "open"
+        )
+        database.orderDao().insertOrder(order)
+
+        transactionManager.recordCorrection(
+            orderId = orderId,
+            type = "void",
+            amount = 30000L,
+            reasonCode = "customer_cancelled",
+            approvedBy = "u-manager-1"
+        )
+
+        val updatedOrder = database.orderDao().getOrderById(orderId)
+        assertNotNull(updatedOrder)
+        assertEquals("void", updatedOrder!!.status)
+
+        // Void tidak mengurangi kas refund laci
+        val refundTotal = database.correctionDao().getCashRefundTotalForShift(shiftId)
+        assertEquals(0L, refundTotal)
+    }
+
+    // =========================================================================
+    // F36: Refund Transaksi Shift Sebelumnya dengan Batas Nilai & Umur
+    // =========================================================================
+
+    @Test
+    fun `recordCorrection for old transaction within limit succeeds and marks isOldTransaction true`() = runBlocking {
+        val now = System.currentTimeMillis()
+        val oldShiftId = "shift-old-001"
+        val activeShiftId = "shift-today-002"
+
+        // Shift aktif hari ini dibuka 2 jam lalu
+        val activeShift = ShiftEntity(
+            id = activeShiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-today",
+            cashierName = "Kasir Hari Ini",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}",
+            openedAt = now - 2 * 3600 * 1000L
+        )
+        database.shiftDao().insertShift(activeShift)
+
+        // Order dari 3 hari lalu (shift lama) senilai Rp 80.000 (<= Rp 100.000, <= 14 hari)
+        val orderId = UUID.randomUUID().toString()
+        val oldOrder = OrderEntity(
+            id = orderId,
+            displayNumber = "C1-0005",
+            businessUnitId = "bu-cafe-01",
+            shiftId = oldShiftId,
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-old",
+            orderType = "dine_in",
+            subtotal = 80000L,
+            total = 80000L,
+            paidAmount = 80000L,
+            status = "paid",
+            createdAt = now - 3 * 24 * 3600 * 1000L
+        )
+        database.orderDao().insertOrder(oldOrder)
+
+        val outbox = transactionManager.recordCorrection(
+            orderId = orderId,
+            type = "refund",
+            amount = 80000L,
+            reasonCode = "quality_complaint",
+            approvedBy = "u-manager-1",
+            note = "Komplain susu basi",
+            currentShiftId = activeShiftId,
+            occurredAtMs = now
+        )
+
+        // 1. Verifikasi catatan tersimpan dengan tanda isOldTransactionRefund = true
+        val corrections = database.correctionDao().getCorrectionsForOrder(orderId)
+        assertEquals(1, corrections.size)
+        val c = corrections.first()
+        assertTrue(c.isOldTransactionRefund)
+        assertEquals(activeShiftId, c.shiftId) // Dibebankan ke kas shift aktif hari ini (COR-05)
+
+        // 2. Verifikasi memotong kas laci shift aktif hari ini
+        val todayRefundTotal = database.correctionDao().getCashRefundTotalForShift(activeShiftId)
+        assertEquals(80000L, todayRefundTotal)
+
+        assertNotNull(outbox)
+        assertEquals(activeShiftId, outbox.shiftId)
+    }
+
+    @Test
+    fun `recordCorrection for old transaction exceeding Rp 100k is rejected with IllegalArgumentException`() = runBlocking {
+        val now = System.currentTimeMillis()
+        val oldShiftId = "shift-old-001"
+        val activeShiftId = "shift-today-002"
+
+        val activeShift = ShiftEntity(
+            id = activeShiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-today",
+            cashierName = "Kasir Hari Ini",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}",
+            openedAt = now - 2 * 3600 * 1000L
+        )
+        database.shiftDao().insertShift(activeShift)
+
+        // Order dari shift lama senilai Rp 120.000 (> batas Rp 100.000 OQ-22 / F36)
+        val orderId = UUID.randomUUID().toString()
+        val oldOrder = OrderEntity(
+            id = orderId,
+            displayNumber = "C1-0006",
+            businessUnitId = "bu-cafe-01",
+            shiftId = oldShiftId,
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-old",
+            orderType = "dine_in",
+            subtotal = 120000L,
+            total = 120000L,
+            paidAmount = 120000L,
+            status = "paid",
+            createdAt = now - 2 * 24 * 3600 * 1000L
+        )
+        database.orderDao().insertOrder(oldOrder)
+
+        try {
+            transactionManager.recordCorrection(
+                orderId = orderId,
+                type = "refund",
+                amount = 120000L,
+                reasonCode = "quality_complaint",
+                approvedBy = "u-manager-1",
+                currentShiftId = activeShiftId,
+                occurredAtMs = now
+            )
+            org.junit.Assert.fail("Harus ditolak bila refund transaksi shift lalu > Rp 100.000 (F36, COR-05)")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("100.000"))
+            assertTrue(e.message!!.contains("Web Dashboard"))
+        }
+    }
+
+    @Test
+    fun `recordCorrection for old transaction older than 14 days is rejected with IllegalArgumentException`() = runBlocking {
+        val now = System.currentTimeMillis()
+        val oldShiftId = "shift-old-001"
+        val activeShiftId = "shift-today-002"
+
+        val activeShift = ShiftEntity(
+            id = activeShiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-today",
+            cashierName = "Kasir Hari Ini",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}",
+            openedAt = now - 2 * 3600 * 1000L
+        )
+        database.shiftDao().insertShift(activeShift)
+
+        // Order dari 16 hari lalu (> batas 14 hari OQ-22 / F36)
+        val orderId = UUID.randomUUID().toString()
+        val oldOrder = OrderEntity(
+            id = orderId,
+            displayNumber = "C1-0007",
+            businessUnitId = "bu-cafe-01",
+            shiftId = oldShiftId,
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-old",
+            orderType = "dine_in",
+            subtotal = 40000L,
+            total = 40000L,
+            paidAmount = 40000L,
+            status = "paid",
+            createdAt = now - 16 * 24 * 3600 * 1000L
+        )
+        database.orderDao().insertOrder(oldOrder)
+
+        try {
+            transactionManager.recordCorrection(
+                orderId = orderId,
+                type = "refund",
+                amount = 40000L,
+                reasonCode = "wrong_input",
+                approvedBy = "u-manager-1",
+                currentShiftId = activeShiftId,
+                occurredAtMs = now
+            )
+            org.junit.Assert.fail("Harus ditolak bila umur transaksi > 14 hari (F36, COR-05)")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("14 hari"))
+            assertTrue(e.message!!.contains("Web Dashboard"))
+        }
+    }
+
+    // =========================================================================
+    // F37: Kas Keluar dengan Foto Nota & Batas Tanpa PIN
+    // =========================================================================
+
+    @Test
+    fun `recordCashOut within Rp 50k succeeds without PIN or photo and saves outbox`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        val outbox = transactionManager.recordCashOut(
+            amount = 30000L,
+            category = "Operasional",
+            reason = "Beli es batu kristal",
+            shiftId = shiftId
+        )
+
+        // 1. Verifikasi tersimpan di Room
+        val list = database.cashOutDao().getCashOutsForShift(shiftId)
+        assertEquals(1, list.size)
+        val item = list.first()
+        assertEquals(30000L, item.amount)
+        assertEquals("Operasional", item.category)
+        assertEquals("Beli es batu kristal", item.reason)
+        assertNull(item.approvedBy)
+        assertNull(item.receiptFileId)
+
+        // 2. Verifikasi total kas keluar shift
+        val total = database.cashOutDao().getCashOutTotalForShift(shiftId)
+        assertEquals(30000L, total)
+
+        // 3. Verifikasi event outbox 'cashout.recorded'
+        assertNotNull(outbox)
+        assertTrue(outbox.eventsJson.contains("cashout.recorded"))
+        assertTrue(outbox.eventsJson.contains(""""amount":30000"""))
+        assertTrue(outbox.eventsJson.contains("Operasional"))
+        assertTrue(outbox.eventsJson.contains("Beli es batu kristal"))
+    }
+
+    @Test
+    fun `recordCashOut over Rp 50k without PIN throws IllegalArgumentException`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        try {
+            transactionManager.recordCashOut(
+                amount = 75000L,
+                category = "Bahan baku",
+                reason = "Beli kopi mentah",
+                receiptFilePath = "/path/photo.jpg",
+                approvedBy = null, // Tanpa PIN Manager
+                shiftId = shiftId
+            )
+            org.junit.Assert.fail("Harus ditolak bila kas keluar > Rp 50.000 tanpa PIN Manager (KAS-02)")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("50.000"))
+            assertTrue(e.message!!.contains("Manager"))
+        }
+    }
+
+    @Test
+    fun `recordCashOut over Rp 50k without photo receipt throws IllegalArgumentException`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        try {
+            transactionManager.recordCashOut(
+                amount = 80000L,
+                category = "Bahan baku",
+                reason = "Beli gula dan susu",
+                receiptFileId = null,
+                receiptFilePath = null, // Tanpa foto nota
+                approvedBy = "u-manager-1",
+                shiftId = shiftId
+            )
+            org.junit.Assert.fail("Harus ditolak bila kas keluar > Rp 50.000 tanpa foto nota (KAS-02)")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("foto nota"))
+        }
+    }
+
+    @Test
+    fun `recordCashOut over Rp 50k with PIN and photo succeeds`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        val fileId = UUID.randomUUID().toString()
+        val outbox = transactionManager.recordCashOut(
+            amount = 90000L,
+            category = "Perawatan",
+            reason = "Servis grinder kopi",
+            receiptFileId = fileId,
+            receiptFilePath = "/data/user/0/id.a3/files/nota_grinder.jpg",
+            approvedBy = "u-manager-1",
+            shiftId = shiftId
+        )
+
+        val list = database.cashOutDao().getCashOutsForShift(shiftId)
+        assertEquals(1, list.size)
+        val item = list.first()
+        assertEquals(90000L, item.amount)
+        assertEquals("u-manager-1", item.approvedBy)
+        assertEquals(fileId, item.receiptFileId)
+
+        assertNotNull(outbox)
+        assertTrue(outbox.eventsJson.contains("cashout.recorded"))
+        assertTrue(outbox.eventsJson.contains(""""amount":90000"""))
+        assertTrue(outbox.eventsJson.contains(""""receipt_file_id":"$fileId""""))
+        assertTrue(outbox.eventsJson.contains(""""approved_by":"u-manager-1""""))
+    }
+
+    // =========================================================================
+    // F38: Tutup Shift Offline & Tutup Paksa oleh Manager (shift.force_closed)
+    // =========================================================================
+
+    @Test
+    fun `forceCloseShift updates status to force_closed, records outbox, and frees tablet for new shift`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        // Verifikasi shift berstatus open
+        assertNotNull(database.shiftDao().getActiveShift())
+
+        val note = "Kasir sakit mendadak, shift ditutup paksa manager"
+        val approvedBy = "u-manager-1"
+        val outbox = transactionManager.forceCloseShift(
+            shiftId = shiftId,
+            note = note,
+            approvedBy = approvedBy
+        )
+
+        // 1. Verifikasi entitas shift berstatus force_closed
+        val updatedShift = database.shiftDao().getShiftById(shiftId)
+        assertNotNull(updatedShift)
+        assertEquals("force_closed", updatedShift!!.status)
+        assertEquals(approvedBy, updatedShift.approvedBy)
+        assertEquals(note, updatedShift.differenceReason)
+        assertNotNull(updatedShift.closedAt)
+
+        // 2. Verifikasi getActiveShift() kini bernilai null (tablet tidak lagi terkunci)
+        assertNull(database.shiftDao().getActiveShift())
+
+        // 3. Verifikasi event outbox 'shift.force_closed'
+        assertNotNull(outbox)
+        assertTrue(outbox.eventsJson.contains("shift.force_closed"))
+        assertTrue(outbox.eventsJson.contains(shiftId))
+        assertTrue(outbox.eventsJson.contains("Kasir sakit mendadak"))
+        assertTrue(outbox.eventsJson.contains("u-manager-1"))
+
+        // 4. Verifikasi kasir berikutnya langsung dapat membuka shift baru tanpa terhalang
+        val nextShiftId = UUID.randomUUID().toString()
+        val nextShift = ShiftEntity(
+            id = nextShiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-2",
+            cashierName = "Siti Kasir Baru",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        transactionManager.openShift(
+            shift = nextShift,
+            breakdownMap = mapOf("50000" to 4)
+        )
+
+        val currentActive = database.shiftDao().getActiveShift()
+        assertNotNull(currentActive)
+        assertEquals(nextShiftId, currentActive!!.id)
+        assertEquals("u-cashier-2", currentActive.cashierId)
+    }
+
+    @Test
+    fun `forceCloseShift without note or approvedBy throws IllegalArgumentException`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}"
+        )
+        database.shiftDao().insertShift(shift)
+
+        try {
+            transactionManager.forceCloseShift(
+                shiftId = shiftId,
+                note = "   ",
+                approvedBy = "u-manager-1"
+            )
+            org.junit.Assert.fail("Harus ditolak bila catatan alasan kosong (ShiftForceClosed)")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("Catatan"))
+        }
+
+        try {
+            transactionManager.forceCloseShift(
+                shiftId = shiftId,
+                note = "Kasir sakit",
+                approvedBy = "  "
+            )
+            org.junit.Assert.fail("Harus ditolak bila approved_by kosong (ShiftForceClosed)")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(e.message!!.contains("Manager"))
         }
     }
 }

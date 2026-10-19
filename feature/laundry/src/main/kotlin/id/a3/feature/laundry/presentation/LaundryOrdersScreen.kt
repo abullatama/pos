@@ -288,18 +288,20 @@ fun LaundryOrdersScreen(
         )
     }
 
-    // Dialog S14: Otorisasi PIN Manager (F23, F24)
+    // Dialog S14: Otorisasi PIN Manager (F23, F24, F35)
     if (uiState.isManagerPinDialogOpen) {
         ManagerPinAuthDialog(
-            title = if (uiState.pendingAction is PendingManagerAction.UnpaidPickup) {
-                "Otorisasi Penyerahan Belum Lunas"
-            } else {
-                "Otorisasi Cuci Ulang Komplain"
+            title = when (uiState.pendingAction) {
+                is PendingManagerAction.UnpaidPickup -> "Otorisasi Penyerahan Belum Lunas"
+                is PendingManagerAction.Rework -> "Otorisasi Cuci Ulang Komplain"
+                is PendingManagerAction.Refund -> "Otorisasi Refund Tunai"
+                null -> "Otorisasi Manager"
             },
-            subtitle = if (uiState.pendingAction is PendingManagerAction.UnpaidPickup) {
-                "Pesanan memiliki sisa tagihan ${formatRupiah(uiState.remainingBalance)}. Wajib PIN Manager."
-            } else {
-                "Status cucian akan kembali ke Diproses tanpa tagihan baru."
+            subtitle = when (val action = uiState.pendingAction) {
+                is PendingManagerAction.UnpaidPickup -> "Pesanan memiliki sisa tagihan ${formatRupiah(uiState.remainingBalance)}. Wajib PIN Manager."
+                is PendingManagerAction.Rework -> "Status cucian akan kembali ke Diproses tanpa tagihan baru."
+                is PendingManagerAction.Refund -> "Pengembalian dana tunai ${formatRupiah(action.amount)} dari laci kas."
+                null -> ""
             },
             errorMessage = uiState.pinErrorMessage,
             onDismiss = viewModel::closeManagerPinDialog,

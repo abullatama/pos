@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
 import id.a3.core.data.local.entity.OrderWithLines
+import id.a3.core.data.local.entity.ShiftEntity
 import id.a3.core.data.repository.OrderTransactionManager
 import id.a3.core.domain.cafe.CafeCalculationInput
 import id.a3.core.domain.cafe.CafeCalculationResult
@@ -18,6 +19,9 @@ import id.a3.core.printer.format.CustomerReceiptFormatter
 import id.a3.core.printer.format.CustomerReceiptLine
 import id.a3.core.printer.format.KitchenTicketFormatter
 import id.a3.core.printer.format.KitchenTicketItem
+import id.a3.core.printer.format.RefundReceiptData
+import id.a3.core.printer.format.RefundReceiptFormatter
+import id.a3.core.ui.component.STANDARD_AUDIT_REASONS
 import id.a3.feature.cafe.model.AppliedDiscount
 import id.a3.feature.cafe.model.CafeCartLine
 import id.a3.feature.cafe.model.CafeOrderType
@@ -184,6 +188,16 @@ class CafeMenuViewModel(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
+        )
+
+    /**
+     * Aliran data shift aktif saat ini untuk mendeteksi transaksi shift lampau (F36).
+     */
+    val activeShift: StateFlow<ShiftEntity?> = (transactionManager?.observeActiveShift() ?: kotlinx.coroutines.flow.flowOf(null))
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = null
         )
 
     private val _isCheckingOut = MutableStateFlow(false)
@@ -582,6 +596,79 @@ class CafeMenuViewModel(
         val bytes = CustomerReceiptFormatter.format(receiptData)
         return withContext(Dispatchers.IO) {
             printer.print(bytes)
+        }
+    }
+
+    /**
+     * Memproses pengembalian dana tunai (refund) atau pembatalan (void) atas pesanan (F35, F36, COR-03 s/d COR-05).
+     * Mencatat catatan pembalik atomik ke Room & Outbox, memotong kas laci shift berjalan, dan mencetak struk fisik.
+     */
+    suspend fun refundOrVoidOrder(
+        orderWithLines: OrderWithLines,
+        type: String, // "refund" atau "void"
+        reasonCode: String,
+        note: String?,
+        approvedBy: String
+    ): Result<Unit> {
+        val tm = transactionManager ?: return Result.failure(IllegalStateException("TransactionManager tidak tersedia"))
+        val order = orderWithLines.order
+
+        return try {
+            val amount = if (type == "refund") order.paidAmount else order.total
+            val lineIds = orderWithLines.lines.map { it.id }
+
+            tm.recordCorrection(
+                orderId = order.id,
+                type = type,
+                amount = amount,
+                reasonCode = reasonCode,
+                approvedBy = approvedBy,
+                note = note,
+                orderLineIds = lineIds
+            )
+
+            // Cetak struk refund 58 mm otomatis
+            printerService?.let { printer ->
+                val lines = orderWithLines.lines.map { line ->
+                    CustomerReceiptLine(
+                        name = line.nameSnapshot,
+                        quantity = line.quantity,
+                        unitPrice = line.unitPriceSnapshot,
+                        lineTotal = line.unitPriceSnapshot * line.quantity,
+                        optionsOrNote = line.note
+                    )
+                }
+                val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.forLanguageTag("id-ID")).format(Date())
+                val reasonLabel = STANDARD_AUDIT_REASONS.find { it.code == reasonCode }?.label ?: reasonCode
+                val active = tm.shiftDao.getActiveShift()
+                val isOld = active != null && (order.shiftId != null && order.shiftId != active.id || order.createdAt < active.openedAt)
+
+                val refundData = RefundReceiptData(
+                    storeName = "AA COFFEESHOP",
+                    storeAddress = "Jl. Kopi Pilihan No. 3",
+                    storePhone = "0812-3456-7890",
+                    orderDisplayNumber = order.displayNumber,
+                    tableOrQueueLabel = order.tableLabel,
+                    cashierName = "Kasir",
+                    approvedBy = approvedBy,
+                    occurredAt = dateStr,
+                    correctionType = if (type == "refund") "REFUND TUNAI" else "VOID PESANAN",
+                    reason = reasonLabel,
+                    note = note,
+                    isOldTransaction = isOld,
+                    lines = lines,
+                    originalTotal = order.total,
+                    refundAmount = amount
+                )
+                val bytes = RefundReceiptFormatter.format(refundData)
+                withContext(Dispatchers.IO) {
+                    printer.print(bytes)
+                }
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 

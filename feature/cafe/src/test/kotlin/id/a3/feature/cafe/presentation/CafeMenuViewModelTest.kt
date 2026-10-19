@@ -585,4 +585,31 @@ class CafeMenuViewModelTest {
         assertEquals("3 jam 50 menit", formatOrderDuration(230L))
         assertEquals("2 jam 5 menit", formatOrderDuration(125L))
     }
+
+    @Test
+    fun `refundOrVoidOrder returns failure when transactionManager is null`() = runTest(testDispatcher) {
+        val dummyOrder = id.a3.core.data.local.entity.OrderWithLines(
+            order = id.a3.core.data.local.entity.OrderEntity(
+                id = "ord-1",
+                displayNumber = "C1-0001",
+                businessUnitId = "bu-1",
+                shiftId = "shift-1",
+                deviceId = "dev-1",
+                cashierId = "u-1",
+                orderType = "dine_in",
+                subtotal = 34000L,
+                total = 34000L,
+                paidAmount = 34000L
+            ),
+            lines = emptyList()
+        )
+        val res = viewModel.refundOrVoidOrder(
+            orderWithLines = dummyOrder,
+            type = "refund",
+            reasonCode = "wrong_input",
+            note = null,
+            approvedBy = "u-manager-1"
+        )
+        assertTrue(res.isFailure)
+    }
 }

@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.HorizontalDivider
@@ -32,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -58,8 +61,11 @@ import id.a3.feature.payment.PaymentViewModelFactory
 import id.a3.feature.payment.presentation.PaymentScreen
 import id.a3.feature.payment.presentation.PaymentViewModel
 import id.a3.feature.shift.ShiftViewModelFactory
+import id.a3.feature.shift.presentation.CashOutScreen
+import id.a3.feature.shift.presentation.CashOutViewModel
 import id.a3.feature.shift.presentation.CloseShiftScreen
 import id.a3.feature.shift.presentation.CloseShiftViewModel
+import id.a3.feature.shift.presentation.ForceCloseShiftDialog
 import id.a3.feature.shift.presentation.OpenShiftScreen
 import id.a3.feature.shift.presentation.ShiftViewModel
 import id.a3.feature.shift.repository.ActiveShift
@@ -101,6 +107,9 @@ fun LaundryNavHost(
         factory = ShiftViewModelFactory(context, printerService)
     )
     val closeShiftViewModel: CloseShiftViewModel = viewModel(
+        factory = ShiftViewModelFactory(context, printerService)
+    )
+    val cashOutViewModel: CashOutViewModel = viewModel(
         factory = ShiftViewModelFactory(context, printerService)
     )
 
@@ -232,8 +241,14 @@ fun LaundryNavHost(
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
             var isClosingShift by remember { mutableStateOf(false) }
+            var isCashOutActive by remember { mutableStateOf(false) }
 
-            if (isClosingShift && activeShift != null) {
+            if (isCashOutActive && activeShift != null) {
+                CashOutScreen(
+                    viewModel = cashOutViewModel,
+                    onBack = { isCashOutActive = false }
+                )
+            } else if (isClosingShift && activeShift != null) {
                 CloseShiftScreen(
                     viewModel = closeShiftViewModel,
                     shiftId = activeShift.shiftId,
@@ -267,8 +282,33 @@ fun LaundryNavHost(
             } else {
                 ActiveShiftCard(
                     activeShift = activeShift,
+                    onCashOutClick = {
+                        isCashOutActive = true
+                    },
                     onCloseShiftClick = {
                         isClosingShift = true
+                    },
+                    onForceCloseClick = shiftViewModel::openForceCloseDialog
+                )
+            }
+
+            if (shiftUiState.isForceCloseDialogOpen && activeShift != null) {
+                ForceCloseShiftDialog(
+                    shiftId = activeShift.shiftId,
+                    cashierName = activeShift.cashierName,
+                    errorMessage = shiftUiState.forceCloseErrorMessage,
+                    isManagerLocked = shiftUiState.isManagerLocked,
+                    lockoutRemainingSeconds = shiftUiState.lockoutRemainingSeconds,
+                    isSubmitting = shiftUiState.isForceClosing,
+                    onDismiss = shiftViewModel::closeForceCloseDialog,
+                    onSubmitForceClose = { pin, note ->
+                        shiftViewModel.verifyManagerPinAndForceClose(
+                            pin = pin,
+                            note = note,
+                            onSuccess = {
+                                // Shift berhasil ditutup paksa
+                            }
+                        )
                     }
                 )
             }
@@ -298,7 +338,9 @@ fun LaundryNavHost(
 @Composable
 private fun ActiveShiftCard(
     activeShift: ActiveShift,
-    onCloseShiftClick: () -> Unit
+    onCashOutClick: () -> Unit,
+    onCloseShiftClick: () -> Unit,
+    onForceCloseClick: () -> Unit
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
@@ -343,7 +385,7 @@ private fun ActiveShiftCard(
             )
 
             Text(
-                text = "Kasir dapat menerima pembayaran tunai dan mengelola pesanan laundry.",
+                text = "Kasir dapat menerima pembayaran tunai, mencatat kas keluar, dan mengelola pesanan laundry.",
                 style = A3Theme.typography.body,
                 color = colors.inkMuted,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -377,11 +419,34 @@ private fun ActiveShiftCard(
 
             HorizontalDivider(color = colors.border)
 
-            A3Button(
-                label = "Tutup Shift Kasir",
-                variant = ButtonVariant.SECONDARY,
-                onClick = onCloseShiftClick,
-                fillWidth = true
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                A3Button(
+                    label = "Catat Kas Keluar",
+                    variant = ButtonVariant.PRIMARY,
+                    onClick = onCashOutClick,
+                    modifier = Modifier.weight(1f)
+                )
+
+                A3Button(
+                    label = "Tutup Shift",
+                    variant = ButtonVariant.SECONDARY,
+                    onClick = onCloseShiftClick,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Text(
+                text = "Tutup Paksa Shift (Manager)",
+                color = Color(0xFFC62828),
+                style = A3Theme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .clickable(onClick = onForceCloseClick)
+                    .padding(vertical = 4.dp, horizontal = 8.dp)
             )
         }
     }

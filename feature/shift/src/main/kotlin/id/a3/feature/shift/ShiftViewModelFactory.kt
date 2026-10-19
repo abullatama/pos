@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.data.repository.OrderTransactionManager
 import id.a3.core.printer.PrinterService
+import id.a3.feature.shift.presentation.CashOutViewModel
 import id.a3.feature.shift.presentation.CloseShiftViewModel
 import id.a3.feature.shift.presentation.ShiftViewModel
 import id.a3.feature.shift.repository.DefaultShiftRepository
@@ -30,6 +31,9 @@ class ShiftViewModelFactory(
             }
             modelClass.isAssignableFrom(CloseShiftViewModel::class.java) -> {
                 CloseShiftViewModel(repository, printerService) as T
+            }
+            modelClass.isAssignableFrom(CashOutViewModel::class.java) -> {
+                CashOutViewModel(repository, printerService) as T
             }
             else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
         }

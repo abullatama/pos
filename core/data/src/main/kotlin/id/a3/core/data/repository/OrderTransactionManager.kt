@@ -2,6 +2,8 @@ package id.a3.core.data.repository
 
 import androidx.room.withTransaction
 import id.a3.core.data.local.AppDatabase
+import id.a3.core.data.local.dao.CashOutDao
+import id.a3.core.data.local.dao.CorrectionDao
 import id.a3.core.data.local.dao.CustomerDao
 import id.a3.core.data.local.dao.LaundryPickupDao
 import id.a3.core.data.local.dao.MasterDataDao
@@ -9,6 +11,8 @@ import id.a3.core.data.local.dao.OrderDao
 import id.a3.core.data.local.dao.OutboxDao
 import id.a3.core.data.local.dao.PaymentDao
 import id.a3.core.data.local.dao.ShiftDao
+import id.a3.core.data.local.entity.CashOutEntity
+import id.a3.core.data.local.entity.CorrectionEntity
 import id.a3.core.data.local.entity.CustomerEntity
 import id.a3.core.data.local.entity.LaundryPickupEntity
 import id.a3.core.data.local.entity.OrderEntity
@@ -38,7 +42,9 @@ class OrderTransactionManager(
     val customerDao: CustomerDao = database.customerDao(),
     val laundryPickupDao: LaundryPickupDao = database.laundryPickupDao(),
     val shiftDao: ShiftDao = database.shiftDao(),
-    val paymentDao: PaymentDao = database.paymentDao()
+    val paymentDao: PaymentDao = database.paymentDao(),
+    val correctionDao: CorrectionDao = database.correctionDao(),
+    val cashOutDao: CashOutDao = database.cashOutDao()
 ) {
 
     /**
@@ -979,6 +985,321 @@ class OrderTransactionManager(
                 bundleId = bundleId,
                 deviceId = shift.deviceId,
                 shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Menutup paksa shift kasir yang tidak hadir atau tertinggal terbuka oleh Manager (F38, TUP-08, D-01).
+     *
+     * Sesuai kontrak OpenAPI ShiftForceClosed:
+     * - Wajib diotorisasi Manager (approvedBy wajib).
+     * - Wajib mencatat alasan / catatan penutupan paksa (note wajib).
+     * - Status shift berubah menjadi 'force_closed', membebaskan tablet agar kasir berikutnya bisa membuka shift.
+     * - Menghasilkan event outbox atomik 'shift.force_closed'.
+     */
+    suspend fun forceCloseShift(
+        shiftId: String,
+        note: String,
+        approvedBy: String,
+        closedAt: Long = System.currentTimeMillis()
+    ): OutboxEntity {
+        require(note.isNotBlank()) { "Catatan alasan tutup paksa shift wajib diisi (ShiftForceClosed)" }
+        require(approvedBy.isNotBlank()) { "Otorisasi Manager (approved_by) wajib diisi (ShiftForceClosed)" }
+
+        return database.withTransaction {
+            val shift = shiftDao.getShiftById(shiftId)
+                ?: throw IllegalArgumentException("Shift dengan ID $shiftId tidak ditemukan")
+
+            if (shift.status != "open") {
+                throw IllegalStateException("Shift ${shift.id} tidak berstatus open (status: ${shift.status})")
+            }
+
+            // Perbarui entitas shift ke status force_closed
+            val forceClosedShift = shift.copy(
+                status = "force_closed",
+                closedAt = closedAt,
+                approvedBy = approvedBy,
+                differenceReason = note.trim()
+            )
+            shiftDao.updateShift(forceClosedShift)
+
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.ofEpochMilli(closedAt).toString()
+
+            val payload = buildJsonObject {
+                put("shift_id", shiftId)
+                put("note", note.trim())
+                put("approved_by", approvedBy.trim())
+            }
+
+            val event = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "shift.force_closed")
+                put("occurred_at", occurredAt)
+                put("payload", payload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(event)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = shift.deviceId,
+                shiftId = shiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Mencatat catatan koreksi (void, refund, manual_discount) di Room dan menghasilkan event outbox 'correction.recorded' secara atomik.
+     *
+     * Mengimplementasikan aturan F35, F36, dan COR-01 s/d COR-08:
+     * - Bersifat append-only: data transaksi asal tidak pernah dihapus/diedit.
+     * - Refund selalu tunai (refundMethod = "cash", COR-04), mengurangi kas laci shift berjalan.
+     * - Atas transaksi shift sebelumnya (komplain datang belakangan, F36 / COR-05 / OQ-22):
+     *   - Batas nilai: <= Rp 100.000. Jika di atas Rp 100.000, ditolak dan diarahkan ke Owner Web Dashboard.
+     *   - Batas umur: <= 14 hari. Jika lebih dari 14 hari, ditolak dan diarahkan ke Owner Web Dashboard.
+     *   - Ditandai isOldTransactionRefund = true.
+     * - Status transaksi diperbarui ke 'refunded', 'partial_refund', atau 'void'.
+     */
+    suspend fun recordCorrection(
+        orderId: String,
+        type: String, // "void", "refund", "manual_discount", "comp"
+        amount: Long,
+        reasonCode: String, // "wrong_input", "customer_cancelled", "quality_complaint", "wrong_made", "promo", "other"
+        approvedBy: String,
+        note: String? = null,
+        orderLineIds: List<String> = emptyList(),
+        originalPaymentId: String? = null,
+        correctionId: String = UUID.randomUUID().toString(),
+        deviceId: String = "dev-1",
+        currentShiftId: String? = null,
+        occurredAtMs: Long = System.currentTimeMillis()
+    ): OutboxEntity {
+        val validReasons = setOf("wrong_input", "customer_cancelled", "quality_complaint", "wrong_made", "promo", "other")
+        require(reasonCode in validReasons) { "Kode alasan '$reasonCode' tidak valid (COR-01)" }
+        if (reasonCode == "other") {
+            require(!note.isNullOrBlank()) { "Alasan 'other' wajib menyertakan catatan (note)" }
+        }
+        require(approvedBy.isNotBlank()) { "Otorisasi PIN Manager (approved_by) wajib diisi (COR-01, COR-07)" }
+        require(amount > 0L) { "Nominal koreksi harus lebih besar dari 0" }
+
+        val order = orderDao.getOrderById(orderId)
+            ?: throw IllegalArgumentException("Pesanan dengan ID $orderId tidak ditemukan")
+
+        val activeShift = shiftDao.getActiveShift()
+        val effectiveShiftId = currentShiftId ?: activeShift?.id
+
+        var isOldTx = false
+        if (type == "refund") {
+            if (effectiveShiftId == null) {
+                throw IllegalStateException("Refund tunai memerlukan shift yang sedang aktif (COR-04)")
+            }
+
+            val orderShiftId = order.shiftId
+            val orderCreatedBeforeCurrentShift = activeShift != null && order.createdAt < activeShift.openedAt
+            val orderFromDifferentShift = orderShiftId != null && orderShiftId != effectiveShiftId
+
+            if (orderCreatedBeforeCurrentShift || orderFromDifferentShift) {
+                isOldTx = true
+                // Penegakan aturan F36 & OQ-22:
+                // 1. Batas nilai: <= Rp 100.000
+                if (amount > 100_000L) {
+                    throw IllegalArgumentException("Refund transaksi shift lalu melebihi Rp 100.000 hanya dapat diproses oleh Owner melalui Web Dashboard (F36, COR-05)")
+                }
+                // 2. Batas umur: <= 14 hari
+                val ageMs = occurredAtMs - order.createdAt
+                val maxAgeMs = 14L * 24 * 3600 * 1000L
+                if (ageMs > maxAgeMs) {
+                    throw IllegalArgumentException("Transaksi lebih dari 14 hari tidak dapat di-refund di kasir. Silakan hubungi Owner melalui Web Dashboard (F36, COR-05)")
+                }
+            }
+
+            // Validasi nominal refund tidak melebihi nilai bayar
+            if (amount > order.paidAmount) {
+                throw IllegalArgumentException("Nominal refund (Rp$amount) melebihi nilai bayar (Rp${order.paidAmount})")
+            }
+        } else if (type == "void") {
+            if (amount > order.total) {
+                throw IllegalArgumentException("Nominal void (Rp$amount) melebihi total pesanan (Rp${order.total})")
+            }
+        }
+
+        return database.withTransaction {
+            // 1. Perbarui status order
+            val updatedOrder = when (type) {
+                "refund" -> {
+                    if (amount >= order.paidAmount) {
+                        order.copy(status = "refunded")
+                    } else {
+                        order.copy(status = "partial_refund")
+                    }
+                }
+                "void" -> order.copy(status = "void")
+                else -> order
+            }
+            if (updatedOrder != order) {
+                orderDao.updateOrder(updatedOrder)
+            }
+
+            // 2. Simpan CorrectionEntity
+            val orderLineIdsJson = buildJsonArray {
+                orderLineIds.forEach { add(JsonPrimitive(it)) }
+            }.toString()
+
+            val correctionEntity = CorrectionEntity(
+                id = correctionId,
+                orderId = orderId,
+                shiftId = effectiveShiftId,
+                type = type,
+                amount = amount,
+                refundMethod = if (type == "refund") "cash" else null,
+                originalPaymentId = originalPaymentId,
+                orderLineIdsJson = orderLineIdsJson,
+                reasonCode = reasonCode,
+                note = note,
+                approvedBy = approvedBy,
+                isOldTransactionRefund = isOldTx,
+                createdAt = occurredAtMs
+            )
+            correctionDao.insertCorrection(correctionEntity)
+
+            // 3. Catat event outbox 'correction.recorded'
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.ofEpochMilli(occurredAtMs).toString()
+
+            val lineIdsJsonArray = buildJsonArray {
+                orderLineIds.forEach { add(JsonPrimitive(it)) }
+            }
+
+            val payload = buildJsonObject {
+                put("correction_id", correctionId)
+                put("type", type)
+                put("order_id", orderId)
+                put("order_line_ids", lineIdsJsonArray)
+                originalPaymentId?.let { put("original_payment_id", it) }
+                put("amount", amount)
+                if (type == "refund") {
+                    put("refund_method", "cash")
+                }
+                put("reason_code", reasonCode)
+                note?.let { put("note", it) }
+                put("approved_by", approvedBy)
+            }
+
+            val event = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "correction.recorded")
+                put("occurred_at", occurredAt)
+                put("payload", payload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(event)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = effectiveShiftId,
+                eventsJson = eventsArray.toString()
+            )
+            outboxDao.insert(outbox)
+            outbox
+        }
+    }
+
+    /**
+     * Mencatat pengeluaran kas laci (kas keluar / petty cash) di Room dan menghasilkan event outbox 'cashout.recorded' secara atomik.
+     *
+     * Mengimplementasikan aturan F37, KAS-01, KAS-02, dan OQ-08:
+     * - Mewajibkan shift sedang aktif (open).
+     * - Mengurangi kas seharusnya di shift berjalan (KAS-01, rumus K1).
+     * - Nominal <= Rp 50.000: kasir boleh mencatat tanpa PIN Manager (OQ-08).
+     * - Nominal > Rp 50.000: wajib otorisasi PIN Manager dan foto bukti nota fisik wajib (KAS-02).
+     * - Menyusun event outbox 'cashout.recorded' sesuai skema OpenAPI CashoutRecorded.
+     */
+    suspend fun recordCashOut(
+        amount: Long,
+        category: String,
+        reason: String,
+        receiptFileId: String? = null,
+        receiptFilePath: String? = null,
+        approvedBy: String? = null,
+        cashoutId: String = UUID.randomUUID().toString(),
+        deviceId: String = "dev-1",
+        shiftId: String? = null,
+        occurredAtMs: Long = System.currentTimeMillis()
+    ): OutboxEntity {
+        require(amount > 0L) { "Nominal kas keluar harus lebih besar dari 0" }
+        require(category.isNotBlank()) { "Kategori pengeluaran kas wajib diisi" }
+        require(reason.isNotBlank()) { "Alasan pengeluaran kas wajib diisi" }
+
+        val activeShift = shiftDao.getActiveShift()
+        val effectiveShiftId = shiftId ?: activeShift?.id
+            ?: throw IllegalStateException("Kas keluar memerlukan shift yang sedang aktif (KAS-01)")
+
+        val threshold = 50_000L
+        if (amount > threshold) {
+            require(!approvedBy.isNullOrBlank()) {
+                "Pengeluaran kas di atas Rp 50.000 wajib disetujui oleh Manager (KAS-02, OQ-08)"
+            }
+            require(!receiptFileId.isNullOrBlank() || !receiptFilePath.isNullOrBlank()) {
+                "Pengeluaran kas di atas Rp 50.000 wajib menyertakan foto nota (KAS-02)"
+            }
+        }
+
+        return database.withTransaction {
+            // 1. Simpan CashOutEntity ke Room
+            val entity = CashOutEntity(
+                id = cashoutId,
+                shiftId = effectiveShiftId,
+                amount = amount,
+                category = category,
+                reason = reason,
+                receiptFileId = receiptFileId,
+                receiptFilePath = receiptFilePath,
+                approvedBy = approvedBy,
+                createdAt = occurredAtMs
+            )
+            cashOutDao.insertCashOut(entity)
+
+            // 2. Buat event outbox 'cashout.recorded'
+            val bundleId = UUID.randomUUID().toString()
+            val occurredAt = Instant.ofEpochMilli(occurredAtMs).toString()
+
+            val payload = buildJsonObject {
+                put("cashout_id", cashoutId)
+                put("amount", amount)
+                put("category", category)
+                put("reason", reason)
+                receiptFileId?.let { put("receipt_file_id", it) }
+                approvedBy?.let { put("approved_by", it) }
+            }
+
+            val event = buildJsonObject {
+                put("event_id", UUID.randomUUID().toString())
+                put("type", "cashout.recorded")
+                put("occurred_at", occurredAt)
+                put("payload", payload)
+            }
+
+            val eventsArray = buildJsonArray {
+                add(event)
+            }
+
+            val outbox = OutboxEntity(
+                bundleId = bundleId,
+                deviceId = deviceId,
+                shiftId = effectiveShiftId,
                 eventsJson = eventsArray.toString()
             )
             outboxDao.insert(outbox)

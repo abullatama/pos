@@ -767,6 +767,31 @@ private fun Step3AllocationAndZContent(
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Banner Kepatuhan Offline TUP-08
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFFFF3E0))
+                        .border(1.dp, Color(0xFFFFB74D), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFE65100),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "Mode Offline: Shift tetap bisa ditutup lokal. Data penutupan & Laporan Z menunggu sinkron. JANGAN RESET TABLET (TUP-08).",
+                        color = Color(0xFFE65100),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
                 A3Button(
                     label = if (uiState.isClosing) "Menutup Shift & Mencetak..." else "Tutup Shift & Cetak Laporan Z",
                     variant = ButtonVariant.PRIMARY,

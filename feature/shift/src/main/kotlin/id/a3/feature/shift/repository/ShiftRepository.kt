@@ -1,6 +1,7 @@
 package id.a3.feature.shift.repository
 
 import id.a3.core.data.local.dao.ShiftDao
+import id.a3.core.data.local.entity.CashOutEntity
 import id.a3.core.data.local.entity.PaymentEntity
 import id.a3.core.data.local.entity.ShiftEntity
 import id.a3.core.data.repository.OrderTransactionManager
@@ -54,6 +55,15 @@ interface ShiftRepository {
         deviceId: String = "dev-1"
     ): Result<ActiveShift>
     suspend fun getShiftSummary(shiftId: String): Result<ShiftSummary>
+    suspend fun recordCashOut(
+        amount: Long,
+        category: String,
+        reason: String,
+        receiptFileId: String? = null,
+        receiptFilePath: String? = null,
+        approvedBy: String? = null,
+        deviceId: String = "dev-1"
+    ): Result<Unit>
     suspend fun closeShift(
         shiftId: String,
         countedCash: Long,
@@ -63,6 +73,11 @@ interface ShiftRepository {
         cashTakenBy: String? = null,
         qrisCheckedPaymentIds: List<String> = emptyList(),
         handoverOrderIds: List<String> = emptyList()
+    ): Result<Unit>
+    suspend fun forceCloseShift(
+        shiftId: String,
+        note: String,
+        approvedBy: String
     ): Result<Unit>
 }
 
@@ -136,10 +151,11 @@ class DefaultShiftRepository(
             val txCount = transactionManager.paymentDao.getTransactionCountForShift(shiftId)
             val qrisPayments = transactionManager.paymentDao.getQrisPaymentsForShift(shiftId)
             val openOrders = transactionManager.orderDao.observeOpenOrdersWithLines().first()
+            val refund = transactionManager.correctionDao.getCashRefundTotalForShift(shiftId)
+            val cashOuts = transactionManager.cashOutDao.getCashOutTotalForShift(shiftId)
 
             val gross = cashSales + cashDp + qrisSales
             val discount = 0L
-            val refund = 0L
             val net = gross - discount - refund
 
             val expected = CashCalculator.calculateExpectedCash(
@@ -148,7 +164,7 @@ class DefaultShiftRepository(
                     cashSales = cashSales,
                     cashDpAndSettlement = cashDp,
                     cashRefunds = refund,
-                    cashOuts = 0L
+                    cashOuts = cashOuts
                 )
             )
 
@@ -162,12 +178,37 @@ class DefaultShiftRepository(
                 cashSales = cashSales,
                 cashDpAndSettlement = cashDp,
                 qrisSales = qrisSales,
-                cashOuts = 0L,
+                cashOuts = cashOuts,
                 expectedCash = expected,
                 qrisPayments = qrisPayments,
                 openOrderIds = openOrders.map { it.order.id }
             )
             Result.success(summary)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun recordCashOut(
+        amount: Long,
+        category: String,
+        reason: String,
+        receiptFileId: String?,
+        receiptFilePath: String?,
+        approvedBy: String?,
+        deviceId: String
+    ): Result<Unit> {
+        return try {
+            transactionManager.recordCashOut(
+                amount = amount,
+                category = category,
+                reason = reason,
+                receiptFileId = receiptFileId,
+                receiptFilePath = receiptFilePath,
+                approvedBy = approvedBy,
+                deviceId = deviceId
+            )
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -193,6 +234,23 @@ class DefaultShiftRepository(
                 cashTakenBy = cashTakenBy,
                 qrisCheckedPaymentIds = qrisCheckedPaymentIds,
                 handoverOrderIds = handoverOrderIds
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun forceCloseShift(
+        shiftId: String,
+        note: String,
+        approvedBy: String
+    ): Result<Unit> {
+        return try {
+            transactionManager.forceCloseShift(
+                shiftId = shiftId,
+                note = note,
+                approvedBy = approvedBy
             )
             Result.success(Unit)
         } catch (e: Exception) {

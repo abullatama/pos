@@ -68,6 +68,26 @@ class FakeShiftRepository : ShiftRepository {
     var lastClosedCashDeposited: Long? = null
     var lastClosedCashTakenBy: String? = null
     var lastClosedReason: String? = null
+    var lastCashOutAmount: Long? = null
+    var lastCashOutCategory: String? = null
+    var lastCashOutReason: String? = null
+    var lastCashOutApprovedBy: String? = null
+
+    override suspend fun recordCashOut(
+        amount: Long,
+        category: String,
+        reason: String,
+        receiptFileId: String?,
+        receiptFilePath: String?,
+        approvedBy: String?,
+        deviceId: String
+    ): Result<Unit> {
+        lastCashOutAmount = amount
+        lastCashOutCategory = category
+        lastCashOutReason = reason
+        lastCashOutApprovedBy = approvedBy
+        return Result.success(Unit)
+    }
 
     override suspend fun getShiftSummary(shiftId: String): Result<ShiftSummary> {
         val summary = mockSummary ?: ShiftSummary(
@@ -103,6 +123,22 @@ class FakeShiftRepository : ShiftRepository {
         lastClosedCashDeposited = cashDeposited
         lastClosedCashTakenBy = cashTakenBy
         lastClosedReason = differenceReason
+        currentShiftFlow.value = null
+        return Result.success(Unit)
+    }
+
+    var lastForceClosedShiftId: String? = null
+    var lastForceClosedNote: String? = null
+    var lastForceClosedApprovedBy: String? = null
+
+    override suspend fun forceCloseShift(
+        shiftId: String,
+        note: String,
+        approvedBy: String
+    ): Result<Unit> {
+        lastForceClosedShiftId = shiftId
+        lastForceClosedNote = note
+        lastForceClosedApprovedBy = approvedBy
         currentShiftFlow.value = null
         return Result.success(Unit)
     }
@@ -240,6 +276,85 @@ class ShiftViewModelTest {
         assertFalse(state.isDifferenceFromStandard)
         assertEquals("", state.differenceReason)
         assertNull(state.error)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `force close dialog opens and closes properly`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        assertFalse(viewModel.uiState.value.isForceCloseDialogOpen)
+        viewModel.openForceCloseDialog()
+        assertTrue(viewModel.uiState.value.isForceCloseDialogOpen)
+        viewModel.closeForceCloseDialog()
+        assertFalse(viewModel.uiState.value.isForceCloseDialogOpen)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `verifyManagerPinAndForceClose with wrong PIN fails and locks after 3 attempts`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+        fakeRepository.currentShiftFlow.value = ActiveShift(
+            shiftId = "shift-001",
+            cashierId = "c1",
+            cashierName = "Budi Kasir",
+            openedAt = "2026-10-19T08:00:00Z",
+            openingCash = 200000L
+        )
+
+        viewModel.openForceCloseDialog()
+
+        // Salah 1
+        viewModel.verifyManagerPinAndForceClose("1111", "Kasir tidak hadir")
+        assertTrue(viewModel.uiState.value.isForceCloseDialogOpen)
+        assertFalse(viewModel.uiState.value.isManagerLocked)
+
+        // Salah 2
+        viewModel.verifyManagerPinAndForceClose("2222", "Kasir tidak hadir")
+        assertTrue(viewModel.uiState.value.isForceCloseDialogOpen)
+        assertFalse(viewModel.uiState.value.isManagerLocked)
+
+        // Salah 3 -> Terkunci
+        viewModel.verifyManagerPinAndForceClose("3333", "Kasir tidak hadir")
+        assertTrue(viewModel.uiState.value.isManagerLocked)
+        assertTrue(viewModel.uiState.value.forceCloseErrorMessage!!.contains("terkunci"))
+
+        // PIN benar pun ditolak saat terkunci
+        viewModel.verifyManagerPinAndForceClose("4444", "Kasir tidak hadir")
+        assertNotNull(viewModel.uiState.value.currentShift)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `verifyManagerPinAndForceClose with correct PIN succeeds and resets shift`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+        fakeRepository.currentShiftFlow.value = ActiveShift(
+            shiftId = "shift-001",
+            cashierId = "c1",
+            cashierName = "Budi Kasir",
+            openedAt = "2026-10-19T08:00:00Z",
+            openingCash = 200000L
+        )
+
+        var callbackCalled = false
+        viewModel.openForceCloseDialog()
+        viewModel.verifyManagerPinAndForceClose(
+            pin = "4444",
+            note = "Kasir sakit mendadak, shift ditutup paksa",
+            onSuccess = { callbackCalled = true }
+        )
+
+        assertTrue(callbackCalled)
+        assertFalse(viewModel.uiState.value.isForceCloseDialogOpen)
+        assertNull(viewModel.uiState.value.currentShift)
+
+        // Verifikasi repo menerima data force close
+        assertEquals("shift-001", fakeRepository.lastForceClosedShiftId)
+        assertEquals("Kasir sakit mendadak, shift ditutup paksa", fakeRepository.lastForceClosedNote)
+        assertEquals("u-manager-1", fakeRepository.lastForceClosedApprovedBy)
 
         collectJob.cancel()
     }

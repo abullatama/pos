@@ -71,6 +71,15 @@ interface LaundryOrderRepository {
         deviceId: String = "dev-laundry-1"
     ): Result<OutboxEntity>
 
+    suspend fun recordCorrection(
+        orderId: String,
+        type: String,
+        amount: Long,
+        reasonCode: String,
+        approvedBy: String,
+        note: String? = null
+    ): Result<Unit>
+
     // Generator Nomor & Metriks Beranda (L01)
     suspend fun getNextDisplayNumber(prefix: String = "L1-"): String
     fun observeTodayOrdersCount(): Flow<Int>
@@ -336,6 +345,29 @@ class DefaultLaundryOrderRepository(
                 deviceId = deviceId
             )
             Result.success(outbox)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun recordCorrection(
+        orderId: String,
+        type: String,
+        amount: Long,
+        reasonCode: String,
+        approvedBy: String,
+        note: String?
+    ): Result<Unit> {
+        return try {
+            transactionManager.recordCorrection(
+                orderId = orderId,
+                type = type,
+                amount = amount,
+                reasonCode = reasonCode,
+                approvedBy = approvedBy,
+                note = note
+            )
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }

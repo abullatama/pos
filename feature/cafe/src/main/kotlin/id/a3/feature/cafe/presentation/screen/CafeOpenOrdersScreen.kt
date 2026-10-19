@@ -24,10 +24,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.MoneyOff
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Print
 import androidx.compose.material.icons.outlined.TableBar
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,9 +55,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.ui.component.A3Button
+import id.a3.core.ui.component.A3Dialog
 import id.a3.core.ui.component.A3MoneyText
 import id.a3.core.ui.component.A3StatusChip
 import id.a3.core.ui.component.ButtonVariant
+import id.a3.core.ui.component.ManagerPinApprovalDialog
 import id.a3.core.ui.component.StatusToken
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
@@ -103,12 +109,20 @@ fun CafeOpenOrdersScreen(
     var activeTab by remember { mutableStateOf(CafeOrdersTab.OPEN_TABLES) }
     val openOrders by viewModel.openOrders.collectAsState()
     val completedOrders by viewModel.completedOrders.collectAsState()
+    val activeShift by viewModel.activeShift.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     var selectedOpenOrderId by remember { mutableStateOf<String?>(null) }
     var selectedCompletedOrderId by remember { mutableStateOf<String?>(null) }
     var moveTableTargetOrder by remember { mutableStateOf<OrderWithLines?>(null) }
     var printStatusMessage by remember { mutableStateOf<String?>(null) }
+
+    var refundTargetOrder by remember { mutableStateOf<OrderWithLines?>(null) }
+    var correctionType by remember { mutableStateOf("refund") }
+    var managerPinErrorMessage by remember { mutableStateOf<String?>(null) }
+    var isManagerLocked by remember { mutableStateOf(false) }
+    var lockoutSeconds by remember { mutableStateOf(0) }
+    var validationErrorDialogMessage by remember { mutableStateOf<String?>(null) }
 
     val selectedOpenOrder = openOrders.find { it.order.id == selectedOpenOrderId } ?: openOrders.firstOrNull()
     val selectedCompletedOrder = completedOrders.find { it.order.id == selectedCompletedOrderId } ?: completedOrders.firstOrNull()
@@ -348,9 +362,11 @@ fun CafeOpenOrdersScreen(
                         ) {
                             items(completedOrders, key = { it.order.id }) { item ->
                                 val isSelected = item.order.id == selectedCompletedOrder?.order?.id
+                                val isOld = activeShift != null && (item.order.shiftId != null && item.order.shiftId != activeShift!!.id || item.order.createdAt < activeShift!!.openedAt)
                                 CompletedOrderCard(
                                     orderWithLines = item,
                                     isSelected = isSelected,
+                                    isOldTransaction = isOld,
                                     onClick = { selectedCompletedOrderId = item.order.id }
                                 )
                             }
@@ -421,8 +437,10 @@ fun CafeOpenOrdersScreen(
                             )
                         }
                     } else {
+                        val isOld = activeShift != null && (selectedCompletedOrder.order.shiftId != null && selectedCompletedOrder.order.shiftId != activeShift!!.id || selectedCompletedOrder.order.createdAt < activeShift!!.openedAt)
                         CompletedOrderDetailView(
                             orderWithLines = selectedCompletedOrder,
+                            isOldTransaction = isOld,
                             onReprintReceipt = {
                                 coroutineScope.launch {
                                     val res = viewModel.reprintCompletedOrderReceipt(selectedCompletedOrder)
@@ -433,6 +451,28 @@ fun CafeOpenOrdersScreen(
                                         "Gagal cetak: $err"
                                     }
                                 }
+                            },
+                            onRefundClick = {
+                                if (isOld) {
+                                    val ageMs = System.currentTimeMillis() - selectedCompletedOrder.order.createdAt
+                                    val maxAgeMs = 14L * 24 * 3600 * 1000L
+                                    if (selectedCompletedOrder.order.total > 100_000L) {
+                                        validationErrorDialogMessage = "Refund transaksi shift lalu melebihi Rp 100.000 (total: ${formatRupiah(selectedCompletedOrder.order.total)}) tidak dapat dilakukan di kasir. Silakan hubungi Owner melalui Web Dashboard (F36, COR-05)."
+                                        return@CompletedOrderDetailView
+                                    }
+                                    if (ageMs > maxAgeMs) {
+                                        validationErrorDialogMessage = "Transaksi berumur lebih dari 14 hari tidak dapat di-refund di kasir. Silakan hubungi Owner melalui Web Dashboard (F36, COR-05)."
+                                        return@CompletedOrderDetailView
+                                    }
+                                }
+                                correctionType = "refund"
+                                refundTargetOrder = selectedCompletedOrder
+                                managerPinErrorMessage = null
+                            },
+                            onVoidClick = {
+                                correctionType = "void"
+                                refundTargetOrder = selectedCompletedOrder
+                                managerPinErrorMessage = null
                             },
                             printStatusMessage = printStatusMessage
                         )
@@ -449,6 +489,63 @@ fun CafeOpenOrdersScreen(
                 onConfirmMoveTable = { newTable ->
                     viewModel.moveTable(newTable)
                     moveTableTargetOrder = null
+                }
+            )
+        }
+
+        // Dialog Penolakan Batas F36
+        validationErrorDialogMessage?.let { errMsg ->
+            A3Dialog(
+                title = "Refund Ditolak di Kasir",
+                bodyText = errMsg,
+                confirmLabel = "Mengerti",
+                onConfirm = { validationErrorDialogMessage = null },
+                onDismissRequest = { validationErrorDialogMessage = null }
+            )
+        }
+
+        // Dialog S14 Otorisasi PIN Manager (F35, F36)
+        refundTargetOrder?.let { target ->
+            val order = target.order
+            val isOld = activeShift != null && (order.shiftId != null && order.shiftId != activeShift!!.id || order.createdAt < activeShift!!.openedAt)
+            ManagerPinApprovalDialog(
+                title = if (correctionType == "refund") "Otorisasi Refund Tunai" else "Otorisasi Void Pesanan",
+                actionType = if (correctionType == "refund") "REFUND TUNAI" else "VOID PESANAN",
+                amountToApprove = if (correctionType == "refund") order.paidAmount else order.total,
+                isOldTransaction = isOld,
+                errorMessage = managerPinErrorMessage,
+                isManagerLocked = isManagerLocked,
+                lockoutRemainingSeconds = lockoutSeconds,
+                onDismiss = {
+                    refundTargetOrder = null
+                    managerPinErrorMessage = null
+                },
+                onSubmitApproval = { pin, reasonCode, note ->
+                    coroutineScope.launch {
+                        val isPinValid = viewModel.verifyManagerPin(pin)
+                        if (!isPinValid) {
+                            managerPinErrorMessage = "PIN Manager salah (Percobaan gagal dicatat)"
+                            return@launch
+                        }
+                        val res = viewModel.refundOrVoidOrder(
+                            orderWithLines = target,
+                            type = correctionType,
+                            reasonCode = reasonCode,
+                            note = note,
+                            approvedBy = "u-manager-1"
+                        )
+                        if (res.isSuccess) {
+                            printStatusMessage = if (correctionType == "refund") {
+                                "Refund tunai #${order.displayNumber} berhasil diproses & struk dicetak"
+                            } else {
+                                "Void #${order.displayNumber} berhasil dicatat"
+                            }
+                            refundTargetOrder = null
+                            managerPinErrorMessage = null
+                        } else {
+                            managerPinErrorMessage = res.exceptionOrNull()?.message ?: "Gagal memproses koreksi"
+                        }
+                    }
                 }
             )
         }
@@ -859,6 +956,7 @@ private fun OpenOrderDetailView(
 private fun CompletedOrderCard(
     orderWithLines: OrderWithLines,
     isSelected: Boolean,
+    isOldTransaction: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -868,6 +966,13 @@ private fun CompletedOrderCard(
     val itemCount = orderWithLines.lines.sumOf { it.quantity }
     val timeFormatted = remember(order.createdAt) {
         SimpleDateFormat("HH:mm 'WIB'", Locale.forLanguageTag("id-ID")).format(Date(order.createdAt))
+    }
+
+    val (statusToken, statusLabel, statusIcon) = when (order.status.lowercase()) {
+        "refunded" -> Triple(StatusToken.DANGER, "Refund", Icons.Outlined.Cancel)
+        "void" -> Triple(StatusToken.NEUTRAL, "Void", Icons.Outlined.Cancel)
+        "partial_refund" -> Triple(StatusToken.WARNING, "Refund Sebagian", Icons.Outlined.Warning)
+        else -> Triple(StatusToken.SUCCESS, "Lunas", Icons.Outlined.CheckCircle)
     }
 
     Box(
@@ -897,13 +1002,23 @@ private fun CompletedOrderCard(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(if (isSelected) colors.accent else colors.surfaceAlt),
+                            .background(
+                                when (order.status.lowercase()) {
+                                    "refunded" -> colors.status.danger.background
+                                    "void" -> colors.surfaceAlt
+                                    else -> if (isSelected) colors.accent else colors.surfaceAlt
+                                }
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.CheckCircle,
+                            imageVector = statusIcon,
                             contentDescription = null,
-                            tint = if (isSelected) Color.White else colors.status.success.text,
+                            tint = when (order.status.lowercase()) {
+                                "refunded" -> colors.status.danger.text
+                                "void" -> colors.inkMuted
+                                else -> if (isSelected) Color.White else colors.status.success.text
+                            },
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -923,11 +1038,23 @@ private fun CompletedOrderCard(
                     }
                 }
 
-                A3StatusChip(
-                    token = StatusToken.SUCCESS,
-                    label = "Lunas",
-                    icon = Icons.Outlined.CheckCircle
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isOldTransaction) {
+                        A3StatusChip(
+                            token = StatusToken.NEUTRAL,
+                            label = "Shift Lalu",
+                            icon = Icons.Outlined.History
+                        )
+                    }
+                    A3StatusChip(
+                        token = statusToken,
+                        label = statusLabel,
+                        icon = statusIcon
+                    )
+                }
             }
 
             Row(
@@ -953,12 +1080,15 @@ private fun CompletedOrderCard(
 }
 
 /**
- * Rincian Detail Transaksi Selesai & Cetak Ulang Salinan di Panel Kanan
+ * Rincian Detail Transaksi Selesai & Cetak Ulang Salinan / Refund di Panel Kanan
  */
 @Composable
 private fun CompletedOrderDetailView(
     orderWithLines: OrderWithLines,
+    isOldTransaction: Boolean = false,
     onReprintReceipt: () -> Unit,
+    onRefundClick: () -> Unit,
+    onVoidClick: () -> Unit,
     printStatusMessage: String? = null,
     modifier: Modifier = Modifier
 ) {
@@ -969,6 +1099,15 @@ private fun CompletedOrderDetailView(
     val dateStr = remember(order.createdAt) {
         SimpleDateFormat("dd MMMM yyyy, HH:mm 'WIB'", Locale.forLanguageTag("id-ID")).format(Date(order.createdAt))
     }
+
+    val (headerBg, headerTint, headerIcon) = when (order.status.lowercase()) {
+        "refunded" -> Triple(colors.status.danger.background, colors.status.danger.text, Icons.Outlined.Cancel)
+        "void" -> Triple(colors.surfaceAlt, colors.inkMuted, Icons.Outlined.Cancel)
+        "partial_refund" -> Triple(colors.status.warning.background, colors.status.warning.text, Icons.Outlined.Warning)
+        else -> Triple(colors.status.success.background, colors.status.success.text, Icons.Outlined.CheckCircle)
+    }
+
+    val isCancellable = order.status.lowercase() !in listOf("refunded", "void")
 
     Column(
         modifier = modifier
@@ -991,13 +1130,13 @@ private fun CompletedOrderDetailView(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
-                            .background(colors.status.success.background),
+                            .background(headerBg),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.CheckCircle,
+                            imageVector = headerIcon,
                             contentDescription = null,
-                            tint = colors.status.success.text,
+                            tint = headerTint,
                             modifier = Modifier.size(24.dp)
                         )
                     }
@@ -1017,28 +1156,85 @@ private fun CompletedOrderDetailView(
                     }
                 }
 
-                // Tombol Cetak Ulang (SALINAN)
+                // Tombol Aksi Kanan Atas
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(colors.surfaceAlt)
-                        .clickable(onClick = onReprintReceipt)
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Print,
-                        contentDescription = "Cetak Salinan",
-                        tint = colors.accent,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "Cetak Ulang (SALINAN)",
-                        color = colors.accent,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    // Tombol Cetak Ulang (SALINAN)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colors.surfaceAlt)
+                            .clickable(onClick = onReprintReceipt)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Print,
+                            contentDescription = "Cetak Salinan",
+                            tint = colors.accent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Cetak Salinan",
+                            color = colors.accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    if (isCancellable) {
+                        // Tombol Void
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.surfaceAlt)
+                                .clickable(onClick = onVoidClick)
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Cancel,
+                                contentDescription = "Void",
+                                tint = colors.inkMuted,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Void",
+                                color = colors.inkMuted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        // Tombol Refund Tunai
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFFEBEE))
+                                .border(1.dp, Color(0xFFFFCDD2), RoundedCornerShape(8.dp))
+                                .clickable(onClick = onRefundClick)
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.MoneyOff,
+                                contentDescription = "Refund Tunai",
+                                tint = Color(0xFFC62828),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "Refund Tunai",
+                                color = Color(0xFFC62828),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
 
@@ -1185,6 +1381,13 @@ private fun CompletedOrderDetailView(
                 }
             }
 
+            val (bottomToken, bottomLabel, bottomIcon) = when (order.status.lowercase()) {
+                "refunded" -> Triple(StatusToken.DANGER, "Telah Di-Refund (Tunai)", Icons.Outlined.Cancel)
+                "void" -> Triple(StatusToken.NEUTRAL, "Pesanan Di-Void", Icons.Outlined.Cancel)
+                "partial_refund" -> Triple(StatusToken.WARNING, "Refund Sebagian", Icons.Outlined.Warning)
+                else -> Triple(StatusToken.SUCCESS, "Lunas", Icons.Outlined.CheckCircle)
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1192,22 +1395,22 @@ private fun CompletedOrderDetailView(
             ) {
                 Column {
                     Text(
-                        text = "Total Dibayar:",
+                        text = if (order.status.lowercase() == "refunded") "Total Refund Tunai:" else "Total Dibayar:",
                         color = colors.inkMuted,
                         fontSize = 12.sp
                     )
                     Text(
                         text = formatRupiah(order.total),
-                        color = colors.ink,
+                        color = if (order.status.lowercase() == "refunded") Color(0xFFC62828) else colors.ink,
                         style = A3Theme.typography.headline.copy(fontSize = 20.sp),
                         fontWeight = FontWeight.Bold
                     )
                 }
 
                 A3StatusChip(
-                    token = StatusToken.SUCCESS,
-                    label = "Lunas",
-                    icon = Icons.Outlined.CheckCircle
+                    token = bottomToken,
+                    label = bottomLabel,
+                    icon = bottomIcon
                 )
             }
         }

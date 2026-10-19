@@ -39,6 +39,7 @@ enum class LaundryFilterStatus(val displayName: String, val dbStatus: String?) {
 sealed interface PendingManagerAction {
     data class UnpaidPickup(val items: List<LaundryPickupItem>) : PendingManagerAction
     data class Rework(val reason: String) : PendingManagerAction
+    data class Refund(val reasonCode: String, val note: String?, val amount: Long) : PendingManagerAction
 }
 
 data class LaundryOrdersUiState(
@@ -298,6 +299,40 @@ class LaundryOrdersViewModel(
             }
             is PendingManagerAction.Rework -> {
                 executeRework(currentOrder.id, action.reason, approvedBy = "u-manager-1")
+            }
+            is PendingManagerAction.Refund -> {
+                executeRefund(currentOrder.id, action.amount, action.reasonCode, action.note, approvedBy = "u-manager-1")
+            }
+        }
+    }
+
+    fun openRefundDialog(reasonCode: String = "quality_complaint", note: String? = null) {
+        val current = uiState.value.selectedOrder?.order ?: return
+        if (current.paidAmount <= 0L) {
+            _errorMessage.value = "Pesanan ini belum memiliki pembayaran yang dapat di-refund"
+            return
+        }
+        _pendingAction.value = PendingManagerAction.Refund(reasonCode, note, current.paidAmount)
+        _isManagerPinDialogOpen.value = true
+        _pinErrorMessage.value = null
+    }
+
+    private fun executeRefund(orderId: String, amount: Long, reasonCode: String, note: String?, approvedBy: String) {
+        viewModelScope.launch {
+            _isActionLoading.value = true
+            val res = repository.recordCorrection(
+                orderId = orderId,
+                type = "refund",
+                amount = amount,
+                reasonCode = reasonCode,
+                approvedBy = approvedBy,
+                note = note
+            )
+            _isActionLoading.value = false
+            if (res.isSuccess) {
+                _successMessage.value = "Refund tunai berhasil diproses"
+            } else {
+                _errorMessage.value = res.exceptionOrNull()?.message ?: "Gagal memproses refund"
             }
         }
     }

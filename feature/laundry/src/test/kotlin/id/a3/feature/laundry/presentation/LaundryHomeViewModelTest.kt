@@ -55,6 +55,8 @@ class FakeLaundryHomeRepository : LaundryOrderRepository {
         Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = deviceId, shiftId = null, eventsJson = "[]"))
     override suspend fun reworkOrder(orderId: String, reason: String, approvedBy: String, deviceId: String): Result<OutboxEntity> =
         Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = deviceId, shiftId = null, eventsJson = "[]"))
+    override suspend fun recordCorrection(orderId: String, type: String, amount: Long, reasonCode: String, approvedBy: String, note: String?): Result<Unit> =
+        Result.success(Unit)
     override suspend fun getNextDisplayNumber(prefix: String): String = "${prefix}0001"
     override fun observeTodayOrdersCount(): Flow<Int> = mockTodayOrdersFlow
     override fun observeReadyOrdersCount(): Flow<Int> = mockReadyOrdersCountFlow

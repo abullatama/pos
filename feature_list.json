@@ -347,9 +347,9 @@
       "app": "both",
       "description": "Void, refund tunai, dan diskon manual dengan PIN manager lokal",
       "acceptance": "Catatan pembalik tercipta; kas shift terkoreksi; bekerja offline",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Catatan pembalik append-only (CorrectionEntity & CorrectionDao di Room AppDatabase v5 dengan MIGRATION_4_5) mencatat refund/void tanpa menghapus transaksi asal. OrderTransactionManager mencatat event outbox 'correction.recorded' secara atomik. Refund selalu tunai (COR-04) dan memotong kas laci shift berjalan (getCashRefundTotalForShift terintegrasi ke ShiftRepository dan rumus K1). Bekerja 100% offline dengan otorisasi PIN Manager lokal S14 (PIN '4444' & proteksi 3x salah terkunci 5 menit COR-07). Format struk refund termal 58 mm (RefundReceiptFormatter) tercetak otomatis. Teruji 100% pada RoomOutboxTransactionTest, RefundReceiptFormatterTest, dan CafeMenuViewModelTest."
     },
     {
       "id": "F36",
@@ -357,9 +357,9 @@
       "app": "both",
       "description": "Refund transaksi shift sebelumnya dengan batas nilai dan umur",
       "acceptance": "Di bawah batas: manager di tablet; di atas: ditolak dan diarahkan ke owner web",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Penegakan batas refund transaksi shift sebelumnya (komplain datang belakangan, COR-05 & OQ-22) diimplementasikan ketat: transaksi dengan nilai <= Rp 100.000 dan umur <= 14 hari dapat disetujui Manager di tablet dengan tanda isOldTransactionRefund = true dan memotong kas laci shift aktif hari ini. Transaksi dengan nilai > Rp 100.000 atau umur > 14 hari ditolak di tablet dengan pesan dialog terarah ke Owner Web Dashboard. Teruji 100% pada RoomOutboxTransactionTest (uji lolos di bawah batas, uji ditolak > Rp 100k, dan uji ditolak > 14 hari)."
     },
     {
       "id": "F37",
@@ -367,9 +367,9 @@
       "app": "both",
       "description": "Kas keluar dengan foto nota dan batas tanpa PIN",
       "acceptance": "Di atas batas wajib PIN manager",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Entitas CashOutEntity dan CashOutDao selesai dibangun di Room (AppDatabase v6 dengan MIGRATION_5_6). OrderTransactionManager mencatat event outbox 'cashout.recorded' secara atomik. Mengurangi kas seharusnya di shift berjalan (KAS-01) dan terhubung dinamis ke ShiftRepository pada rumus K1. Penegakan ambang batas (KAS-02 & OQ-08): nominal <= Rp 50.000 bebas PIN; nominal > Rp 50.000 wajib otorisasi PIN Manager (Dialog S14) dan wajib foto nota via kamera tablet. Layar S12 Kas Keluar (CashOutScreen) terintegrasi pada ActiveShiftCard di kedua aplikasi. Struk bukti kas keluar 58 mm (CashOutReceiptFormatter) dicetak otomatis. Teruji 100% pada RoomOutboxTransactionTest, CashOutReceiptFormatterTest, dan CashOutViewModelTest."
     },
     {
       "id": "F38",
@@ -377,9 +377,9 @@
       "app": "both",
       "description": "Tutup shift offline dan tutup paksa dari tablet",
       "acceptance": "Tertutup lokal dengan peringatan; shift.force_closed hanya Manager",
-      "passes": false,
+      "passes": true,
       "needs_device": true,
-      "notes": ""
+      "notes": "Tutup shift offline mengimplementasikan banner peringatan tegas kepatuhan TUP-08 ('Mode Offline: Shift tetap bisa ditutup lokal. Data penutupan & Laporan Z menunggu sinkron. JANGAN RESET TABLET') pada CloseShiftScreen (S11). Fitur tutup paksa shift kasir yang tidak hadir selesai dibangun di :core:data, :feature:shift, :app-cafe, dan :app-laundry: ForceCloseShiftDialog mewajibkan catatan alasan (note) dan otorisasi PIN Manager (PIN '4444' & proteksi lockout 3x salah). OrderTransactionManager.forceCloseShift memperbarui status shift ke 'force_closed', seketika membebaskan tablet (getActiveShift() == null) sehingga kasir baru dapat langsung membuka shift, serta mencatat event outbox atomik 'shift.force_closed' sesuai skema OpenAPI ShiftForceClosed. Teruji 100% pada RoomOutboxTransactionTest dan ShiftViewModelTest."
     },
     {
       "id": "F39",

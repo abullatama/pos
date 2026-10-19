@@ -44,7 +44,7 @@ interface OrderDao {
     fun observeOpenOrdersWithLines(): Flow<List<OrderWithLines>>
 
     @Transaction
-    @Query("SELECT * FROM orders WHERE status = 'paid' ORDER BY createdAt DESC")
+    @Query("SELECT * FROM orders WHERE status IN ('paid', 'refunded', 'void', 'partial_refund') ORDER BY createdAt DESC")
     fun observeCompletedOrdersWithLines(): Flow<List<OrderWithLines>>
 
     @Transaction
