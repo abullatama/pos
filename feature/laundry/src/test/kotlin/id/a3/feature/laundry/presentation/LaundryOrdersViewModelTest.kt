@@ -13,6 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -38,6 +40,8 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
     var lastReworkedReason: String? = null
     var lastReworkedApprovedBy: String? = null
 
+    private val ordersFlowInternal = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(replay = 1)
+
     override fun observeServices(): Flow<List<LaundryServiceEntity>> = flowOf(emptyList())
     override suspend fun seedInitialServicesIfEmpty() {}
     override fun observeOrders(): Flow<List<OrderEntity>> = flowOf(orders.values.map { it.order })
@@ -45,8 +49,13 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
         flowOf(orders.values.map { it.order }.filter { it.status == status })
 
     override fun observeLaundryOrders(statusFilter: String?): Flow<List<OrderWithLines>> {
-        val list = if (statusFilter == null) orders.values.toList() else orders.values.filter { it.order.status == statusFilter }
-        return flowOf(list)
+        return ordersFlowInternal.onStart { emit(Unit) }.map {
+            if (statusFilter == null) orders.values.toList() else orders.values.filter { it.order.status == statusFilter }
+        }
+    }
+
+    fun notifyOrdersChanged() {
+        ordersFlowInternal.tryEmit(Unit)
     }
 
     override fun observePickups(orderId: String): Flow<List<LaundryPickupEntity>> {
@@ -115,6 +124,10 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
     override suspend fun getOrderWithLines(orderId: String): OrderWithLines? = orders[orderId]
     override suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity? = orders.values.find { it.order.displayNumber == displayNumber }?.order
     override suspend fun getOrderWithLinesByDisplayNumber(displayNumber: String): OrderWithLines? = orders.values.find { it.order.displayNumber == displayNumber }
+    override suspend fun findOrderByNumberFlexible(query: String): OrderWithLines? {
+        val clean = query.trim()
+        return orders.values.find { it.order.displayNumber == clean || it.order.displayNumber.endsWith(clean) }
+    }
     override suspend fun updateOrderStatus(orderId: String, newStatus: String): Result<Unit> = Result.success(Unit)
     override suspend fun advanceOrderStatus(
         orderId: String,
@@ -122,7 +135,13 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
         rework: Boolean,
         reworkReason: String?,
         reworkApprovedBy: String?
-    ): Result<OutboxEntity> = Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = "dev-1", shiftId = null, eventsJson = "[]"))
+    ): Result<OutboxEntity> {
+        val existing = orders[orderId]
+        if (existing != null) {
+            orders[orderId] = existing.copy(order = existing.order.copy(status = targetStatus))
+        }
+        return Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = "dev-1", shiftId = null, eventsJson = "[]"))
+    }
 
     override suspend fun saveOrderWithOutbox(order: OrderEntity, lines: List<OrderLineEntity>, eventsJson: String): Result<Unit> = Result.success(Unit)
     override fun searchCustomers(query: String): Flow<List<CustomerEntity>> = flowOf(emptyList())
@@ -300,6 +319,59 @@ class LaundryOrdersViewModelTest {
         assertEquals("Pakaian masih bau apek", fakeRepository.lastReworkedReason)
         assertEquals("u-manager-1", fakeRepository.lastReworkedApprovedBy)
         assertNotNull(viewModel.uiState.value.successMessage)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `advanceStatusToProcessing and advanceStatusToReady transitions status and updates messages`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        // Buat order berstatus open (Diterima)
+        val openOrder = OrderEntity(
+            id = "ord-open",
+            displayNumber = "L1-0003",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 30000L,
+            total = 30000L
+        )
+        fakeRepository.orders["ord-open"] = OrderWithLines(openOrder, emptyList())
+        fakeRepository.notifyOrdersChanged()
+        viewModel.selectOrder(fakeRepository.orders["ord-open"]!!)
+
+        // 1. Advance to processing
+        viewModel.advanceStatusToProcessing()
+        fakeRepository.notifyOrdersChanged()
+        assertNotNull(viewModel.uiState.value.successMessage)
+        assertTrue(viewModel.uiState.value.successMessage!!.contains("Diproses"))
+
+        // Simulasikan status sudah processing
+        fakeRepository.orders["ord-open"] = OrderWithLines(openOrder.copy(status = "processing"), emptyList())
+        fakeRepository.notifyOrdersChanged()
+        viewModel.selectOrder(fakeRepository.orders["ord-open"]!!)
+
+        // 2. Advance to ready
+        viewModel.advanceStatusToReady()
+        fakeRepository.notifyOrdersChanged()
+        assertNotNull(viewModel.uiState.value.successMessage)
+        assertTrue(viewModel.uiState.value.successMessage!!.contains("siap"))
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `onSearchQueryChange filters and selects order with pure numeric input`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        // Ketik angka "0002" atau "2"
+        viewModel.onSearchQueryChange("0002")
+        assertEquals("0002", viewModel.uiState.value.searchQuery)
+        assertEquals("ord-2", viewModel.uiState.value.selectedOrder?.order?.id)
 
         collectJob.cancel()
     }

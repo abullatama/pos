@@ -26,6 +26,7 @@ interface LaundryOrderRepository {
     suspend fun getOrderWithLines(orderId: String): OrderWithLines?
     suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity?
     suspend fun getOrderWithLinesByDisplayNumber(displayNumber: String): OrderWithLines?
+    suspend fun findOrderByNumberFlexible(query: String): OrderWithLines?
     suspend fun updateOrderStatus(orderId: String, newStatus: String): Result<Unit>
     suspend fun advanceOrderStatus(
         orderId: String,
@@ -206,6 +207,12 @@ class DefaultLaundryOrderRepository(
         return orderDao.getOrderWithLinesByDisplayNumber(displayNumber)
     }
 
+    override suspend fun findOrderByNumberFlexible(query: String): OrderWithLines? {
+        val clean = query.trim()
+        if (clean.isEmpty()) return null
+        return orderDao.findLaundryOrderFlexible(clean)
+    }
+
     override suspend fun updateOrderStatus(orderId: String, newStatus: String): Result<Unit> {
         val existing = orderDao.getOrderById(orderId)
             ?: return Result.failure(IllegalArgumentException("Order tidak ditemukan"))
@@ -374,12 +381,8 @@ class DefaultLaundryOrderRepository(
     }
 
     override suspend fun getNextDisplayNumber(prefix: String): String {
-        val zone = java.time.ZoneId.systemDefault()
-        val localDate = java.time.LocalDate.now(zone)
-        val startOfDay = localDate.atStartOfDay(zone).toInstant().toEpochMilli()
-        val endOfDay = localDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-        val count = orderDao.countOrdersForPrefixAndDate(prefix, startOfDay, endOfDay)
-        return "%s%04d".format(prefix, count + 1)
+        val totalCount = orderDao.countTotalOrdersForPrefix(prefix)
+        return "%s%04d".format(prefix, totalCount + 1)
     }
 
     override fun observeTodayOrdersCount(): Flow<Int> {

@@ -79,7 +79,8 @@ object LaundryDestinations {
     const val ORDER = "order"
     const val CUCIAN = "cucian"
     const val SCAN = "scan"
-    const val LAINNYA = "lainnya"
+    const val SHIFT = "shift"
+    const val LAINNYA = "shift"
     const val ADMIN = "admin"
     const val PEMBAYARAN = "pembayaran"
 }
@@ -165,10 +166,14 @@ fun LaundryNavHost(
             .padding(paddingValues)
     ) {
         composable(LaundryDestinations.BERANDA) {
+            val shiftUiState by shiftViewModel.uiState.collectAsState()
+            val activeShift = shiftUiState.currentShift
+
             LaundryHomeScreen(
                 viewModel = homeViewModel,
                 onNavigateToOrder = {
-                    navController.navigate(LaundryDestinations.ORDER) {
+                    val target = if (activeShift != null) LaundryDestinations.ORDER else LaundryDestinations.SHIFT
+                    navController.navigate(target) {
                         popUpTo(navController.graph.findStartDestination().id) {
                             saveState = true
                         }
@@ -198,16 +203,29 @@ fun LaundryNavHost(
         }
 
         composable(LaundryDestinations.ORDER) {
+            val shiftUiState by shiftViewModel.uiState.collectAsState()
+            val activeShift = shiftUiState.currentShift
+
             LaundryOrderScreen(
                 uiState = uiState,
                 viewModel = laundryViewModel,
+                hasActiveShift = activeShift != null,
+                onNavigateToShift = {
+                    navController.navigate(LaundryDestinations.SHIFT) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
                 onProceedToPayment = { orderId, amountToPay, displayNumber, isDp ->
                     paymentViewModel.initializeWithOrder(
                         orderId = orderId,
                         totalAmount = amountToPay,
                         displayNumber = displayNumber,
                         tableOrQueueLabel = if (isDp) "Athia Laundry (DP)" else "Athia Laundry",
-                        cashierName = "Kasir Laundry",
+                        cashierName = activeShift?.cashierName ?: "Kasir Laundry",
                         storeName = "ATHIA LAUNDRY HOUSE",
                         storeAddress = "Jl. Trans Sulawesi, Bintauna",
                         storePhone = "+62 823-4778-5986",
@@ -228,15 +246,37 @@ fun LaundryNavHost(
         }
 
         composable(LaundryDestinations.CUCIAN) {
+            val shiftUiState by shiftViewModel.uiState.collectAsState()
+            val activeShift = shiftUiState.currentShift
+
             LaundryOrdersScreen(
                 viewModel = ordersViewModel,
+                hasActiveShift = activeShift != null,
+                onNavigateToShift = {
+                    navController.navigate(LaundryDestinations.SHIFT) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onOpenScanner = {
+                    navController.navigate(LaundryDestinations.SCAN) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
                 onProceedToSettlement = { orderId, remaining, displayNumber ->
                     paymentViewModel.initializeWithOrder(
                         orderId = orderId,
                         totalAmount = remaining,
                         displayNumber = displayNumber,
                         tableOrQueueLabel = "Athia Laundry (Pelunasan)",
-                        cashierName = "Kasir Laundry",
+                        cashierName = activeShift?.cashierName ?: "Kasir Laundry",
                         storeName = "ATHIA LAUNDRY HOUSE",
                         storeAddress = "Jl. Trans Sulawesi, Bintauna",
                         storePhone = "+62 823-4778-5986",

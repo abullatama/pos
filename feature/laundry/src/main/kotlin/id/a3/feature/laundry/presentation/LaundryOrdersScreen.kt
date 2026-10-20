@@ -35,7 +35,11 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.text.input.KeyboardType
+import id.a3.core.ui.component.A3TextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,12 +89,16 @@ import java.util.Locale
 @Composable
 fun LaundryOrdersScreen(
     viewModel: LaundryOrdersViewModel,
+    hasActiveShift: Boolean = true,
+    onNavigateToShift: () -> Unit = {},
     onProceedToSettlement: (orderId: String, remainingAmount: Long, displayNumber: String) -> Unit,
+    onOpenScanner: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
     val uiState by viewModel.uiState.collectAsState()
+    var showShiftRequiredDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -133,6 +141,41 @@ fun LaundryOrdersScreen(
                     activeFilter = uiState.filterStatus,
                     onFilterSelected = viewModel::setFilterStatus
                 )
+
+                // Bar Pencarian Nota & Tombol Scan QR Tag
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        A3TextField(
+                            value = uiState.searchQuery,
+                            onValueChange = viewModel::onSearchQueryChange,
+                            placeholder = "Cari nomor nota...",
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(shapes.buttonShape)
+                            .background(colors.surfaceAlt)
+                            .border(1.dp, colors.border, shapes.buttonShape)
+                            .clickable(onClick = onOpenScanner),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.PhotoCamera,
+                            contentDescription = "Pindai Tag QR",
+                            tint = colors.accent,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
 
                 // List Kartu Cucian
                 if (uiState.orders.isEmpty()) {
@@ -212,10 +255,27 @@ fun LaundryOrdersScreen(
                         orderWithLines = selected,
                         uiState = uiState,
                         viewModel = viewModel,
+                        hasActiveShift = hasActiveShift,
+                        onRequireShift = { showShiftRequiredDialog = true },
                         onProceedToSettlement = onProceedToSettlement
                     )
                 }
             }
+        }
+
+        if (showShiftRequiredDialog) {
+            id.a3.core.ui.component.A3Dialog(
+                onDismissRequest = { showShiftRequiredDialog = false },
+                title = "Buka Shift Kasir",
+                bodyText = "Penerimaan uang kas pelunasan membutuhkan shift aktif. Buka shift kasir terlebih dahulu.",
+                confirmLabel = "Buka Shift Sekarang",
+                dismissLabel = "Batal",
+                onConfirm = {
+                    showShiftRequiredDialog = false
+                    onNavigateToShift()
+                },
+                onDismiss = { showShiftRequiredDialog = false }
+            )
         }
 
         // Feedback Bar (Sukses / Error)
@@ -442,6 +502,8 @@ private fun OrderDetailPanel(
     orderWithLines: OrderWithLines,
     uiState: LaundryOrdersUiState,
     viewModel: LaundryOrdersViewModel,
+    hasActiveShift: Boolean,
+    onRequireShift: () -> Unit,
     onProceedToSettlement: (orderId: String, remainingAmount: Long, displayNumber: String) -> Unit
 ) {
     val colors = A3Theme.colors
@@ -655,7 +717,11 @@ private fun OrderDetailPanel(
                     label = "Terima Pelunasan Sisa ${formatRupiah(remaining)}",
                     variant = ButtonVariant.SECONDARY,
                     onClick = {
-                        onProceedToSettlement(order.id, remaining, order.displayNumber)
+                        if (!hasActiveShift) {
+                            onRequireShift()
+                        } else {
+                            onProceedToSettlement(order.id, remaining, order.displayNumber)
+                        }
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -665,7 +731,27 @@ private fun OrderDetailPanel(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Tombol Cuci Ulang (Hanya aktif jika status Siap F23)
+                // Aksi Status Diterima -> Mulai Cuci (Diproses)
+                if (order.status.lowercase() == "open" || order.status.lowercase() == "received") {
+                    A3Button(
+                        label = "Mulai Cuci (Tandai Diproses)",
+                        variant = ButtonVariant.PRIMARY,
+                        onClick = viewModel::advanceStatusToProcessing,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Aksi Status Diproses -> Selesai Cuci (Siap)
+                if (order.status.lowercase() == "processing") {
+                    A3Button(
+                        label = "Selesai Cuci (Tandai Siap Diambil)",
+                        variant = ButtonVariant.PRIMARY,
+                        onClick = viewModel::advanceStatusToReady,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Tombol Cuci Ulang (Hanya aktif jika status Siap)
                 if (order.status.lowercase() == "ready") {
                     A3Button(
                         label = "Cuci Ulang",
@@ -675,10 +761,10 @@ private fun OrderDetailPanel(
                     )
                 }
 
-                // Tombol Ambil Cucian / Penyerahan (F22, F24)
+                // Tombol Ambil Cucian
                 if (order.status.lowercase() == "ready") {
                     A3Button(
-                        label = if (isPaid) "Ambil Cucian (Penyerahan)" else "Ambil (Butuh PIN Manager)",
+                        label = if (isPaid) "Ambil Cucian" else "Ambil (Butuh PIN Manager)",
                         variant = ButtonVariant.PRIMARY,
                         onClick = viewModel::openPickupDialog,
                         modifier = Modifier.weight(2f)
@@ -955,7 +1041,7 @@ private fun LaundryReworkDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Cuci Ulang Komplain (L09 / F23)",
+                        text = "Cuci Ulang Komplain",
                         style = A3Theme.typography.headline,
                         color = colors.ink,
                         fontWeight = FontWeight.Bold
@@ -966,7 +1052,7 @@ private fun LaundryReworkDialog(
                 }
 
                 Text(
-                    text = "Cucian akan dikembalikan ke status Diproses tanpa biaya tambahan. Wajib memilih alasan dan otorisasi PIN Manager (LDR-12).",
+                    text = "Cucian akan dikembalikan ke status Diproses tanpa biaya tambahan. Wajib memilih alasan dan otorisasi PIN Manager.",
                     style = A3Theme.typography.bodySmall,
                     color = colors.inkMuted
                 )

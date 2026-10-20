@@ -29,12 +29,16 @@ interface OrderDao {
     @Query("SELECT * FROM orders WHERE id = :orderId")
     suspend fun getOrderById(orderId: String): OrderEntity?
 
-    @Query("SELECT * FROM orders WHERE displayNumber = :displayNumber LIMIT 1")
+    @Query("SELECT * FROM orders WHERE displayNumber = :displayNumber ORDER BY createdAt DESC LIMIT 1")
     suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity?
 
     @Transaction
-    @Query("SELECT * FROM orders WHERE displayNumber = :displayNumber LIMIT 1")
+    @Query("SELECT * FROM orders WHERE displayNumber = :displayNumber ORDER BY createdAt DESC LIMIT 1")
     suspend fun getOrderWithLinesByDisplayNumber(displayNumber: String): OrderWithLines?
+
+    @Transaction
+    @Query("SELECT * FROM orders WHERE (displayNumber = :query OR displayNumber LIKE '%' || :query) ORDER BY createdAt DESC LIMIT 1")
+    suspend fun findLaundryOrderFlexible(query: String): OrderWithLines?
 
     @Query("SELECT * FROM orders WHERE status = :status ORDER BY createdAt DESC")
     fun observeOrdersByStatus(status: String): Flow<List<OrderEntity>>
@@ -77,6 +81,9 @@ interface OrderDao {
 
     @Query("SELECT COUNT(*) FROM orders WHERE displayNumber LIKE :prefix || '%' AND createdAt >= :startOfDayMs AND createdAt < :endOfDayMs")
     suspend fun countOrdersForPrefixAndDate(prefix: String, startOfDayMs: Long, endOfDayMs: Long): Int
+
+    @Query("SELECT COUNT(*) FROM orders WHERE displayNumber LIKE :prefix || '%'")
+    suspend fun countTotalOrdersForPrefix(prefix: String): Int
 
     @Query("SELECT COUNT(*) FROM orders WHERE orderType = :orderType AND createdAt >= :startOfDayMs AND createdAt < :endOfDayMs")
     fun observeTodayOrderCount(orderType: String, startOfDayMs: Long, endOfDayMs: Long): Flow<Int>

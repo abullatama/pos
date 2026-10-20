@@ -69,6 +69,11 @@ class FakeLaundryScanRepository : LaundryOrderRepository {
         return orders.values.find { it.order.displayNumber == displayNumber }
     }
 
+    override suspend fun findOrderByNumberFlexible(query: String): OrderWithLines? {
+        val clean = query.trim()
+        return orders.values.find { it.order.displayNumber == clean || it.order.displayNumber.endsWith(clean) }
+    }
+
     override suspend fun updateOrderStatus(orderId: String, newStatus: String): Result<Unit> {
         val existing = orders[orderId] ?: return Result.failure(Exception("Not found"))
         orders[orderId] = existing.copy(order = existing.order.copy(status = newStatus))

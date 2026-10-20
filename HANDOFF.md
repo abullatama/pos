@@ -1,96 +1,119 @@
-# HANDOFF: Sesi Tuntas Milestone M3 Penuh (F39 & F40 Selesai)
+# HANDOFF: Penyempurnaan Alur Laundry (9 Poin) & Penerapan Gerbang Shift Cerdas (Opsi 1)
 
 ## 1. Tujuan Sesi yang Telah Selesai
-Menuntaskan **2 fitur penutup Milestone M3** sehingga **Milestone M3 resmi tuntas 100% (11 dari 11 fitur lulus)**:
-1. **F40 (Migrasi Room Diuji dengan Data Lama):**
-   - Penegakan kriteria penerimaan: *"Database versi lama berisi outbox bermigrasi tanpa kehilangan data"*.
-   - Uji migrasi otomatis berurutan v1 $\rightarrow$ v2 $\rightarrow$ v3 $\rightarrow$ v4 $\rightarrow$ v5 $\rightarrow$ v6 di `:core:data` (`RoomMigrationTest.kt`).
-   - Menyisipkan data legacy nyata pada skema v1: pesanan lunas `C1-0001`, baris item pesanan, pelanggan legacy `Ibu Nurhayati`, menu, dan outbox menunggu sinkron (`PENDING`).
-   - Membuktikan 100% data legacy utuh setelah migrasi v6, kolom baru `reasonCode` dan `flagsJson` default NULL aman, seluruh tabel baru (`shifts`, `payments`, `corrections`, `cash_outs`) beserta indeksnya terbentuk dan dapat menerima transaksi baru, serta `OutboxDao.getUnsyncedCount()` membaca data akurat.
-2. **F39 (Mode Kios dan Pembaruan App Sesuai Aturan OPS-03):**
-   - Penegakan kriteria penerimaan: *"Update tidak berjalan saat shift aktif atau outbox tidak kosong"*.
-   - `UpdatePreconditionValidator` di `:feature:admin`:
-     * Syarat 1: Tidak ada shift aktif (`ShiftDao.getActiveShift() == null`). Jika ada shift aktif, update diblokir: *"Shift aktif kasir '[Nama]' masih berjalan. Tutup shift terlebih dahulu sebelum memperbarui aplikasi."*
-     * Syarat 2: Antrean outbox harus bersih (`OutboxDao.getUnsyncedCount() == 0`). Jika ada data belum tersinkron, update diblokir: *"Terdapat X transaksi/event di outbox yang belum tersinkron ke server. Pastikan seluruh data tersinkron terlebih dahulu."*
-     * Jika kedua syarat terpenuhi: status `UpdateEligibility.Allowed` (Aman untuk diperbarui).
-   - `KioskManager` di `:feature:admin`:
-     * Mengelola aktivasi dan pelepasan mode Lock Task (`Activity.startLockTask()` dan `Activity.stopLockTask()`) untuk memblokir navigasi Back/Home/Recents kasir (SET-04, SET-05).
-     * Pintasan ke pengaturan Wi-Fi Android (`Settings.ACTION_WIFI_SETTINGS`).
-   - `ApkInstallerHelper` di `:feature:admin`:
-     * Penanganan sesi instalasi mandiri via `PackageInstaller.Session` untuk jalur distribusi APK privat tanpa Google Play.
-   - Layar S15 Menu Admin Tablet (`AdminMenuScreen`, `AdminViewModel`, `AdminViewModelFactory`):
-     * Proteksi PIN Owner (default `"9999"`, lockout salah 3x terkunci 5 menit).
-     * Panel 1: Pengaturan Hardware & Jaringan (Wi-Fi, status printer & tombol Uji Cetak struk 58 mm, status antrean outbox).
-     * Panel 2: Kontrol Mode Kios (Status Lock Task, tombol Kunci Layar Kios & Lepaskan Kios).
-     * Panel 3: Evaluasi Kepatuhan Pembaruan APK OPS-03 secara real-time dan pemilih berkas APK pembaruan.
-   - Navigasi & Integrasi Antarmuka:
-     * `app-cafe`: Rute `CafeDestinations.LAINNYA` dan tombol Admin di TopBar/Rail membuka `AdminMenuScreen`.
-     * `app-laundry`: Rute `LaundryDestinations.ADMIN` dan tombol Admin di TopBar/Rail membuka `AdminMenuScreen`.
+Menuntaskan **9 poin evaluasi & penyempurnaan alur kasir laundry** serta menerapkan **Gerbang Shift Cerdas (Opsi 1)** pada kedua aplikasi (`app-laundry` dan `app-cafe`):
 
-Progress proyek saat ini: **Milestone M0 (5/5, 100%), Milestone M1 (9/9, 100%), Milestone M2 (15/15, 100%), Milestone M3 (11/11, 100%)**.
-Total fitur tuntas: **40 dari 44 fitur tuntas (90,9%)**. Seluruh unit test lulus 100% dan kedua APK debug sukses dibangun.
+1. **Pemisahan Status Pembayaran vs Status Tahapan Fisik Cucian:**
+   - Memperbaiki bug kritis di mana pembayaran lunas pesanan laundry sebelumnya menimpa `order.status` menjadi `"paid"`, yang menyebabkannya hilang dari tab filter tahapan cucian (Diterima, Diproses, Siap).
+   - Di `OrderTransactionManager.recordPayment()`, pesanan laundry (`orderType == "laundry"`) kini mempertahankan status fisiknya (`open`, `processing`, `ready`, atau `picked_up`) dan hanya memperbarui `paidAmount`.
+   - Pesanan yang dibayar lunas di muka tetap berada di tab tahapan cucian yang sesuai dengan indikator status Lunas (Sisa Rp 0).
+
+2. **Nomor Nota Berkelanjutan & Anti-Bentrok Antar-Hari:**
+   - Mengganti penghitungan nomor urut yang sebelumnya mereset ke `0001` setiap hari dengan penghitungan total pesanan berkelanjutan per tablet (`countTotalOrdersForPrefix`), sehingga urutan berjalan kontinu (`L1-0001`, `L1-0002`, `L1-0003`, dst) tanpa risiko bentrok antar-hari di rak pakaian.
+   - Menambahkan urutan `ORDER BY createdAt DESC LIMIT 1` pada kueri Room `getOrderByDisplayNumber` dan `getOrderWithLinesByDisplayNumber` sehingga pencarian nota selalu mengembalikan pesanan terbaru yang aktif.
+
+3. **Input Pencarian Nomor Nota Ramah Angka Murni:**
+   - Mengubah keyboard pencarian nota di Layar Cucian menjadi angka murni (`KeyboardType.Number`).
+   - Menambahkan kueri pencarian fleksibel `findLaundryOrderFlexible`: kasir cukup mengetik angka saja (misal `12` atau `0012`), sistem secara otomatis mencocokkan nota `L1-0012`. Kasir tidak perlu repot mengetik huruf `"L"` dan tanda `"-"`.
+
+4. **Penyederhanaan Navigasi & Aksi Status Cucian Langsung (L06):**
+   - Menghapus item navigasi `"Scan QR"` dari Left Navigation Rail agar navigasi lebih ringkas dan fokus.
+   - Menambahkan tombol aksi status langsung pada panel rincian pakaian di Layar Cucian (`LaundryOrdersScreen` / L06):
+     * Status **Diterima** $\rightarrow$ Tombol **"Mulai Cuci (Tandai Diproses)"**
+     * Status **Diproses** $\rightarrow$ Tombol **"Selesai Cuci (Tandai Siap Diambil)"**
+     * Status **Siap** $\rightarrow$ Tombol **"Ambil Cucian"** & **"Cuci Ulang"**
+   - Menambahkan tombol pintasan kamera **"Pindai Tag QR"** di samping kolom pencarian nota untuk pemindaian instan tanpa berpindah menu.
+
+5. **Standardisasi Label Navigasi Menu Shift:**
+   - Mengubah label menu ke-4 di Left Rail `app-laundry` dari sebelumnya `"Lainnya"` menjadi **"Shift"** dengan ikon jam (`Icons.Outlined.AccessTime`), seragam dengan `app-cafe` dan standar POS.
+
+6. **Pembersihan Teks Jargon & Tanda Kurung Berlebih:**
+   - Menghapus seluruh kode dokumen teknis internal developer seperti `(LDR-01)`, `(LDR-03)`, `(LDR-12)`, `(COR-07)`, `(L09 / F23)` dari antarmuka kasir.
+   - Menyederhanakan label: `Kiloan (Kg)` $\rightarrow$ `Kiloan`, `Satuan (Pcs)` $\rightarrow$ `Satuan`, `Ambil Cucian (Penyerahan)` $\rightarrow$ `Ambil Cucian`, `Catatan Khusus (Noda / Kerusakan / Instruksi)` $\rightarrow$ `Catatan Khusus`.
+
+7. **Penerapan Gerbang Shift Cerdas (Opsi 1):**
+   - **Laundry POS (`app-laundry`):**
+     * Layar Order Baru (L03) menampilkan gerbang visual elegan `A3EmptyState` jika shift kasir belum dibuka (`activeShift == null`), membimbing kasir langsung ke alur Buka Shift (S04) sebelum mencatat order baru.
+     * Navigasi Left Rail dan tombol "+ Order Baru" di Beranda otomatis mengarahkan ke Shift jika belum ada shift aktif.
+     * Layar Cucian (L05/L06) tetap terbuka penuh bagi staf cuci untuk memajukan status pakaian tanpa shift, namun tombol **"Terima Pelunasan Sisa"** diproteksi dengan dialog Buka Shift jika belum ada shift aktif.
+   - **Cafe POS (`app-cafe`):**
+     * Layar Kasir POS (C01) terkunci rapi dengan `A3EmptyState` gerbang Buka Shift jika shift belum dibuka.
+     * Tombol proses pembayaran pada Layar Pesanan (C04) diproteksi validasi shift aktif.
+     * Navigasi Left Rail mengarahkan kasir langsung ke Buka Shift jika shift belum aktif.
 
 ---
 
 ## 2. Yang Sudah Selesai di Sesi Ini
 
-### A. Modul `:core:data` (F40 Migrasi Room & Query Outbox)
-- **`OutboxDao.kt`:**
-  - Penambahan query `getUnsyncedCount(): Int` dan `observeUnsyncedCount(): Flow<Int>` (`SELECT COUNT(*) FROM outbox WHERE status != 'SENT'`).
-- **`RoomMigrationTest.kt`:**
-  - Pengujian migrasi otomatis end-to-end v1 $\rightarrow$ v6 oleh Room Engine dengan data riil legacy outbox & transaksi.
-  - Pengujian migrasi inkremental per versi memvalidasi penambahan kolom `reasonCode`/`flagsJson`, tabel `shifts`, `payments`, `corrections`, `cash_outs`, dan seluruh indeks pendukungnya.
+### A. Modul `:core:data`
+- **`OrderTransactionManager.kt`:**
+  * Logika `recordPayment` diperbarui: hanya pesanan cafe yang mengubah status ke `paid`/`dp`, sedangkan pesanan laundry mempertahankan status fisik aslinya.
+- **`OrderDao.kt`:**
+  * Penambahan kueri `countTotalOrdersForPrefix(prefix)` untuk penomoran berkelanjutan.
+  * Penambahan `ORDER BY createdAt DESC LIMIT 1` pada kueri pengambilan berdasarkan nomor nota.
+  * Penambahan kueri `findLaundryOrderFlexible(query)` untuk pencarian angka murni.
+- **`RoomOutboxTransactionTest.kt`:**
+  * Penambahan unit test `recordPayment on laundry order updates paidAmount and preserves physical status` (lulus 100%).
 
-### B. Modul `:feature:admin` (F39 Kiosk Mode & App Update OPS-03)
-- **`UpdatePreconditionValidator.kt`:**
-  - Evaluasi kelayakan update mematuhi aturan OPS-03 (`UpdateEligibility.Allowed` vs `UpdateEligibility.Blocked`).
-- **`KioskManager.kt`:**
-  - Pengendali `startLockTask()`, `stopLockTask()`, `isLockTaskActive()`, dan `openWifiSettings()`.
-- **`ApkInstallerHelper.kt`:**
-  - Instalasi paket APK privat mandiri via `PackageInstaller.Session`.
-- **`AdminViewModel.kt` & `AdminViewModelFactory.kt`:**
-  - Manajemen state S15: verifikasi PIN Owner, lockout proteksi, observasi reaktif shift aktif dan outbox, pengujian koneksi dan uji cetak printer 58 mm, evaluasi kelayakan update, serta eksekusi pemasangan APK.
-- **`AdminMenuScreen.kt` (Layar S15):**
-  - Layout tablet landscape 11" pola split 2-kolom mengikuti prinsip Quiet Luxury dan antislop UI (bebas emoji, touch target $\ge 48\text{ dp}$, kontras AA tinggi).
-  - Gerbang Otorisasi PIN Owner dengan 4-digit indicator dots dan `A3Keypad` taktil 3x4.
-  - Dashboard Admin: status perangkat, koneksi Wi-Fi, uji cetak printer, kontrol mode kios, indikator kepatuhan OPS-03, dan aksi pembaruan APK.
-- **`UpdatePreconditionValidatorTest.kt`:**
-  - 4 kasus uji unit test lulus 100% (bebas shift & outbox kosong, ada shift aktif, ada outbox pending, dan kombinasi keduanya).
+### B. Modul `:feature:laundry`
+- **`DefaultLaundryOrderRepository.kt`:**
+  * Integrasi `countTotalOrdersForPrefix` pada `getNextDisplayNumber`.
+  * Implementasi `findOrderByNumberFlexible`.
+- **`LaundryOrdersViewModel.kt`:**
+  * Penambahan `advanceStatusToProcessing()` dan `advanceStatusToReady()`.
+  * Integrasi pencarian reaktif fleksibel dan pencarian via scan payload.
+- **`LaundryOrdersScreen.kt` (L05 & L06):**
+  * Penambahan bilah pencarian nota angka murni & tombol kamera Scan QR di panel kiri.
+  * Penambahan tombol aksi status langsung di panel rincian pesanan.
+  * Proteksi dialog Buka Shift pada tombol "Terima Pelunasan Sisa".
+  * Pembersihan seluruh teks istilah teknis dalam kurung.
+- **`LaundryOrderScreen.kt` (L03):**
+  * Penambahan gerbang visual `A3EmptyState` jika `hasActiveShift == false`.
+  * Dialog konfirmasi buka shift saat kasir mencoba pembayaran di kasir tanpa shift aktif.
+- **Unit Test Suite `:feature:laundry`:**
+  * Penambahan pengujian `advanceStatusToProcessing and advanceStatusToReady transitions status and updates messages` dan `onSearchQueryChange filters and selects order with pure numeric input` pada `LaundryOrdersViewModelTest` (28/28 tests lulus 100%).
 
-### C. Modul Cangkang (`app-cafe` & `app-laundry`)
-- **`CafeNavHost.kt`:**
-  - Integrasi `AdminViewModel` dan penggantian placeholder `CafeDestinations.LAINNYA` dengan `AdminMenuScreen`.
-- **`LaundryNavHost.kt` & `MainActivity.kt`:**
-  - Penambahan rute `LaundryDestinations.ADMIN` terhubung ke `AdminMenuScreen` via klik tombol Admin di TopBar dan Rail.
+### C. Modul Cangkang (`app-laundry` & `app-cafe`)
+- **`app-laundry/MainActivity.kt` & `LaundryNavHost.kt`:**
+  * Navigasi Left Rail disederhanakan (4 item: Beranda, Order Baru, Cucian, Shift).
+  * Pengalihan rute pintar ke `SHIFT` jika kasir mengakses Order Baru saat shift belum buka.
+  * Penerusan `hasActiveShift` dan `shiftId` aktif ke layar pesanan dan pembayaran.
+- **`app-cafe/MainActivity.kt` & `CafeNavHost.kt`:**
+  * Gerbang `A3EmptyState` pada rute `KASIR` saat shift belum dibuka.
+  * Pengalihan rute pintar ke `SHIFT` pada Left Rail.
+  * Proteksi pembayaran pesanan terbuka saat belum buka shift.
 
 ---
 
-## 3. Yang Belum Selesai (Langkah untuk Sesi Baru: Memulai Milestone Terakhir M4)
+## 3. Status Terkini Proyek
 
-Sisa 4 fitur penutup proyek pada **Milestone M4 (Go-live, stabilisasi, dan operasional)**:
-1. **F41 (Heartbeat dan Crashlytics):**
-   - Telemetri status perangkat berkala (`POST /v1/devices/me/heartbeat`) dan integrasi pelaporan crash/galat tanpa data sensitif pelanggan (OPS-01, OPS-02).
-2. **F42 (Tombol Kirim via WA Manual dan Status Notifikasi):**
-   - Fitur spesifik laundry: tombol kirim WA manual dan tampilan status notifikasi server (`none`, `queued`, `sent`, `failed`) pada kartu rincian cucian (L06 / LDR-09).
+- **Milestone M0 (Spike & Hardware):** 5 dari 5 tuntas (100%)
+- **Milestone M1 (Fondasi & Multi-modul):** 9 dari 9 tuntas (100%)
+- **Milestone M2 (Transaksi Cafe & Laundry):** 15 dari 15 tuntas (100%)
+- **Milestone M3 (Shift, Kas, & Kios Admin):** 11 dari 11 tuntas (100%)
+- **Milestone M4 (Laporan, WA, & Go-live):** 0 dari 4 (0%) — **Milestone Aktif**
+- **Total Fitur Selesai:** **40 dari 44 fitur tuntas (90,9%)**.
+- **Kondisi Kode:** Seluruh unit test proyek lulus 100%, kompilasi kedua aplikasi (`app-laundry` dan `app-cafe`) berhasil tuntas tanpa error.
+
+---
+
+## 4. Langkah untuk Sesi Baru (Memulai Milestone Terakhir M4)
+
+Sisa 4 fitur penutup proyek pada **Milestone M4**:
+1. **F42 (Tombol Kirim via WA Manual dan Status Notifikasi) — *Rekomendasi Utama Sesi Berikutnya*:**
+   - Fitur spesifik laundry: tombol kirim WA manual (hijau taktil `#25D366`) dan tampilan chip status notifikasi server (`none`, `queued`, `sent`, `failed`) pada kartu rincian cucian (L06 / LDR-09).
+   - Menghubungkan client endpoint `GET /v1/orders/{id}/notification-status`.
+2. **F41 (Heartbeat dan Crashlytics):**
+   - Telemetri status perangkat berkala (`POST /v1/devices/heartbeat`) dan integrasi pelaporan crash/galat tanpa data sensitif pelanggan (OPS-01, OPS-02).
 3. **F43 (Uji Offline 24 Jam):**
-   - Pengujian operasional offline 24 jam penuh: memastikan integritas transaksi lokal, rekonsiliasi kas, dan sinkronisasi tuntas saat koneksi pulih (`needs_device: true`).
+   - Pengujian operasional offline 24 jam penuh pada tablet fisik Redmi Pad 2 (`needs_device: true`).
 4. **F44 (Paket Go-live: Nota Kertas Cadangan dan SOP Darurat):**
    - Dokumen SOP darurat satu halaman saat tablet/printer/internet mati dan template buku nota manual bernomor.
 
 ---
 
-## 4. Keputusan Teknis Penting
+## 5. File Referensi Penting untuk Sesi Baru
 
-- **Aturan Pembaruan OPS-03:**
-  - Pembaruan aplikasi mandiri WAJIB ditolak bila ada kasir yang belum menutup shift atau ada data transaksi lokal yang belum terkirim ke server (`status != 'SENT'`). Hal ini mencegah terputusnya transaksi atau inkonsistensi saat APK dimuat ulang oleh sistem OS.
-- **Isolasi Mode Kios:**
-  - Mode Kios (Lock Task) diakses dan dikendalikan melalui PIN Owner (`"9999"`), bukan PIN kasir atau manager, memastikan staf kasir toko tetap terkunci di dalam antarmuka POS.
-- **Migrasi Maju Saja (Forward Migration):**
-  - Database Room versi 6 kompatibel mundur secara penuh dengan database versi 1 hingga 5, terbukti lolos pengujian tanpa kehilangan 1 baris pun data transaksi lama.
-
----
-
-## 5. File yang Perlu Dibaca Pertama Kali di Sesi Baru
 - `HANDOFF.md` (dokumen ini)
 - `feature_list.json` (baris 404–445 untuk Milestone M4)
 - `docs/milestones/M4-laporan-golive.md`
@@ -100,7 +123,7 @@ Sisa 4 fitur penutup proyek pada **Milestone M4 (Go-live, stabilisasi, dan opera
 
 ---
 
-## 6. Panduan Pengujian Langsung Hardware (Tablet & Printer)
+## 6. Panduan Pengujian Hardware & Demo
 
 Untuk pengujian fisik di perangkat Redmi Pad 2 dan printer iWare C58BT:
 - **Perintah Pasang APK:**
@@ -113,4 +136,3 @@ Untuk pengujian fisik di perangkat Redmi Pad 2 dan printer iWare C58BT:
   * **PIN Kasir (Shift & Transaksi):** `1234`
   * **PIN Manager (Otorisasi Khusus):** `4444` (Diskon manual, void/refund, kas keluar > 50rb, cuci ulang, ambil belum lunas, tutup paksa shift. Proteksi: salah 3x lockout 5 menit).
   * **PIN Owner (Menu Admin S15):** `9999` (Uji cetak ESC/POS 58 mm, buka Wi-Fi, kunci/lepas mode kios LockTask, pasang APK update. Proteksi: salah 3x lockout 5 menit).
-

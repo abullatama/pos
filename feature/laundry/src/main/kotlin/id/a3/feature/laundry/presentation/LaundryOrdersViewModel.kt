@@ -53,6 +53,7 @@ data class LaundryOrdersUiState(
     val isManagerPinDialogOpen: Boolean = false,
     val pendingAction: PendingManagerAction? = null,
     val reworkReason: String = "Noda belum hilang",
+    val searchQuery: String = "",
     val pinErrorMessage: String? = null,
     val isActionLoading: Boolean = false,
     val successMessage: String? = null,
@@ -76,6 +77,7 @@ class LaundryOrdersViewModel(
 ) : ViewModel() {
 
     private val _filterStatus = MutableStateFlow(LaundryFilterStatus.ALL)
+    private val _searchQuery = MutableStateFlow("")
     private val _selectedOrderId = MutableStateFlow<String?>(null)
     private val _isPickupDialogOpen = MutableStateFlow(false)
     private val _isReworkDialogOpen = MutableStateFlow(false)
@@ -91,7 +93,7 @@ class LaundryOrdersViewModel(
     private var failedPinAttempts = 0
     private var isManagerLockedUntilMs = 0L
 
-    private val _ordersFlow: StateFlow<List<OrderWithLines>> = _filterStatus
+    private val _rawOrdersFlow: StateFlow<List<OrderWithLines>> = _filterStatus
         .flatMapLatest { filter ->
             repository.observeLaundryOrders(filter.dbStatus)
         }
@@ -100,6 +102,25 @@ class LaundryOrdersViewModel(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    private val _ordersFlow: StateFlow<List<OrderWithLines>> = combine(
+        _rawOrdersFlow,
+        _searchQuery
+    ) { orders, query ->
+        val q = query.trim()
+        if (q.isEmpty()) {
+            orders
+        } else {
+            orders.filter { item ->
+                item.order.displayNumber.contains(q, ignoreCase = true) ||
+                    item.order.id.contains(q, ignoreCase = true)
+            }
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
 
     private val _selectedOrderAndCustomerFlow = combine(
         _ordersFlow,
@@ -167,6 +188,7 @@ class LaundryOrdersViewModel(
             isManagerPinDialogOpen = dialogs.isManagerPinDialogOpen,
             pendingAction = dialogs.pendingAction,
             reworkReason = dialogs.reworkReason,
+            searchQuery = _searchQuery.value,
             pinErrorMessage = statusMsg.pinErrorMessage,
             isActionLoading = statusMsg.isActionLoading,
             successMessage = statusMsg.successMessage,
@@ -195,6 +217,75 @@ class LaundryOrdersViewModel(
 
     fun setFilterStatus(filter: LaundryFilterStatus) {
         _filterStatus.value = filter
+    }
+
+    fun onSearchQueryChange(query: String) {
+        _searchQuery.value = query
+        val q = query.trim()
+        if (q.isNotEmpty()) {
+            viewModelScope.launch {
+                val matched = repository.findOrderByNumberFlexible(q)
+                if (matched != null) {
+                    _selectedOrderId.value = matched.order.id
+                }
+            }
+        }
+    }
+
+    fun selectOrderByScan(scannedPayload: String) {
+        val trimmed = scannedPayload.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            // Coba dengan UUID atau nomor fleksibel
+            var found = repository.getOrderWithLines(trimmed)
+            if (found == null) {
+                found = repository.findOrderByNumberFlexible(trimmed)
+            }
+            if (found != null) {
+                _selectedOrderId.value = found.order.id
+                _successMessage.value = "Pesanan ${found.order.displayNumber} berhasil ditemukan"
+            } else {
+                _errorMessage.value = "Pesanan dengan tag '$trimmed' tidak ditemukan"
+            }
+        }
+    }
+
+    fun advanceStatusToProcessing() {
+        val current = uiState.value.selectedOrder?.order ?: return
+        if (current.status.lowercase() != "open" && current.status.lowercase() != "received") return
+
+        viewModelScope.launch {
+            _isActionLoading.value = true
+            val result = repository.advanceOrderStatus(
+                orderId = current.id,
+                targetStatus = "processing"
+            )
+            _isActionLoading.value = false
+            if (result.isSuccess) {
+                _successMessage.value = "Pesanan ${current.displayNumber} kini berstatus Diproses"
+            } else {
+                _errorMessage.value = result.exceptionOrNull()?.message ?: "Gagal memproses status"
+            }
+        }
+    }
+
+    fun advanceStatusToReady() {
+        val current = uiState.value.selectedOrder?.order ?: return
+        if (current.status.lowercase() != "processing") return
+
+        viewModelScope.launch {
+            _isActionLoading.value = true
+            val result = repository.advanceOrderStatus(
+                orderId = current.id,
+                targetStatus = "ready"
+            )
+            _isActionLoading.value = false
+            if (result.isSuccess) {
+                _successMessage.value = "Pesanan ${current.displayNumber} siap diambil"
+            } else {
+                _errorMessage.value = result.exceptionOrNull()?.message ?: "Gagal menandai siap"
+            }
+        }
     }
 
     fun selectOrder(order: OrderWithLines) {

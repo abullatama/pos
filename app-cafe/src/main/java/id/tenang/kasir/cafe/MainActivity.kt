@@ -202,7 +202,12 @@ class MainActivity : ComponentActivity() {
                         navItems = cafeNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
-                            val targetRoute = cafeNavItems[index].id
+                            val rawTarget = cafeNavItems[index].id
+                            val targetRoute = if ((rawTarget == CafeDestinations.KASIR || rawTarget == CafeDestinations.PESANAN) && activeShift == null) {
+                                CafeDestinations.SHIFT
+                            } else {
+                                rawTarget
+                            }
                             navController.navigate(targetRoute) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,6 +48,7 @@ import androidx.navigation.compose.composable
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.printer.PrinterService
 import id.a3.core.ui.component.A3Button
+import id.a3.core.ui.component.A3EmptyState
 import id.a3.core.ui.component.ButtonVariant
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
@@ -152,41 +154,96 @@ fun CafeNavHost(
             .padding(paddingValues)
     ) {
         composable(CafeDestinations.KASIR) {
-            CafePosScreen(
-                viewModel = menuViewModel,
-                onCheckoutClick = { calculation ->
-                    if (menuViewModel.isCheckingOut.value) return@CafePosScreen
-                    menuViewModel.setCheckingOut(true)
-                    coroutineScope.launch {
-                        try {
-                            val header = menuViewModel.uiState.value.orderHeader
-                            val saveResult = menuViewModel.directCheckout(calculation)
-                            val targetOrderId = saveResult.getOrNull() ?: header.orderId
+            val shiftUiState by shiftViewModel.uiState.collectAsState()
+            val activeShift = shiftUiState.currentShift
 
-                            paymentViewModel.initializeWithOrder(
-                                orderId = targetOrderId,
-                                totalAmount = calculation.total,
-                                displayNumber = header.receiptId,
-                                tableOrQueueLabel = header.tableOrQueueLabel
-                            )
-                            navController.navigate(CafeDestinations.PEMBAYARAN)
-                        } finally {
-                            menuViewModel.setCheckingOut(false)
-                        }
-                    }
-                },
-                onSendToKitchenClick = {
-                    navController.navigate(CafeDestinations.PESANAN) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
+            if (activeShift == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(A3Theme.colors.canvas)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(520.dp)
+                            .clip(A3Theme.shapes.cardShape)
+                            .background(A3Theme.colors.surface)
+                            .border(1.dp, A3Theme.colors.border, A3Theme.shapes.cardShape)
+                            .padding(32.dp)
+                    ) {
+                        A3EmptyState(
+                            title = "Shift Kasir Belum Dibuka",
+                            description = "Silakan buka shift kasir terlebih dahulu dengan memasukkan kas awal laci sebelum melayani pesanan cafe.",
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.AccessTime,
+                                    contentDescription = null,
+                                    tint = A3Theme.colors.accent,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                            },
+                            action = {
+                                A3Button(
+                                    label = "Buka Shift Kasir Sekarang",
+                                    variant = ButtonVariant.PRIMARY,
+                                    onClick = {
+                                        navController.navigate(CafeDestinations.SHIFT) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        )
                     }
                 }
-            )
+            } else {
+                CafePosScreen(
+                    viewModel = menuViewModel,
+                    onCheckoutClick = { calculation ->
+                        if (menuViewModel.isCheckingOut.value) return@CafePosScreen
+                        menuViewModel.setCheckingOut(true)
+                        coroutineScope.launch {
+                            try {
+                                val header = menuViewModel.uiState.value.orderHeader
+                                val saveResult = menuViewModel.directCheckout(calculation)
+                                val targetOrderId = saveResult.getOrNull() ?: header.orderId
+
+                                paymentViewModel.initializeWithOrder(
+                                    orderId = targetOrderId,
+                                    totalAmount = calculation.total,
+                                    displayNumber = header.receiptId,
+                                    tableOrQueueLabel = header.tableOrQueueLabel,
+                                    cashierName = activeShift.cashierName
+                                )
+                                navController.navigate(CafeDestinations.PEMBAYARAN)
+                            } finally {
+                                menuViewModel.setCheckingOut(false)
+                            }
+                        }
+                    },
+                    onSendToKitchenClick = {
+                        navController.navigate(CafeDestinations.PESANAN) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
         }
         composable(CafeDestinations.PESANAN) {
+            val shiftUiState by shiftViewModel.uiState.collectAsState()
+            val activeShift = shiftUiState.currentShift
+
             CafeOpenOrdersScreen(
                 viewModel = menuViewModel,
                 onNavigateToPos = {
@@ -199,11 +256,22 @@ fun CafeNavHost(
                     }
                 },
                 onProceedToPayment = { orderId, total ->
-                    paymentViewModel.initializeWithOrder(
-                        orderId = orderId,
-                        totalAmount = total
-                    )
-                    navController.navigate(CafeDestinations.PEMBAYARAN)
+                    if (activeShift == null) {
+                        navController.navigate(CafeDestinations.SHIFT) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    } else {
+                        paymentViewModel.initializeWithOrder(
+                            orderId = orderId,
+                            totalAmount = total,
+                            cashierName = activeShift.cashierName
+                        )
+                        navController.navigate(CafeDestinations.PEMBAYARAN)
+                    }
                 }
             )
         }

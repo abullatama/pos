@@ -39,6 +39,7 @@ class FakeLaundryHomeRepository : LaundryOrderRepository {
     override suspend fun getOrderWithLines(orderId: String): OrderWithLines? = null
     override suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity? = null
     override suspend fun getOrderWithLinesByDisplayNumber(displayNumber: String): OrderWithLines? = null
+    override suspend fun findOrderByNumberFlexible(query: String): OrderWithLines? = null
     override suspend fun updateOrderStatus(orderId: String, newStatus: String): Result<Unit> = Result.success(Unit)
     override suspend fun advanceOrderStatus(orderId: String, targetStatus: String, rework: Boolean, reworkReason: String?, reworkApprovedBy: String?): Result<OutboxEntity> =
         Result.success(OutboxEntity(bundleId = UUID.randomUUID().toString(), deviceId = "dev-1", shiftId = null, eventsJson = "[]"))

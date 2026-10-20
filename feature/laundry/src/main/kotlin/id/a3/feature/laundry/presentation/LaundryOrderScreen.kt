@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.LocalLaundryService
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,7 +48,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,6 +65,7 @@ import id.a3.core.data.local.entity.CustomerEntity
 import id.a3.core.data.local.entity.LaundryServiceEntity
 import id.a3.core.data.util.PhoneNumberUtil
 import id.a3.core.ui.component.A3Button
+import id.a3.core.ui.component.A3EmptyState
 import id.a3.core.ui.component.A3MoneyText
 import id.a3.core.ui.component.A3StatusChip
 import id.a3.core.ui.component.A3TextField
@@ -80,12 +85,56 @@ import kotlinx.coroutines.launch
 fun LaundryOrderScreen(
     uiState: LaundryOrderUiState,
     viewModel: LaundryOrderViewModel,
+    hasActiveShift: Boolean = true,
+    onNavigateToShift: () -> Unit = {},
     onProceedToPayment: (orderId: String, totalAmount: Long, displayNumber: String, isDp: Boolean) -> Unit,
     onOrderSavedSuccessfully: (displayNumber: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
+    var showShiftRequiredDialog by remember { mutableStateOf(false) }
+
+    if (!hasActiveShift) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(colors.canvas)
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(520.dp)
+                    .clip(shapes.cardShape)
+                    .background(colors.surface)
+                    .border(1.dp, colors.border, shapes.cardShape)
+                    .padding(32.dp)
+            ) {
+                A3EmptyState(
+                    title = "Shift Kasir Belum Dibuka",
+                    description = "Kasir wajib membuka shift dengan mencatat modal awal kas sebelum melayani pesanan baru.",
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Outlined.AccessTime,
+                            contentDescription = null,
+                            tint = colors.accent,
+                            modifier = Modifier.size(56.dp)
+                        )
+                    },
+                    action = {
+                        A3Button(
+                            label = "Buka Shift Kasir Sekarang",
+                            variant = ButtonVariant.PRIMARY,
+                            onClick = onNavigateToShift,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                )
+            }
+        }
+        return
+    }
 
     Box(
         modifier = modifier
@@ -159,11 +208,28 @@ fun LaundryOrderScreen(
                 OrderReceiptPanel(
                     uiState = uiState,
                     viewModel = viewModel,
+                    hasActiveShift = hasActiveShift,
+                    onRequireShift = { showShiftRequiredDialog = true },
                     onProceedToPayment = onProceedToPayment,
                     onOrderSavedSuccessfully = onOrderSavedSuccessfully
                 )
             }
         }
+    }
+
+    if (showShiftRequiredDialog) {
+        id.a3.core.ui.component.A3Dialog(
+            onDismissRequest = { showShiftRequiredDialog = false },
+            title = "Buka Shift Kasir",
+            bodyText = "Transaksi pembayaran membutuhkan shift aktif untuk pencatatan kas laci. Buka shift kasir terlebih dahulu.",
+            confirmLabel = "Buka Shift Sekarang",
+            dismissLabel = "Batal",
+            onConfirm = {
+                showShiftRequiredDialog = false
+                onNavigateToShift()
+            },
+            onDismiss = { showShiftRequiredDialog = false }
+        )
     }
 
     // Dialog L02: Pemilihan / Pembuatan Pelanggan
@@ -228,7 +294,7 @@ private fun CustomerCardHeader(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Wajib menyertakan nama & HP pelanggan (LDR-01)",
+                            text = "Nama & nomor HP pelanggan wajib diisi",
                             style = A3Theme.typography.bodySmall,
                             color = colors.inkMuted
                         )
@@ -335,8 +401,8 @@ private fun CategoryFilterTabs(
     ) {
         val filters = listOf(
             LaundryCategoryFilter.ALL to "Semua Layanan",
-            LaundryCategoryFilter.KILOAN to "Kiloan (Kg)",
-            LaundryCategoryFilter.SATUAN to "Satuan (Pcs)"
+            LaundryCategoryFilter.KILOAN to "Kiloan",
+            LaundryCategoryFilter.SATUAN to "Satuan"
         )
 
         filters.forEach { (filter, label) ->
@@ -504,7 +570,7 @@ private fun ServiceConfigurationCard(
                         text = if (isKiloan) {
                             "Min. ${service.minWeight} kg · Kelipatan ${service.weightStep} kg"
                         } else {
-                            "Dihitung bersama pelanggan per potong pakaian (LDR-03)"
+                            "Dihitung bersama pelanggan per potong pakaian"
                         },
                         style = A3Theme.typography.bodySmall,
                         color = colors.inkMuted
@@ -729,11 +795,11 @@ private fun ServiceConfigurationCard(
                 }
             }
 
-            // Kolom Catatan Khusus (Noda / Barang Rapuh LDR-03)
+            // Kolom Catatan Khusus
             A3TextField(
                 value = note,
                 onValueChange = onNoteChange,
-                label = "Catatan Khusus (Noda / Kerusakan / Instruksi)",
+                label = "Catatan Khusus",
                 placeholder = "cth. Noda minyak di kerah, kancing rapuh..."
             )
 
@@ -752,6 +818,8 @@ private fun ServiceConfigurationCard(
 private fun OrderReceiptPanel(
     uiState: LaundryOrderUiState,
     viewModel: LaundryOrderViewModel,
+    hasActiveShift: Boolean,
+    onRequireShift: () -> Unit,
     onProceedToPayment: (orderId: String, totalAmount: Long, displayNumber: String, isDp: Boolean) -> Unit,
     onOrderSavedSuccessfully: (displayNumber: String) -> Unit
 ) {
@@ -1065,6 +1133,11 @@ private fun OrderReceiptPanel(
                 variant = ButtonVariant.PRIMARY,
                 enabled = isReady,
                 onClick = {
+                    if (!isPayLater && !hasActiveShift) {
+                        onRequireShift()
+                        return@A3Button
+                    }
+
                     val amountToPay = if (isDp) {
                         if (uiState.dpAmount > 0L) uiState.dpAmount else (uiState.calculation.total / 2).coerceAtLeast(10000L)
                     } else {

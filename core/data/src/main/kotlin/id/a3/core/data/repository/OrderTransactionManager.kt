@@ -392,7 +392,11 @@ class OrderTransactionManager(
                 ?: throw IllegalStateException("Pesanan dengan ID $orderId tidak ditemukan")
 
             val newPaidAmount = currentOrder.paidAmount + amount
-            val newStatus = if (isDp) "dp" else "paid"
+            val newStatus = if (currentOrder.orderType == "laundry") {
+                currentOrder.status
+            } else {
+                if (isDp) "dp" else "paid"
+            }
 
             orderDao.updatePaymentStatus(
                 orderId = orderId,

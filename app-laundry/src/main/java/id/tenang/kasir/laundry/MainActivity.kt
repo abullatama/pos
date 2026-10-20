@@ -9,7 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ShortText
+import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inventory2
@@ -53,8 +53,7 @@ class MainActivity : ComponentActivity() {
         NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home),
         NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle),
         NavItem(LaundryDestinations.CUCIAN, "Cucian", Icons.Outlined.Inventory2),
-        NavItem(LaundryDestinations.SCAN, "Scan QR", Icons.Outlined.PhotoCamera),
-        NavItem(LaundryDestinations.LAINNYA, "Lainnya", Icons.AutoMirrored.Outlined.ShortText)
+        NavItem(LaundryDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime)
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -172,8 +171,8 @@ class MainActivity : ComponentActivity() {
                         if (idx >= 0) idx else 0
                     }
 
-                    val isFocusFlowActive = remember(currentRoute) {
-                        currentRoute == LaundryDestinations.PEMBAYARAN
+                    val isFocusFlowActive = remember(currentRoute, activeShift) {
+                        currentRoute == LaundryDestinations.PEMBAYARAN || (currentRoute == LaundryDestinations.SHIFT && activeShift == null)
                     }
 
                     AppShell(
@@ -198,7 +197,12 @@ class MainActivity : ComponentActivity() {
                         navItems = laundryNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
-                            val targetRoute = laundryNavItems[index].id
+                            val rawTarget = laundryNavItems[index].id
+                            val targetRoute = if (rawTarget == LaundryDestinations.ORDER && activeShift == null) {
+                                LaundryDestinations.SHIFT
+                            } else {
+                                rawTarget
+                            }
                             navController.navigate(targetRoute) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true

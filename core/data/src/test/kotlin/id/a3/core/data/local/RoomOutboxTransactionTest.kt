@@ -385,6 +385,41 @@ class RoomOutboxTransactionTest {
     }
 
     @Test
+    fun `recordPayment on laundry order updates paidAmount and preserves physical status`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0012",
+            businessUnitId = "bu-laundry-01",
+            shiftId = "shift-001",
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 53000L,
+            total = 53000L,
+            paidAmount = 0L
+        )
+        database.orderDao().insertOrder(order)
+
+        // Bayar lunas di muka
+        val outbox = transactionManager.recordPayment(
+            orderId = orderId,
+            method = "cash",
+            amount = 53000L,
+            tendered = 53000L,
+            isDp = false
+        )
+
+        val updated = database.orderDao().getOrderById(orderId)
+        assertNotNull(updated)
+        // Status fisik cucian HARUS tetap "open" (Diterima), tidak boleh ditimpa menjadi "paid"
+        assertEquals("open", updated!!.status)
+        assertEquals(53000L, updated.paidAmount)
+        assertEquals(53000L, updated.total)
+    }
+
+    @Test
     fun `createAndPayOrder creates paid order and writes order created and payment recorded events`() = runBlocking {
         val orderId = UUID.randomUUID().toString()
         val lineId = UUID.randomUUID().toString()
