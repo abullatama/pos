@@ -52,6 +52,10 @@ interface OrderDao {
     fun observeCompletedOrdersWithLines(): Flow<List<OrderWithLines>>
 
     @Transaction
+    @Query("SELECT * FROM orders WHERE status IN ('paid', 'refunded', 'void', 'partial_refund') AND (shiftId = :shiftId OR id IN (SELECT DISTINCT orderId FROM payments WHERE shiftId = :shiftId)) ORDER BY createdAt DESC")
+    fun observeCompletedOrdersWithLinesForShift(shiftId: String): Flow<List<OrderWithLines>>
+
+    @Transaction
     @Query("SELECT * FROM orders WHERE orderType = 'laundry' ORDER BY createdAt DESC")
     fun observeLaundryOrdersWithLines(): Flow<List<OrderWithLines>>
 
@@ -76,8 +80,8 @@ interface OrderDao {
         total: Long
     )
 
-    @Query("UPDATE orders SET status = :status, paidAmount = :paidAmount WHERE id = :orderId")
-    suspend fun updatePaymentStatus(orderId: String, status: String, paidAmount: Long)
+    @Query("UPDATE orders SET status = :status, paidAmount = :paidAmount, shiftId = COALESCE(:shiftId, shiftId) WHERE id = :orderId")
+    suspend fun updatePaymentStatus(orderId: String, status: String, paidAmount: Long, shiftId: String? = null)
 
     @Query("SELECT COUNT(*) FROM orders WHERE displayNumber LIKE :prefix || '%' AND createdAt >= :startOfDayMs AND createdAt < :endOfDayMs")
     suspend fun countOrdersForPrefixAndDate(prefix: String, startOfDayMs: Long, endOfDayMs: Long): Int

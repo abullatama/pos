@@ -165,12 +165,12 @@ class MainActivity : ComponentActivity() {
                     val activeShift = shiftUiState.currentShift
                     val isShiftActive = activeShift != null
 
-                    val cafeNavItems = remember {
+                    val cafeNavItems = remember(isShiftActive) {
                         listOf(
-                            NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale, enabled = true),
-                            NavItem(CafeDestinations.PESANAN, "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong, enabled = true),
-                            NavItem(CafeDestinations.HABIS, "Menu Habis", Icons.Outlined.Block, enabled = true),
-                            NavItem(CafeDestinations.KAS_KELUAR, "Kas", Icons.Outlined.Payments, enabled = true),
+                            NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale, enabled = isShiftActive),
+                            NavItem(CafeDestinations.PESANAN, "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong, enabled = isShiftActive),
+                            NavItem(CafeDestinations.HABIS, "Menu Habis", Icons.Outlined.Block, enabled = isShiftActive),
+                            NavItem(CafeDestinations.KAS_KELUAR, "Kas", Icons.Outlined.Payments, enabled = isShiftActive),
                             NavItem(CafeDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime, enabled = true)
                         )
                     }
@@ -178,6 +178,18 @@ class MainActivity : ComponentActivity() {
                     val defaultStartRoute = if (isShiftActive) CafeDestinations.KASIR else CafeDestinations.SHIFT
                     val currentRoute = navBackStackEntry?.destination?.route ?: defaultStartRoute
                     val isAdminSelected = currentRoute == CafeDestinations.ADMIN
+
+                    // Auto-redirect ke layar SHIFT jika shift belum dibuka atau sudah ditutup
+                    LaunchedEffect(isShiftActive) {
+                        if (!isShiftActive && currentRoute != CafeDestinations.SHIFT && currentRoute != CafeDestinations.ADMIN) {
+                            navController.navigate(CafeDestinations.SHIFT) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    inclusive = false
+                                }
+                                launchSingleTop = true
+                            }
+                        }
+                    }
 
                     val selectedIndex = remember(currentRoute, cafeNavItems) {
                         cafeNavItems.indexOfFirst { it.id == currentRoute }
@@ -213,7 +225,7 @@ class MainActivity : ComponentActivity() {
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
                             val item = cafeNavItems[index]
-                            if (item.enabled) {
+                            if (item.enabled && (isShiftActive || item.id == CafeDestinations.SHIFT)) {
                                 if (currentRoute == CafeDestinations.ADMIN) {
                                     navController.popBackStack(CafeDestinations.ADMIN, inclusive = true)
                                 }

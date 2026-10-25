@@ -77,6 +77,11 @@ enum class CafeOrdersTab(val title: String) {
     COMPLETED_HISTORY("Riwayat Selesai")
 }
 
+enum class CompletedShiftScope(val title: String) {
+    CURRENT_SHIFT("Shift Berjalan"),
+    PAST_SHIFTS("Shift Lalu (F36)")
+}
+
 /**
  * Format durasi pesanan terbuka ramah kasir (misal: 230 menit -> "3 jam 50 menit").
  */
@@ -112,6 +117,31 @@ fun CafeOpenOrdersScreen(
     val activeShift by viewModel.activeShift.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
+    var completedScope by remember { mutableStateOf(CompletedShiftScope.CURRENT_SHIFT) }
+
+    val currentShiftCompletedOrders = remember(completedOrders, activeShift) {
+        if (activeShift == null) emptyList()
+        else completedOrders.filter { item ->
+            (item.order.shiftId == activeShift!!.id) ||
+                (item.order.createdAt >= activeShift!!.openedAt && (item.order.shiftId == null || item.order.shiftId == activeShift!!.id))
+        }
+    }
+
+    val pastShiftCompletedOrders = remember(completedOrders, activeShift) {
+        if (activeShift == null) completedOrders
+        else completedOrders.filter { item ->
+            val isCurrent = (item.order.shiftId == activeShift!!.id) ||
+                (item.order.createdAt >= activeShift!!.openedAt && (item.order.shiftId == null || item.order.shiftId == activeShift!!.id))
+            !isCurrent
+        }
+    }
+
+    val displayedCompletedOrders = if (completedScope == CompletedShiftScope.CURRENT_SHIFT) {
+        currentShiftCompletedOrders
+    } else {
+        pastShiftCompletedOrders
+    }
+
     var selectedOpenOrderId by remember { mutableStateOf<String?>(null) }
     var selectedCompletedOrderId by remember { mutableStateOf<String?>(null) }
     var moveTableTargetOrder by remember { mutableStateOf<OrderWithLines?>(null) }
@@ -125,7 +155,7 @@ fun CafeOpenOrdersScreen(
     var validationErrorDialogMessage by remember { mutableStateOf<String?>(null) }
 
     val selectedOpenOrder = openOrders.find { it.order.id == selectedOpenOrderId } ?: openOrders.firstOrNull()
-    val selectedCompletedOrder = completedOrders.find { it.order.id == selectedCompletedOrderId } ?: completedOrders.firstOrNull()
+    val selectedCompletedOrder = displayedCompletedOrders.find { it.order.id == selectedCompletedOrderId } ?: displayedCompletedOrders.firstOrNull()
 
     Surface(
         modifier = modifier
@@ -164,8 +194,10 @@ fun CafeOpenOrdersScreen(
                         Text(
                             text = if (activeTab == CafeOrdersTab.OPEN_TABLES) {
                                 "${openOrders.size} meja sedang aktif"
+                            } else if (completedScope == CompletedShiftScope.CURRENT_SHIFT) {
+                                "${currentShiftCompletedOrders.size} pesanan shift ini • ${formatRupiah(currentShiftCompletedOrders.sumOf { it.order.total })}"
                             } else {
-                                "${completedOrders.size} pesanan lunas • ${formatRupiah(completedOrders.sumOf { it.order.total })}"
+                                "${pastShiftCompletedOrders.size} pesanan shift lalu • ${formatRupiah(pastShiftCompletedOrders.sumOf { it.order.total })}"
                             },
                             color = colors.inkMuted,
                             style = A3Theme.typography.bodySmall,
@@ -223,7 +255,7 @@ fun CafeOpenOrdersScreen(
                 ) {
                     CafeOrdersTab.values().forEach { tab ->
                         val isSelected = activeTab == tab
-                        val count = if (tab == CafeOrdersTab.OPEN_TABLES) openOrders.size else completedOrders.size
+                        val count = if (tab == CafeOrdersTab.OPEN_TABLES) openOrders.size else currentShiftCompletedOrders.size
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -311,7 +343,46 @@ fun CafeOpenOrdersScreen(
                     }
                 } else {
                     // TAB: RIWAYAT SELESAI
-                    if (completedOrders.isEmpty()) {
+                    // Sub-filter lingkup shift: Shift Berjalan (Default) vs Shift Lalu (F36)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFE5E7EB))
+                            .padding(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        CompletedShiftScope.values().forEach { scope ->
+                            val isScopeSelected = completedScope == scope
+                            val count = if (scope == CompletedShiftScope.CURRENT_SHIFT) {
+                                currentShiftCompletedOrders.size
+                            } else {
+                                pastShiftCompletedOrders.size
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(34.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (isScopeSelected) Color.White else Color.Transparent)
+                                    .clickable {
+                                        completedScope = scope
+                                        selectedCompletedOrderId = null
+                                        printStatusMessage = null
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${scope.title} ($count)",
+                                    color = if (isScopeSelected) colors.accent else colors.inkMuted,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (isScopeSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    if (displayedCompletedOrders.isEmpty()) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -340,13 +411,21 @@ fun CafeOpenOrdersScreen(
                                     )
                                 }
                                 Text(
-                                    text = "Belum Ada Transaksi Selesai",
+                                    text = if (completedScope == CompletedShiftScope.CURRENT_SHIFT) {
+                                        "Belum Ada Transaksi Selesai"
+                                    } else {
+                                        "Tidak Ada Riwayat Shift Lalu"
+                                    },
                                     color = colors.ink,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Seluruh transaksi yang telah dilunasi selama shift ini akan tersimpan dan tampil di sini.",
+                                    text = if (completedScope == CompletedShiftScope.CURRENT_SHIFT) {
+                                        "Seluruh transaksi yang telah dilunasi selama shift ini akan tersimpan dan tampil di sini."
+                                    } else {
+                                        "Tidak ditemukan riwayat transaksi dari shift sebelumnya yang tersimpan di tablet ini."
+                                    },
                                     color = colors.inkMuted,
                                     fontSize = 12.sp,
                                     textAlign = TextAlign.Center
@@ -360,7 +439,7 @@ fun CafeOpenOrdersScreen(
                                 .weight(1f),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            items(completedOrders, key = { it.order.id }) { item ->
+                            items(displayedCompletedOrders, key = { it.order.id }) { item ->
                                 val isSelected = item.order.id == selectedCompletedOrder?.order?.id
                                 val isOld = activeShift != null && (item.order.shiftId != null && item.order.shiftId != activeShift!!.id || item.order.createdAt < activeShift!!.openedAt)
                                 CompletedOrderCard(

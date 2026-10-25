@@ -251,27 +251,65 @@ fun CafeNavHost(
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
 
-            CafeOpenOrdersScreen(
-                viewModel = menuViewModel,
-                onNavigateToPos = {
-                    navController.navigate(CafeDestinations.KASIR) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
+            if (activeShift == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(A3Theme.colors.canvas)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(520.dp)
+                            .clip(A3Theme.shapes.cardShape)
+                            .background(A3Theme.colors.surface)
+                            .border(1.dp, A3Theme.colors.border, A3Theme.shapes.cardShape)
+                            .padding(32.dp)
+                    ) {
+                        A3EmptyState(
+                            title = "Shift Belum Dibuka",
+                            description = "Daftar pesanan aktif dan riwayat transaksi memerlukan shift kasir aktif.",
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.AccessTime,
+                                    contentDescription = null,
+                                    tint = A3Theme.colors.accent,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                            },
+                            action = {
+                                A3Button(
+                                    label = "Buka Shift Kasir Sekarang",
+                                    variant = ButtonVariant.PRIMARY,
+                                    onClick = {
+                                        navController.navigate(CafeDestinations.SHIFT) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        )
                     }
-                },
-                onProceedToPayment = { orderId, total ->
-                    if (activeShift == null) {
-                        navController.navigate(CafeDestinations.SHIFT) {
+                }
+            } else {
+                CafeOpenOrdersScreen(
+                    viewModel = menuViewModel,
+                    onNavigateToPos = {
+                        navController.navigate(CafeDestinations.KASIR) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
                             }
                             launchSingleTop = true
                             restoreState = true
                         }
-                    } else {
+                    },
+                    onProceedToPayment = { orderId, total ->
                         paymentViewModel.initializeWithOrder(
                             orderId = orderId,
                             totalAmount = total,
@@ -280,11 +318,62 @@ fun CafeNavHost(
                         )
                         navController.navigate(CafeDestinations.PEMBAYARAN)
                     }
-                }
-            )
+                )
+            }
         }
         composable(CafeDestinations.HABIS) {
-            CafeSoldOutScreen(viewModel = menuViewModel)
+            val shiftUiState by shiftViewModel.uiState.collectAsState()
+            val activeShift = shiftUiState.currentShift
+
+            if (activeShift == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(A3Theme.colors.canvas)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(520.dp)
+                            .clip(A3Theme.shapes.cardShape)
+                            .background(A3Theme.colors.surface)
+                            .border(1.dp, A3Theme.colors.border, A3Theme.shapes.cardShape)
+                            .padding(32.dp)
+                    ) {
+                        A3EmptyState(
+                            title = "Shift Belum Dibuka",
+                            description = "Pengaturan menu habis memerlukan shift kasir aktif untuk memperbarui ketersediaan menu.",
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.AccessTime,
+                                    contentDescription = null,
+                                    tint = A3Theme.colors.accent,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                            },
+                            action = {
+                                A3Button(
+                                    label = "Buka Shift Kasir Sekarang",
+                                    variant = ButtonVariant.PRIMARY,
+                                    onClick = {
+                                        navController.navigate(CafeDestinations.SHIFT) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        )
+                    }
+                }
+            } else {
+                CafeSoldOutScreen(viewModel = menuViewModel)
+            }
         }
         composable(CafeDestinations.KAS_KELUAR) {
             val shiftUiState by shiftViewModel.uiState.collectAsState()

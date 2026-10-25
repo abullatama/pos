@@ -1,106 +1,82 @@
-# HANDOFF: Perbaikan Alur Kas Seharusnya Tutup Shift & Eliminasi Menyeluruh Elemen Hardcoded
+# HANDOFF: Penguncian Navigasi Pasca Tutup Shift & Isolasi Riwayat Selesai Antar-Shift
 
-## 1. Ringkasan Pekerjaan Sesi Ini
+## 1. Ringkasan Masalah & Solusi yang Selesai Dikerjakan
 
-Sesi ini menyelesaikan dua investigasi besar dan optimalisasi arsitektur menyeluruh pada aplikasi **Cafe** dan **Laundry**:
+Sesi ini menyelesaikan dua investigasi mendalam dan perbaikan arsitektur POS Cafe sesuai *best practice* dan panduan UI/UX:
 
-1. **Perbaikan Masalah Penjualan Tunai Tidak Terbaca saat Tutup Shift:**
-   - **Akar Masalah:** `CafeMenuViewModel` sebelumnya meng-hardcode `shiftId = "shift-001"` pada pembuatan pesanan, dan `PaymentViewModel` tidak meneruskan `shiftId` ke transaksi database Room. Akibatnya, baris pembayaran tersimpan dengan ID shift statis `"shift-001"`, sementara kasir menutup shift dengan UUID riil, sehingga kueri penjualan tunai mengembalikan Rp 0 dan kas seharusnya dihitung keliru.
-   - **Solusi Tuntas:** 
-     * `CafeMenuViewModel` kini dinamis mengikat `activeShift.id` dan `cashierId`.
-     * `PaymentTransaction`, `PaymentUiState`, dan `PaymentRepository` kini meneruskan `shiftId` aktif.
-     * `OrderTransactionManager` memiliki fallback otomatis ke `shiftDao.getActiveShift()?.id` jika `shiftId` tidak dipasok secara eksplisit.
-     * `DefaultShiftRepository` menghitung penjualan kotor dan diskon riil dari database (mengeliminasi hardcoded `discount = 0L`).
-
-2. **Detail Arus Kas Sistem & Banner Pesanan Terbuka di Layar Tutup Shift (S10):**
-   - Menambahkan buku mutasi arus kas laci transparan pada kartu evaluasi selisih kas di Tahap 2:
-     * `(+) Kas Awal Modal`
-     * `(+) Penjualan Tunai`
-     * `(+) DP & Pelunasan Tunai`
-     * `(-) Kas Keluar (Petty Cash)`
-     * `(-) Refund Tunai`
-     * `(=) Total Kas Seharusnya (Sistem)` vs `Kas Dihitung (Fisik)` $\rightarrow$ `Selisih Kas`
-   - Menambahkan banner informatif kepatuhan **TUP-01 / C08**: *"Terdapat X pesanan cafe masih terbuka. Pesanan ini otomatis diserahterimakan ke shift kasir berikutnya."*
-
-3. **Eliminasi Menyeluruh Elemen Hardcoded Lintas Modul:**
-   - **Penomoran Nota Dinamis Cafe:** Mengimplementasikan `getNextDisplayNumber("C1-")` di `CafeOrderRepository` yang menghitung urutan harian di Room SQLite (`countOrdersForPrefixAndDate`) sesuai Rule 8 `AGENTS.md`, mengeliminasi nomor nota statis `#C1-0001`.
-   - **Sentralisasi Verifikasi PIN Manager & Owner:** Membangun `ManagerPinVerifier` di `:core:domain:security` dengan enkripsi hash SHA-256 + salt tetap, mengeliminasi pengecekan plaintext `"4444"` dan `"9999"` di 6 ViewModel (`ShiftViewModel`, `CloseShiftViewModel`, `CashOutViewModel`, `CafeMenuViewModel`, `LaundryOrdersViewModel`, dan `AdminViewModel`).
-   - **Profil Toko Dinamis pada Struk:** `CashOutScreen`, `CashOutViewModel`, dan `LaundryTagFormatter` kini menerima parameter dinamis `storeName`, `storeAddress`, dan `storePhone` dari konfigurasi NavHost masing-masing aplikasi (`AA COFFEESHOP` untuk Cafe dan `ATHIA LAUNDRY HOUSE` untuk Laundry).
-   - **Identitas Kasir Dinamis pada Laundry:** `LaundryOrderScreen` dan tag cucian kini mengikat nama dan ID kasir bertugas dari shift aktif.
-   - **Device ID Dinamis:** `registeredDeviceId` diangkat (*state hoisting*) di `MainActivity` dari `DeviceManager.getDeviceId()` untuk kedua aplikasi dan diteruskan ke `AdminViewModelFactory` dan `OrderTransactionManager` (outbox event membawa device ID tablet riil).
-   - **Label Pajak Bahasa Indonesia:** Mengubah label hardcoded `"Tax (10%)"` di `CafePosScreen` menjadi `"Pajak"`.
+### A. Masalah 1: Menu Navigasi Tetap Bisa Diakses Pasca Tutup Shift & Cetak Laporan Z
+* **Akar Masalah Utama:**
+  1. Pada `MainActivity.kt` (`app-cafe`), `cafeNavItems` sebelumnya dibungkus dalam `remember { ... }` tanpa kunci dependensi `isShiftActive` dan setiap `NavItem` di-hardcode `enabled = true`. Akibatnya, saat shift kasir ditutup di database dan `activeShift` berubah menjadi `null`, objek navigasi tidak pernah diperbarui dan tetap mengizinkan kasir mengklik seluruh menu.
+  2. Handler klik navigasi `onNavItemSelected` tidak memeriksa `isShiftActive`, melainkan hanya mengecek `item.enabled` (yang selalu `true`).
+  3. Rute `CafeDestinations.PESANAN` dan `CafeDestinations.HABIS` pada `CafeNavHost.kt` sama sekali tidak memiliki pelindung status shift (*shift guard*), sehingga kasir dapat membuka dan berinteraksi bebas dengan meja aktif dan menu habis walaupun shift telah ditutup.
+  4. Tidak ada pengarah otomatis (*auto-redirect*) kembali ke rute `SHIFT` saat `activeShift` menjadi `null`.
+* **Solusi Tuntas yang Diimplementasikan:**
+  1. Menjadikan `cafeNavItems` reaktif penuh dengan `remember(isShiftActive)`: menu **Kasir**, **Pesanan**, **Menu Habis**, dan **Kas Keluar** otomatis berstatus `enabled = isShiftActive` (tampil redup 30% dan *unclickable* di Navigation Rail saat shift belum buka / telah ditutup), sementara menu **Shift** tetap `enabled = true`.
+  2. Menambahkan validasi ganda pada `onNavItemSelected`: navigasi hanya dieksekusi jika `isShiftActive == true` atau item yang dipilih adalah `CafeDestinations.SHIFT`.
+  3. Menambahkan pengarah reaktif otomatis `LaunchedEffect(isShiftActive)`: jika `isShiftActive` berubah menjadi `false` dan posisi rute saat ini bukan `SHIFT` maupun `ADMIN`, sistem seketika mengembalikan kasir ke rute `CafeDestinations.SHIFT` (`OpenShiftScreen`).
+  4. Menambahkan komponen pelindung *Empty State* `A3EmptyState` ("Shift Belum Dibuka") pada rute `PESANAN` dan `HABIS` di `CafeNavHost.kt`.
 
 ---
 
-## 2. Modul & File yang Diperbarui
-
-### A. Modul `:core:domain`
-- **`ManagerPinVerifier.kt` (BARU):** Komponen terpusat otorisasi manajerial dan owner berbasis hash SHA-256 dan salt tetap (`DEFAULT_MANAGER_PIN_HASH` untuk seed dev `4444`).
-
-### B. Modul `:core:data`
-- **`OrderDao.kt`:** Menambahkan kueri `getDiscountTotalForShift` dan `getGrossSubtotalForShift` untuk kalkulasi akuntansi shift riil.
-- **`OrderTransactionManager.kt`:** 
-  * Resolusi shift cerdas pada `recordPayment` dan `createAndPayOrder`: `effectiveShiftId = shiftId ?: activeShift?.id ?: currentOrder.shiftId`.
-  * Resolusi device ID otomatis pada event outbox: `effectiveDeviceId = activeShift?.deviceId ?: deviceId`.
-- **`RoomOutboxTransactionTest.kt`:** Menambahkan unit test verifikasi `recordPayment without explicit shiftId links to active shift and counts toward cashSales`.
-
-### C. Modul `:core:printer`
-- **`LaundryTagFormatter.kt`:** Menambahkan properti `storeName` pada `LaundryTagData` dan menghapus teks toko hardcoded.
-
-### D. Modul `:feature:shift`
-- **`ShiftRepository.kt`:** Mengintegrasikan total diskon riil dan subtotal pesanan pada `ShiftSummary`.
-- **`CloseShiftScreen.kt`:** Menambahkan rincian arus kas sistem (buku mutasi laci K1) dan banner serah terima pesanan terbuka (TUP-01).
-- **`ShiftViewModel.kt`, `CloseShiftViewModel.kt`, `CashOutViewModel.kt`:** Menggunakan `ManagerPinVerifier.verify(pin)`.
-- **`CashOutScreen.kt` & `CashOutViewModel.kt`:** Mendukung `setStoreProfile(name, address, phone)` dinamis.
-
-### E. Modul `:feature:cafe`
-- **`CafeOrderRepository.kt` & `CafeMenuViewModel.kt`:** Penomoran nota harian dinamis `getNextDisplayNumber("C1-")`, pengikatan `activeShift.id` dan `cashierId`.
-- **`CafePosScreen.kt`:** Mengubah `"Tax (10%)"` menjadi `"Pajak"`.
-
-### F. Modul `:feature:laundry`
-- **`LaundryOrderViewModel.kt`, `LaundryOrderScreen.kt`, `LaundryOrdersViewModel.kt`, `LaundryScanViewModel.kt`:** Mendukung `cashierId`, `cashierName`, dan `storeName` dinamis pada pembuatan order dan tag cucian.
-- **`LaundryOrdersViewModel.kt`:** Menggunakan `ManagerPinVerifier.verify(pin)`.
-
-### G. Modul `:feature:payment`
-- **`PaymentRepository.kt` & `PaymentViewModel.kt`:** Meneruskan `shiftId` ke transaksi pembayaran database.
-
-### H. Modul `:feature:admin`
-- **`AdminViewModel.kt`, `AdminViewModelFactory.kt`, `AdminViewModelTest.kt`:** Menggunakan verifikasi hash SHA-256 `ownerPinHash` dan `deviceId` dinamis.
-
-### I. Modul `app-cafe` & `app-laundry`
-- **`MainActivity.kt` & `NavHost.kt`:** Hoisting `registeredDeviceId`, penerusan `shiftId` saat inisialisasi pembayaran, dan penyaluran profil toko ke layar kas keluar.
+### B. Masalah 2: Shift Lain Bisa Melihat Riwayat Pesanan Selesai Shift Sebelumnya
+* **Akar Masalah Utama:**
+  1. Kueri Room DAO `OrderDao.observeCompletedOrdersWithLines()` sebelumnya mengeksekusi `SELECT * FROM orders WHERE status IN ('paid', 'refunded', 'void', 'partial_refund') ORDER BY createdAt DESC` tanpa memfilter berdasarkan `shiftId`.
+  2. Kueri tanpa filter ini sengaja dipakai untuk mengakomodasi aturan bisnis **F36 (Refund Transaksi Lampau / COR-05)** agar kasir dapat mencari nota lama jika pelanggan datang komplain di hari berikutnya (maksimal Rp 100.000 dan maksimal 14 hari).
+  3. Namun dampaknya, seluruh transaksi dari shift-shift terdahulu bercampur baur ke dalam daftar transaksi shift aktif. Kasir yang baru membuka shift langsung melihat angka omzet puluhan nota dan jutaan rupiah di header (`completedOrders.sumOf { it.order.total }`), yang melanggar akuntabilitas dan privasi kasir.
+* **Solusi Tuntas yang Diimplementasikan:**
+  1. Menambahkan kueri Room terfilter pada `OrderDao.kt` dan diekspos di `OrderTransactionManager.kt`:
+     `observeCompletedOrdersWithLinesForShift(shiftId: String)`
+  2. Memastikan pembaruan status pembayaran pada `OrderTransactionManager.recordPayment` mengikat `shiftId` yang menerima uang ke tabel `orders` (`updatePaymentStatus(..., shiftId)`).
+  3. Mengelompokkan dan memisahkan data pada `CafeOpenOrdersScreen.kt` menggunakan sub-filter segmented pill:
+     - **`Shift Berjalan` (Default):** Hanya menampilkan transaksi yang dilunasi pada shift kasir saat ini. Angka ringkasan dan total omzet rupiah di header murni menghitung pencapaian shift kasir berjalan (`currentShiftCompletedOrders.sumOf { it.order.total }`). Indikator jumlah pada tab utama `Riwayat Selesai (N)` juga murni menghitung transaksi shift aktif.
+     - **`Shift Lalu (F36)`:** Menampilkan transaksi dari shift-shift sebelumnya lengkap dengan lencana `"Shift Lalu"`. Kasir tetap dapat mencari nota lama untuk kebutuhan cetak salinan struk (`PRT-05`) atau refund tunai terotorisasi PIN Manager sesuai ambang batas aturan F36 / COR-05.
 
 ---
 
-## 3. Status Terkini Proyek
+## 2. Modul & File yang Diubah
 
-- **Milestone M0 s/d M3:** 100% Selesai & Terverifikasi
-- **Milestone M4 (Laporan, WA, & Go-live):** 0 dari 4 (0%) — **Milestone Aktif Berikutnya**
-- **Kondisi Pengujian:**
-  - Seluruh unit test proyek (`:core:domain:test`, `:core:data:test`, `:core:printer:test`, `:core:auth:test`, `:core:sync:test`, `:core:ui:test`, `:feature:shift:test`, `:feature:payment:test`, `:feature:cafe:test`, `:feature:laundry:test`, `:feature:admin:test`) **100% LULUS (GREEN)**.
-  - Kompilasi build kedua APK (`:app-cafe:assembleDebug` dan `:app-laundry:assembleDebug`) **SUKSES**.
-
----
-
-## 4. Panduan untuk Memulai Sesi Baru (Milestone M4)
-
-Ketika sesi baru dimulai, lanjutkan ke implementasi fitur **Milestone M4**:
-
-1. **F42 (Tombol Kirim via WA Manual dan Status Notifikasi Laundry) — *Prioritas 1*:**
-   - Polling status notifikasi dari server (`none`, `queued`, `sent`, `failed`) via `GET /v1/orders/{id}/notification-status`.
-   - Tombol taktil hijau `#25D366` **"Kirim via WA"** untuk membuka `Intent` WhatsApp resmi dengan template pesan pelanggan.
-2. **F41 (Heartbeat dan Crashlytics) — *Prioritas 2*:**
-   - Telemetri periodik perangkat (`POST /v1/devices/heartbeat`) via coroutine foreground dan WorkManager cadangan.
-   - Crash reporting aman tanpa data sensitif pelanggan (OPS-01).
-3. **F43 (Uji Offline 24 Jam):**
-   - Verifikasi ketahanan offline di tablet Redmi Pad 2 (`needs_device: true`).
-4. **F44 (Paket Go-live):**
-   - SOP darurat kertas nota cadangan dan checklist peluncuran.
+1. **`app-cafe/src/main/java/id/tenang/kasir/cafe/MainActivity.kt`**
+   - Mengikat `isShiftActive` ke `remember(isShiftActive)` pada `cafeNavItems`.
+   - Menambahkan pengarah otomatis `LaunchedEffect(isShiftActive)`.
+   - Menambahkan penjagaan ganda pada `onNavItemSelected`.
+2. **`app-cafe/src/main/java/id/tenang/kasir/cafe/navigation/CafeNavHost.kt`**
+   - Menambahkan pelindung *Empty State* `A3EmptyState` pada rute `CafeDestinations.PESANAN` dan `CafeDestinations.HABIS` jika `activeShift == null`.
+3. **`core/data/src/main/kotlin/id/a3/core/data/local/dao/OrderDao.kt`**
+   - Menambahkan kueri `@Transaction observeCompletedOrdersWithLinesForShift(shiftId: String)`.
+   - Memperbarui `updatePaymentStatus` agar menyimpan `shiftId` pembayaran.
+4. **`core/data/src/main/kotlin/id/a3/core/data/repository/OrderTransactionManager.kt`**
+   - Menambahkan fungsi `observeCompletedOrdersForShift(shiftId: String)`.
+   - Mengirimkan `effectiveShiftId` ke `orderDao.updatePaymentStatus`.
+5. **`feature/cafe/src/main/kotlin/id/a3/feature/cafe/presentation/CafeMenuViewModel.kt`**
+   - Menyediakan `allCompletedOrders` dan `completedOrders` untuk kompatibilitas reaktif penuh.
+6. **`feature/cafe/src/main/kotlin/id/a3/feature/cafe/presentation/screen/CafeOpenOrdersScreen.kt`**
+   - Menambahkan enum `CompletedShiftScope (CURRENT_SHIFT, PAST_SHIFTS)`.
+   - Menambahkan sub-filter segmented pill `[Shift Berjalan] [Shift Lalu (F36)]`.
+   - Mengisolasi perhitungan omzet dan jumlah nota di header sesuai lingkup shift yang dipilih.
+   - Menyelaraskan teks *Empty State* untuk masing-masing kondisi.
 
 ---
 
-## 5. Kredensial & Pintasan Pengujian Tablet
-- **Pintasan Demo Awal:** Tombol *"Masuk Mode Demo / Lewati"* di layar registrasi perangkat.
-- **PIN Kasir (Shift & Transaksi):** `1234`
-- **PIN Manager (Otorisasi Khusus):** `4444` *(Diskon manual, void/refund, kas keluar > 50rb, cuci ulang, ambil belum lunas, tutup paksa)*.
-- **PIN Owner (Menu Admin S15):** `9999` *(Kios, Wi-Fi, uji cetak struk)*.
+## 3. Status Pengujian & Kualitas Kode
+
+- **Unit Test Room & Data:**
+  `./gradlew :core:data:testDebugUnitTest` $\rightarrow$ **100% LULUS**
+- **Unit Test Cafe & Domain:**
+  `./gradlew :feature:cafe:testDebugUnitTest` $\rightarrow$ **100% LULUS**
+- **Unit Test Shift:**
+  `./gradlew :feature:shift:testDebugUnitTest` $\rightarrow$ **100% LULUS**
+- **Kompilasi APK Debug:**
+  `./gradlew :app-cafe:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL**
+
+---
+
+## 4. Panduan untuk Sesi Baru
+
+- **Status Repositori:** Bersih, seluruh perubahan telah diuji dan siap diuji langsung pada perangkat tablet Redmi Pad 2.
+- **Langkah Verifikasi Manual di Hardware:**
+  1. Pasang APK debug terbaru `app-cafe-debug.apk` di tablet.
+  2. Lakukan buka shift di menu Shift dengan kas awal.
+  3. Lakukan beberapa transaksi pesanan di Kasir hingga lunas.
+  4. Buka menu Pesanan $\rightarrow$ tab *Riwayat Selesai*: pastikan muncul di tab *Shift Berjalan* dengan omzet akurat.
+  5. Buka menu Shift $\rightarrow$ lakukan Tutup Shift & Cetak Laporan Z.
+  6. Perhatikan setelah kembali ke layar Shift: pastikan menu Kasir, Pesanan, Menu Habis, dan Kas di Left Rail tampak redup dan tidak dapat diklik.

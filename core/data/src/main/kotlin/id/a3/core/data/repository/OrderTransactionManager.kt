@@ -58,6 +58,12 @@ class OrderTransactionManager(
     fun observeCompletedOrders(): Flow<List<OrderWithLines>> = orderDao.observeCompletedOrdersWithLines()
 
     /**
+     * Mengamati pesanan yang sudah selesai/lunas (completed orders) khusus untuk shift tertentu.
+     */
+    fun observeCompletedOrdersForShift(shiftId: String): Flow<List<OrderWithLines>> =
+        orderDao.observeCompletedOrdersWithLinesForShift(shiftId)
+
+    /**
      * Mengamati seluruh pesanan laundry (bisa difilter berdasarkan status).
      */
     fun observeLaundryOrders(statusFilter: String? = null): Flow<List<OrderWithLines>> {
@@ -398,14 +404,16 @@ class OrderTransactionManager(
                 if (isDp) "dp" else "paid"
             }
 
+            val activeShift = shiftDao.getActiveShift()
+            val effectiveShiftId = shiftId ?: activeShift?.id ?: currentOrder.shiftId
+
             orderDao.updatePaymentStatus(
                 orderId = orderId,
                 status = newStatus,
-                paidAmount = newPaidAmount
+                paidAmount = newPaidAmount,
+                shiftId = effectiveShiftId
             )
 
-            val activeShift = shiftDao.getActiveShift()
-            val effectiveShiftId = shiftId ?: activeShift?.id ?: currentOrder.shiftId
             val paymentEntity = PaymentEntity(
                 id = paymentId,
                 orderId = orderId,

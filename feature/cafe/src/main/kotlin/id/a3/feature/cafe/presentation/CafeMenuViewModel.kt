@@ -197,14 +197,16 @@ class CafeMenuViewModel(
         )
 
     /**
-     * Aliran data seluruh pesanan yang sudah lunas/selesai secara reaktif dari Room.
+     * Aliran data seluruh pesanan yang sudah lunas/selesai secara reaktif dari Room (seluruh riwayat lokal).
      */
-    val completedOrders: StateFlow<List<OrderWithLines>> = (transactionManager?.observeCompletedOrders() ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+    val allCompletedOrders: StateFlow<List<OrderWithLines>> = (transactionManager?.observeCompletedOrders() ?: kotlinx.coroutines.flow.flowOf(emptyList()))
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    val completedOrders: StateFlow<List<OrderWithLines>> = allCompletedOrders
 
     /**
      * Aliran data shift aktif saat ini untuk mendeteksi transaksi shift lampau (F36).
