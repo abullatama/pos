@@ -32,10 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.a3.core.ui.R
@@ -122,9 +119,8 @@ fun TopBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // 1. Kapsul Profil Kasir & Shift
+                // 1. Kapsul Profil Kasir
                 val staffName = cashierName ?: "Kasir"
-                val shiftText = shiftInfo ?: "Shift 1"
 
                 Surface(
                     shape = RoundedCornerShape(9999.dp),
@@ -153,16 +149,20 @@ fun TopBar(
                         }
 
                         Text(
-                            text = buildAnnotatedString {
-                                withStyle(SpanStyle(color = colors.ink, fontWeight = FontWeight.Bold)) {
-                                    append(staffName)
-                                }
-                                withStyle(SpanStyle(color = colors.inkMuted, fontWeight = FontWeight.Normal)) {
-                                    append(" · $shiftText")
-                                }
-                            },
+                            text = staffName,
+                            color = colors.ink,
+                            fontWeight = FontWeight.Bold,
                             fontSize = 12.sp
                         )
+
+                        if (!shiftInfo.isNullOrBlank()) {
+                            Text(
+                                text = shiftInfo,
+                                color = colors.inkMuted,
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
 

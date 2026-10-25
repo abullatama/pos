@@ -38,7 +38,6 @@ import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
-import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.CafeTheme
 import id.a3.feature.shift.ShiftViewModelFactory
 import id.a3.feature.shift.presentation.ShiftViewModel
@@ -189,7 +188,7 @@ class MainActivity : ComponentActivity() {
                         businessName = "AA COFFEESHOP",
                         monogramText = "AA",
                         cashierName = activeShift?.cashierName ?: "Kasir",
-                        shiftInfo = activeShift?.let { "Shift Aktif · Kas ${formatRupiah(it.openingCash)}" } ?: "Belum Buka Shift",
+                        shiftInfo = if (activeShift != null) null else "Belum Buka Shift",
                         syncStatus = SyncStatus.SYNCED,
                         pendingSyncCount = 0,
                         isPrinterConnected = printerStatus is PrinterStatus.Connected,
