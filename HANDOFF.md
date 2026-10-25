@@ -1,82 +1,81 @@
-# HANDOFF: Penguncian Navigasi Pasca Tutup Shift & Isolasi Riwayat Selesai Antar-Shift
+# HANDOFF: Isolasi Lifecycle CloseShiftViewModel per ShiftId & Reset State Wizard Tutup Shift
 
 ## 1. Ringkasan Masalah & Solusi yang Selesai Dikerjakan
 
-Sesi ini menyelesaikan dua investigasi mendalam dan perbaikan arsitektur POS Cafe sesuai *best practice* dan panduan UI/UX:
+Sesi ini menyelesaikan investigasi mendalam dan perbaikan arsitektur POS (Cafe & Laundry) terkait alur penutupan shift sesuai *best practice* Android/Compose:
 
-### A. Masalah 1: Menu Navigasi Tetap Bisa Diakses Pasca Tutup Shift & Cetak Laporan Z
+### Masalah: Tutup Shift Baru Langsung Berada di Tahap Terakhir (Alokasi & Laporan Z)
+* **Gejala:**
+  Setelah tutup shift berhasil dilakukan dan Laporan Z dicetak, kasir membuka shift baru. Ketika kasir langsung menekan tombol *"Tutup Shift Sekarang"*, layar langsung berada di tahap terakhir tutup shift yaitu **Tahap 3 (Alokasi & Laporan Z)** dengan data kas dari shift sebelumnya. Saat kasir menekan tombol *Kembali*, layar mundur ke Tahap 2, dan saat kembali lagi ke Tahap 1, sistem **mengunci layar dan mewajibkan PIN Manager** (karena aturan TUP-03: perlindungan hitung kas buta yang melarang kembali ke Tahap 1 tanpa PIN jika angka sistem sudah terlihat di Tahap 2).
 * **Akar Masalah Utama:**
-  1. Pada `MainActivity.kt` (`app-cafe`), `cafeNavItems` sebelumnya dibungkus dalam `remember { ... }` tanpa kunci dependensi `isShiftActive` dan setiap `NavItem` di-hardcode `enabled = true`. Akibatnya, saat shift kasir ditutup di database dan `activeShift` berubah menjadi `null`, objek navigasi tidak pernah diperbarui dan tetap mengizinkan kasir mengklik seluruh menu.
-  2. Handler klik navigasi `onNavItemSelected` tidak memeriksa `isShiftActive`, melainkan hanya mengecek `item.enabled` (yang selalu `true`).
-  3. Rute `CafeDestinations.PESANAN` dan `CafeDestinations.HABIS` pada `CafeNavHost.kt` sama sekali tidak memiliki pelindung status shift (*shift guard*), sehingga kasir dapat membuka dan berinteraksi bebas dengan meja aktif dan menu habis walaupun shift telah ditutup.
-  4. Tidak ada pengarah otomatis (*auto-redirect*) kembali ke rute `SHIFT` saat `activeShift` menjadi `null`.
-* **Solusi Tuntas yang Diimplementasikan:**
-  1. Menjadikan `cafeNavItems` reaktif penuh dengan `remember(isShiftActive)`: menu **Kasir**, **Pesanan**, **Menu Habis**, dan **Kas Keluar** otomatis berstatus `enabled = isShiftActive` (tampil redup 30% dan *unclickable* di Navigation Rail saat shift belum buka / telah ditutup), sementara menu **Shift** tetap `enabled = true`.
-  2. Menambahkan validasi ganda pada `onNavItemSelected`: navigasi hanya dieksekusi jika `isShiftActive == true` atau item yang dipilih adalah `CafeDestinations.SHIFT`.
-  3. Menambahkan pengarah reaktif otomatis `LaunchedEffect(isShiftActive)`: jika `isShiftActive` berubah menjadi `false` dan posisi rute saat ini bukan `SHIFT` maupun `ADMIN`, sistem seketika mengembalikan kasir ke rute `CafeDestinations.SHIFT` (`OpenShiftScreen`).
-  4. Menambahkan komponen pelindung *Empty State* `A3EmptyState` ("Shift Belum Dibuka") pada rute `PESANAN` dan `HABIS` di `CafeNavHost.kt`.
+  1. **Lifecycle Misalignment / Scoping Terlalu Luas di NavHost:**
+     Pada `CafeNavHost.kt` dan `LaundryNavHost.kt`, `CloseShiftViewModel` sebelumnya dideklarasikan sebagai single instance di tingkat teratas `NavHost`:
+     `val closeShiftViewModel: CloseShiftViewModel = viewModel(factory = ...)`
+     Karena di-scope ke root NavHost/Activity, ViewModel ini bertahan sepanjang masa hidup aplikasi dan tidak pernah di-destroy antar-shift.
+  2. **Kurangnya State Reset pada `initializeWithShift`:**
+     Ketika alur tutup shift dipanggil ulang untuk shift baru, `viewModel.initializeWithShift()` hanya memperbarui `summary` dan `checkedQrisPaymentIds`, tanpa mereset `currentStep` (tetap `STEP_3_ALLOCATION_AND_Z`), pecahan kas (`denominations`), kas dihitung (`countedCash`), alokasi kas laci/setor, maupun status penutupan (`isSuccess`).
+  3. **Deadlock Aturan Anti-Fraud TUP-03:**
+     Karena `currentStep` masih berada di Tahap 3, tombol kembali di Tahap 3 memanggil `backToStep2()`. Di Tahap 2, tombol kembali mewajibkan otorisasi PIN Manager via `openRecountPinDialog()`, sehingga kasir terperangkap dan tidak dapat mengisi hitungan kas buta untuk shift baru.
 
----
-
-### B. Masalah 2: Shift Lain Bisa Melihat Riwayat Pesanan Selesai Shift Sebelumnya
-* **Akar Masalah Utama:**
-  1. Kueri Room DAO `OrderDao.observeCompletedOrdersWithLines()` sebelumnya mengeksekusi `SELECT * FROM orders WHERE status IN ('paid', 'refunded', 'void', 'partial_refund') ORDER BY createdAt DESC` tanpa memfilter berdasarkan `shiftId`.
-  2. Kueri tanpa filter ini sengaja dipakai untuk mengakomodasi aturan bisnis **F36 (Refund Transaksi Lampau / COR-05)** agar kasir dapat mencari nota lama jika pelanggan datang komplain di hari berikutnya (maksimal Rp 100.000 dan maksimal 14 hari).
-  3. Namun dampaknya, seluruh transaksi dari shift-shift terdahulu bercampur baur ke dalam daftar transaksi shift aktif. Kasir yang baru membuka shift langsung melihat angka omzet puluhan nota dan jutaan rupiah di header (`completedOrders.sumOf { it.order.total }`), yang melanggar akuntabilitas dan privasi kasir.
 * **Solusi Tuntas yang Diimplementasikan:**
-  1. Menambahkan kueri Room terfilter pada `OrderDao.kt` dan diekspos di `OrderTransactionManager.kt`:
-     `observeCompletedOrdersWithLinesForShift(shiftId: String)`
-  2. Memastikan pembaruan status pembayaran pada `OrderTransactionManager.recordPayment` mengikat `shiftId` yang menerima uang ke tabel `orders` (`updatePaymentStatus(..., shiftId)`).
-  3. Mengelompokkan dan memisahkan data pada `CafeOpenOrdersScreen.kt` menggunakan sub-filter segmented pill:
-     - **`Shift Berjalan` (Default):** Hanya menampilkan transaksi yang dilunasi pada shift kasir saat ini. Angka ringkasan dan total omzet rupiah di header murni menghitung pencapaian shift kasir berjalan (`currentShiftCompletedOrders.sumOf { it.order.total }`). Indikator jumlah pada tab utama `Riwayat Selesai (N)` juga murni menghitung transaksi shift aktif.
-     - **`Shift Lalu (F36)`:** Menampilkan transaksi dari shift-shift sebelumnya lengkap dengan lencana `"Shift Lalu"`. Kasir tetap dapat mencari nota lama untuk kebutuhan cetak salinan struk (`PRT-05`) atau refund tunai terotorisasi PIN Manager sesuai ambang batas aturan F36 / COR-05.
+  1. **State Reset Penuh di `CloseShiftViewModel`:**
+     - Pada `initializeWithShift()`, seluruh state UI di-reset total ke `CloseShiftUiState(currentStep = CloseShiftStep.STEP_1_BLIND_COUNT, isLoading = true, ...)` dan counter lockout PIN di-reset ke 0.
+     - Menyediakan fungsi `resetState()` untuk membersihkan state kembali ke status default murni kapan saja.
+  2. **Isolasi Lifecycle ViewModel per ShiftId (`key = activeShift.shiftId`):**
+     - Menghapus deklarasi global `closeShiftViewModel` dari root `CafeNavHost` dan `LaundryNavHost`.
+     - Meng-scope pembuatan ViewModel tepat saat dialog tutup shift aktif dengan kunci ID shift unik:
+       `val closeShiftViewModel: CloseShiftViewModel = viewModel(key = activeShift.shiftId, factory = ShiftViewModelFactory(...))`
+       Setiap shift baru dijamin mendapatkan instance ViewModel baru yang terisolasi dari sisa data shift lama.
+     - Menambahkan pemanggilan `closeShiftViewModel.resetState()` pada callback `onCloseCompleted` dan `onCancel`.
+  3. **Pembersihan pada Tombol Batal di Step 1:**
+     - Tombol kembali pada Tahap 1 (`STEP_1_BLIND_COUNT`) di `CloseShiftScreen.kt` otomatis mengeksekusi `viewModel.resetState()` sebelum menutup form (`onCancel()`).
+  4. **Pengujian Unit Test Baru di `CloseShiftViewModelTest`:**
+     - `initializeWithShift resets state cleanly when closing subsequent shift`: Memastikan pergantian shift dari Tahap 3 langsung mereset wizard ke Tahap 1 dengan data bersih.
+     - `resetState restores fresh clean state`: Memvalidasi reset instan seluruh field state.
 
 ---
 
 ## 2. Modul & File yang Diubah
 
-1. **`app-cafe/src/main/java/id/tenang/kasir/cafe/MainActivity.kt`**
-   - Mengikat `isShiftActive` ke `remember(isShiftActive)` pada `cafeNavItems`.
-   - Menambahkan pengarah otomatis `LaunchedEffect(isShiftActive)`.
-   - Menambahkan penjagaan ganda pada `onNavItemSelected`.
-2. **`app-cafe/src/main/java/id/tenang/kasir/cafe/navigation/CafeNavHost.kt`**
-   - Menambahkan pelindung *Empty State* `A3EmptyState` pada rute `CafeDestinations.PESANAN` dan `CafeDestinations.HABIS` jika `activeShift == null`.
-3. **`core/data/src/main/kotlin/id/a3/core/data/local/dao/OrderDao.kt`**
-   - Menambahkan kueri `@Transaction observeCompletedOrdersWithLinesForShift(shiftId: String)`.
-   - Memperbarui `updatePaymentStatus` agar menyimpan `shiftId` pembayaran.
-4. **`core/data/src/main/kotlin/id/a3/core/data/repository/OrderTransactionManager.kt`**
-   - Menambahkan fungsi `observeCompletedOrdersForShift(shiftId: String)`.
-   - Mengirimkan `effectiveShiftId` ke `orderDao.updatePaymentStatus`.
-5. **`feature/cafe/src/main/kotlin/id/a3/feature/cafe/presentation/CafeMenuViewModel.kt`**
-   - Menyediakan `allCompletedOrders` dan `completedOrders` untuk kompatibilitas reaktif penuh.
-6. **`feature/cafe/src/main/kotlin/id/a3/feature/cafe/presentation/screen/CafeOpenOrdersScreen.kt`**
-   - Menambahkan enum `CompletedShiftScope (CURRENT_SHIFT, PAST_SHIFTS)`.
-   - Menambahkan sub-filter segmented pill `[Shift Berjalan] [Shift Lalu (F36)]`.
-   - Mengisolasi perhitungan omzet dan jumlah nota di header sesuai lingkup shift yang dipilih.
-   - Menyelaraskan teks *Empty State* untuk masing-masing kondisi.
+1. **`feature/shift/src/main/kotlin/id/a3/feature/shift/presentation/CloseShiftViewModel.kt`**
+   - Menambahkan fungsi `resetState()`.
+   - Mengubah `initializeWithShift()` agar secara tegas membuat `CloseShiftUiState` baru yang bersih di `CloseShiftStep.STEP_1_BLIND_COUNT` dan mereset lockout PIN.
+2. **`feature/shift/src/main/kotlin/id/a3/feature/shift/presentation/CloseShiftScreen.kt`**
+   - Tombol kembali pada `STEP_1_BLIND_COUNT` memanggil `viewModel.resetState()` sebelum memanggil `onCancel()`.
+3. **`app-cafe/src/main/java/id/tenang/kasir/cafe/navigation/CafeNavHost.kt`**
+   - Menghapus deklarasi root-level `closeShiftViewModel`.
+   - Menggunakan `viewModel(key = activeShift.shiftId, ...)` di dalam blok `isClosingShift && activeShift != null`.
+   - Menambahkan pemanggilan `closeShiftViewModel.resetState()` pada `onCloseCompleted` dan `onCancel`.
+4. **`app-laundry/src/main/java/id/tenang/kasir/laundry/navigation/LaundryNavHost.kt`**
+   - Menghapus deklarasi root-level `closeShiftViewModel`.
+   - Menggunakan `viewModel(key = activeShift.shiftId, ...)` di dalam blok `isClosingShift && activeShift != null`.
+   - Menambahkan pemanggilan `closeShiftViewModel.resetState()` pada `onCloseCompleted` dan `onCancel`.
+5. **`feature/shift/src/test/kotlin/id/a3/feature/shift/presentation/CloseShiftViewModelTest.kt`**
+   - Menambahkan unit test `initializeWithShift resets state cleanly when closing subsequent shift`.
+   - Menambahkan unit test `resetState restores fresh clean state`.
+6. **`progress.md`**
+   - Mencatat penyelesaian bug retensi state tutup shift dan isolasi lifecycle ViewModel.
 
 ---
 
 ## 3. Status Pengujian & Kualitas Kode
 
-- **Unit Test Room & Data:**
-  `./gradlew :core:data:testDebugUnitTest` $\rightarrow$ **100% LULUS**
-- **Unit Test Cafe & Domain:**
-  `./gradlew :feature:cafe:testDebugUnitTest` $\rightarrow$ **100% LULUS**
 - **Unit Test Shift:**
-  `./gradlew :feature:shift:testDebugUnitTest` $\rightarrow$ **100% LULUS**
-- **Kompilasi APK Debug:**
-  `./gradlew :app-cafe:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL**
+  `./gradlew :feature:shift:testDebugUnitTest` $\rightarrow$ **100% LULUS** (seluruh pengujian lulus, termasuk 2 pengujian baru).
+- **Global Test Suite & Build:**
+  `./gradlew test :app-cafe:assembleDebug :app-laundry:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL** (357 actionable tasks berhasil).
+- **Git Commit:**
+  `3738f64` (`fix(shift, cafe, laundry): isolasi lifecycle CloseShiftViewModel per shift dan reset state wizard tutup shift`).
 
 ---
 
 ## 4. Panduan untuk Sesi Baru
 
-- **Status Repositori:** Bersih, seluruh perubahan telah diuji dan siap diuji langsung pada perangkat tablet Redmi Pad 2.
-- **Langkah Verifikasi Manual di Hardware:**
-  1. Pasang APK debug terbaru `app-cafe-debug.apk` di tablet.
-  2. Lakukan buka shift di menu Shift dengan kas awal.
-  3. Lakukan beberapa transaksi pesanan di Kasir hingga lunas.
-  4. Buka menu Pesanan $\rightarrow$ tab *Riwayat Selesai*: pastikan muncul di tab *Shift Berjalan* dengan omzet akurat.
-  5. Buka menu Shift $\rightarrow$ lakukan Tutup Shift & Cetak Laporan Z.
-  6. Perhatikan setelah kembali ke layar Shift: pastikan menu Kasir, Pesanan, Menu Habis, dan Kas di Left Rail tampak redup dan tidak dapat diklik.
+- **Status Repositori:** Bersih (*clean working tree*), seluruh commit tersimpan di branch `master`.
+- **Langkah Verifikasi Manual di Hardware (Redmi Pad 2):**
+  1. Pasang APK debug terbaru `app-cafe-debug.apk` atau `app-laundry-debug.apk`.
+  2. Buka shift (Shift A) dengan modal kas awal (misal Rp 200.000).
+  3. Lakukan tutup shift hingga selesai di Tahap 3 dan cetak Laporan Z.
+  4. Buka shift baru (Shift B) dengan modal kas awal.
+  5. Langsung tekan tombol *"Tutup Shift Sekarang"*.
+  6. **Hasil yang diharapkan:** Layar langsung terbuka di **Tahap 1 (Hitung Kas Buta)** dengan seluruh pecahan kosong (Rp 0), bukan di Tahap 3. Kasir dapat mengisi kas buta atau menekan tombol Kembali tanpa hambatan PIN Manager.
