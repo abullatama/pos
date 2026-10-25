@@ -13,6 +13,7 @@ import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.AddCircle
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -22,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -39,6 +41,8 @@ import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.LaundryTheme
+import id.a3.feature.shift.ShiftViewModelFactory
+import id.a3.feature.shift.presentation.ShiftViewModel
 import id.tenang.kasir.laundry.navigation.LaundryDestinations
 import id.tenang.kasir.laundry.navigation.LaundryNavHost
 import kotlinx.coroutines.Dispatchers
@@ -48,13 +52,6 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var deviceManager: DeviceManager
     private lateinit var printerService: DefaultPrinterService
-
-    private val laundryNavItems = listOf(
-        NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home),
-        NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle),
-        NavItem(LaundryDestinations.CUCIAN, "Cucian", Icons.Outlined.Inventory2),
-        NavItem(LaundryDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime)
-    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -159,20 +156,34 @@ class MainActivity : ComponentActivity() {
                 } else {
                     val navController = rememberNavController()
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
-                    val currentRoute = navBackStackEntry?.destination?.route ?: LaundryDestinations.BERANDA
 
-                    val activeShift by remember {
-                        val db = AppDatabase.build(this@MainActivity)
-                        db.shiftDao().observeActiveShift()
-                    }.collectAsState(initial = null)
+                    val shiftViewModel: ShiftViewModel = viewModel(
+                        factory = ShiftViewModelFactory(this@MainActivity, printerService)
+                    )
+                    val shiftUiState by shiftViewModel.uiState.collectAsState()
+                    val activeShift = shiftUiState.currentShift
+                    val isShiftActive = activeShift != null
 
-                    val selectedIndex = remember(currentRoute) {
+                    val laundryNavItems = remember(isShiftActive) {
+                        listOf(
+                            NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home, enabled = isShiftActive),
+                            NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle, enabled = isShiftActive),
+                            NavItem(LaundryDestinations.CUCIAN, "Cucian", Icons.Outlined.Inventory2, enabled = isShiftActive),
+                            NavItem(LaundryDestinations.KAS_KELUAR, "Kas Keluar", Icons.Outlined.Payments, enabled = isShiftActive),
+                            NavItem(LaundryDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime, enabled = true)
+                        )
+                    }
+
+                    val defaultStartRoute = if (isShiftActive) LaundryDestinations.BERANDA else LaundryDestinations.SHIFT
+                    val currentRoute = navBackStackEntry?.destination?.route ?: defaultStartRoute
+
+                    val selectedIndex = remember(currentRoute, laundryNavItems) {
                         val idx = laundryNavItems.indexOfFirst { it.id == currentRoute }
                         if (idx >= 0) idx else 0
                     }
 
-                    val isFocusFlowActive = remember(currentRoute, activeShift) {
-                        currentRoute == LaundryDestinations.PEMBAYARAN || (currentRoute == LaundryDestinations.SHIFT && activeShift == null)
+                    val isFocusFlowActive = remember(currentRoute) {
+                        currentRoute == LaundryDestinations.PEMBAYARAN
                     }
 
                     AppShell(
@@ -197,18 +208,15 @@ class MainActivity : ComponentActivity() {
                         navItems = laundryNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
-                            val rawTarget = laundryNavItems[index].id
-                            val targetRoute = if (rawTarget == LaundryDestinations.ORDER && activeShift == null) {
-                                LaundryDestinations.SHIFT
-                            } else {
-                                rawTarget
-                            }
-                            navController.navigate(targetRoute) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            val item = laundryNavItems[index]
+                            if (item.enabled) {
+                                navController.navigate(item.id) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
                         },
                         isFocusFlowActive = isFocusFlowActive
@@ -216,7 +224,9 @@ class MainActivity : ComponentActivity() {
                         LaundryNavHost(
                             navController = navController,
                             paddingValues = paddingValues,
-                            printerService = printerService
+                            printerService = printerService,
+                            shiftViewModel = shiftViewModel,
+                            startDestination = defaultStartRoute
                         )
                     }
                 }

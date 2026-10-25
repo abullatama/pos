@@ -1,87 +1,72 @@
-# HANDOFF: Penyempurnaan Alur Laundry (9 Poin) & Penerapan Gerbang Shift Cerdas (Opsi 1)
+# HANDOFF: Pemisahan Kas Keluar, Eliminasi Triplikasi Admin, & Penyatuan State Shift (SSOT)
 
 ## 1. Tujuan Sesi yang Telah Selesai
-Menuntaskan **9 poin evaluasi & penyempurnaan alur kasir laundry** serta menerapkan **Gerbang Shift Cerdas (Opsi 1)** pada kedua aplikasi (`app-laundry` dan `app-cafe`):
+Menuntaskan **penyempurnaan arsitektur antarmuka & alur shift** berdasarkan temuan pengujian langsung pada tablet Redmi Pad 2:
 
-1. **Pemisahan Status Pembayaran vs Status Tahapan Fisik Cucian:**
-   - Memperbaiki bug kritis di mana pembayaran lunas pesanan laundry sebelumnya menimpa `order.status` menjadi `"paid"`, yang menyebabkannya hilang dari tab filter tahapan cucian (Diterima, Diproses, Siap).
-   - Di `OrderTransactionManager.recordPayment()`, pesanan laundry (`orderType == "laundry"`) kini mempertahankan status fisiknya (`open`, `processing`, `ready`, atau `picked_up`) dan hanya memperbarui `paidAmount`.
-   - Pesanan yang dibayar lunas di muka tetap berada di tab tahapan cucian yang sesuai dengan indikator status Lunas (Sisa Rp 0).
+1. **Pemisahan Kas Keluar Operasional (S12) Menjadi Menu & Halaman Mandiri:**
+   - Kas keluar operasional (*petty cash* laci kasir—seperti es batu, gas, kemasan) dipisahkan dari halaman Shift.
+   - Menambahkan item navigasi mandiri **"Kas Keluar"** (`Icons.Outlined.Payments`) pada Left Navigation Rail di kedua aplikasi (`app-cafe` dan `app-laundry`).
+   - Halaman `CashOutScreen` berdiri sendiri dengan keypad 3x4 taktil, tombol preset cepat (+10k, +20k, +50k, +100k), chip kategori, foto nota kamera, proteksi PIN Manager `4444` untuk nominal $>$ Rp 50.000, dan cetak bukti kas keluar 58 mm.
+   - Tombol kas keluar pada `ActiveShiftCard` dihilangkan agar halaman Shift murni dan fokus pada pembukaan & penutupan shift.
 
-2. **Nomor Nota Berkelanjutan & Anti-Bentrok Antar-Hari:**
-   - Mengganti penghitungan nomor urut yang sebelumnya mereset ke `0001` setiap hari dengan penghitungan total pesanan berkelanjutan per tablet (`countTotalOrdersForPrefix`), sehingga urutan berjalan kontinu (`L1-0001`, `L1-0002`, `L1-0003`, dst) tanpa risiko bentrok antar-hari di rak pakaian.
-   - Menambahkan urutan `ORDER BY createdAt DESC LIMIT 1` pada kueri Room `getOrderByDisplayNumber` dan `getOrderWithLinesByDisplayNumber` sehingga pencarian nota selalu mengembalikan pesanan terbaru yang aktif.
+2. **Eliminasi Triplikasi Menu Admin & Penghapusan Menu "Lainnya":**
+   - Menghapus menu ambigu `"Lainnya"` dari daftar menu tengah Left Navigation Rail di kedua aplikasi.
+   - Menghilangkan kapsul tombol Admin dari TopBar di `AppShell.kt`, mengembalikan TopBar murni sebagai bilah telemetri & status (Logo, Tanggal, Kasir/Shift, Sync status, Printer status).
+   - Menetapkan **satu-satunya akses Admin** di posisi standar emas industri POS internasional: tombol ikon gerigi di **dasar kiri bawah Left Navigation Rail** (`A3_NAV_RAIL_ADMIN_TAG`).
 
-3. **Input Pencarian Nomor Nota Ramah Angka Murni:**
-   - Mengubah keyboard pencarian nota di Layar Cucian menjadi angka murni (`KeyboardType.Number`).
-   - Menambahkan kueri pencarian fleksibel `findLaundryOrderFlexible`: kasir cukup mengetik angka saja (misal `12` atau `0012`), sistem secara otomatis mencocokkan nota `L1-0012`. Kasir tidak perlu repot mengetik huruf `"L"` dan tanda `"-"`.
+3. **Penyatuan Sumber Data Shift (Single Source of Truth / SSOT via Hoisting):**
+   - Mengatasi *dual source of truth* di mana `MainActivity` sebelumnya membuat instance query Room terpisah yang lambat terbarui dibanding `ShiftViewModel` di dalam NavHost.
+   - Meng-*hoist* `ShiftViewModel` ke tingkat `MainActivity` dan meneruskannya ke `CafeNavHost` serta `LaundryNavHost`.
+   - **Hasil:** TopBar dan seluruh menu navigasi membaca `StateFlow` yang sama secara *real-time*. Begitu kasir mengetuk *"Buka Shift Sekarang"*, TopBar seketika terbarui menampilkan: `Nama Kasir · Shift Aktif · Kas Rp 200.000` dan seluruh tombol navigasi seketika aktif tanpa delay.
 
-4. **Penyederhanaan Navigasi & Aksi Status Cucian Langsung (L06):**
-   - Menghapus item navigasi `"Scan QR"` dari Left Navigation Rail agar navigasi lebih ringkas dan fokus.
-   - Menambahkan tombol aksi status langsung pada panel rincian pakaian di Layar Cucian (`LaundryOrdersScreen` / L06):
-     * Status **Diterima** $\rightarrow$ Tombol **"Mulai Cuci (Tandai Diproses)"**
-     * Status **Diproses** $\rightarrow$ Tombol **"Selesai Cuci (Tandai Siap Diambil)"**
-     * Status **Siap** $\rightarrow$ Tombol **"Ambil Cucian"** & **"Cuci Ulang"**
-   - Menambahkan tombol pintasan kamera **"Pindai Tag QR"** di samping kolom pencarian nota untuk pemindaian instan tanpa berpindah menu.
+4. **Gerbang Status Menu Navigasi (`enabled = false` Sebelum Buka Shift):**
+   - Memperluas `NavItem` di `:core:ui` dengan properti `enabled: Boolean = true`.
+   - Pada komponen `A3NavigationRail`, item dengan `enabled = false` otomatis tampil redup (alpha 30%), berlatar transparan, dan tidak dapat diklik (`clickable(enabled = false)`).
+   - Saat shift belum dibuka, menu transaksi (Kasir, Pesanan, Menu Habis, Kas Keluar pada Cafe; Beranda, Order Baru, Cucian, Kas Keluar pada Laundry) otomatis berstatus `enabled = false`, membimbing kasir langsung ke alur Buka Shift (S04).
 
-5. **Standardisasi Label Navigasi Menu Shift:**
-   - Mengubah label menu ke-4 di Left Rail `app-laundry` dari sebelumnya `"Lainnya"` menjadi **"Shift"** dengan ikon jam (`Icons.Outlined.AccessTime`), seragam dengan `app-cafe` dan standar POS.
+5. **Penjagaan Spatial Continuity (Sidebar Navigasi Tetap Tampil di Layar Shift):**
+   - Memperbaiki aturan `isFocusFlowActive`: mode layar penuh fokus yang menyembunyikan bilah navigasi kiri dibatasi **HANYA** saat alur pembayaran penuh (`PEMBAYARAN`) aktif.
+   - Bilah navigasi samping kiri (`A3NavigationRail`) **tetap terlihat kokoh** di layar Shift, sehingga kasir tidak lagi kehilangan orientasi navigasi.
 
-6. **Pembersihan Teks Jargon & Tanda Kurung Berlebih:**
-   - Menghapus seluruh kode dokumen teknis internal developer seperti `(LDR-01)`, `(LDR-03)`, `(LDR-12)`, `(COR-07)`, `(L09 / F23)` dari antarmuka kasir.
-   - Menyederhanakan label: `Kiloan (Kg)` $\rightarrow$ `Kiloan`, `Satuan (Pcs)` $\rightarrow$ `Satuan`, `Ambil Cucian (Penyerahan)` $\rightarrow$ `Ambil Cucian`, `Catatan Khusus (Noda / Kerusakan / Instruksi)` $\rightarrow$ `Catatan Khusus`.
-
-7. **Penerapan Gerbang Shift Cerdas (Opsi 1):**
-   - **Laundry POS (`app-laundry`):**
-     * Layar Order Baru (L03) menampilkan gerbang visual elegan `A3EmptyState` jika shift kasir belum dibuka (`activeShift == null`), membimbing kasir langsung ke alur Buka Shift (S04) sebelum mencatat order baru.
-     * Navigasi Left Rail dan tombol "+ Order Baru" di Beranda otomatis mengarahkan ke Shift jika belum ada shift aktif.
-     * Layar Cucian (L05/L06) tetap terbuka penuh bagi staf cuci untuk memajukan status pakaian tanpa shift, namun tombol **"Terima Pelunasan Sisa"** diproteksi dengan dialog Buka Shift jika belum ada shift aktif.
-   - **Cafe POS (`app-cafe`):**
-     * Layar Kasir POS (C01) terkunci rapi dengan `A3EmptyState` gerbang Buka Shift jika shift belum dibuka.
-     * Tombol proses pembayaran pada Layar Pesanan (C04) diproteksi validasi shift aktif.
-     * Navigasi Left Rail mengarahkan kasir langsung ke Buka Shift jika shift belum aktif.
+6. **Singleton AppDatabase:**
+   - Memastikan `AppDatabase.build(context)` menggunakan pola singleton thread-safe (`@Volatile private var INSTANCE`) sehingga seluruh modul dan worker berbagi koneksi dan `InvalidationTracker` Room yang sama.
 
 ---
 
-## 2. Yang Sudah Selesai di Sesi Ini
+## 2. Rincian Modul & Kode yang Diubah
 
-### A. Modul `:core:data`
-- **`OrderTransactionManager.kt`:**
-  * Logika `recordPayment` diperbarui: hanya pesanan cafe yang mengubah status ke `paid`/`dp`, sedangkan pesanan laundry mempertahankan status fisik aslinya.
-- **`OrderDao.kt`:**
-  * Penambahan kueri `countTotalOrdersForPrefix(prefix)` untuk penomoran berkelanjutan.
-  * Penambahan `ORDER BY createdAt DESC LIMIT 1` pada kueri pengambilan berdasarkan nomor nota.
-  * Penambahan kueri `findLaundryOrderFlexible(query)` untuk pencarian angka murni.
-- **`RoomOutboxTransactionTest.kt`:**
-  * Penambahan unit test `recordPayment on laundry order updates paidAmount and preserves physical status` (lulus 100%).
+### A. Modul `:core:ui`
+- **`FloatingBottomBar.kt` & `A3NavigationRail.kt`:**
+  * Properti `NavItem` memiliki `enabled: Boolean = true`.
+  * Visualisasi item nonaktif (alpha 30%, tanpa background aktif, interaksi klik dimatikan).
+- **`AppShell.kt`:**
+  * Menghapus pemanggilan `onAdminClick` pada `TopBar` (diserahkan sepenuhnya ke jangkar bawah `A3NavigationRail`).
 
-### B. Modul `:feature:laundry`
-- **`DefaultLaundryOrderRepository.kt`:**
-  * Integrasi `countTotalOrdersForPrefix` pada `getNextDisplayNumber`.
-  * Implementasi `findOrderByNumberFlexible`.
-- **`LaundryOrdersViewModel.kt`:**
-  * Penambahan `advanceStatusToProcessing()` dan `advanceStatusToReady()`.
-  * Integrasi pencarian reaktif fleksibel dan pencarian via scan payload.
-- **`LaundryOrdersScreen.kt` (L05 & L06):**
-  * Penambahan bilah pencarian nota angka murni & tombol kamera Scan QR di panel kiri.
-  * Penambahan tombol aksi status langsung di panel rincian pesanan.
-  * Proteksi dialog Buka Shift pada tombol "Terima Pelunasan Sisa".
-  * Pembersihan seluruh teks istilah teknis dalam kurung.
-- **`LaundryOrderScreen.kt` (L03):**
-  * Penambahan gerbang visual `A3EmptyState` jika `hasActiveShift == false`.
-  * Dialog konfirmasi buka shift saat kasir mencoba pembayaran di kasir tanpa shift aktif.
-- **Unit Test Suite `:feature:laundry`:**
-  * Penambahan pengujian `advanceStatusToProcessing and advanceStatusToReady transitions status and updates messages` dan `onSearchQueryChange filters and selects order with pure numeric input` pada `LaundryOrdersViewModelTest` (28/28 tests lulus 100%).
+### B. Modul `:core:data`
+- **`AppDatabase.kt`:**
+  * Singleton thread-safe `INSTANCE` pada `AppDatabase.build(context)`.
 
-### C. Modul Cangkang (`app-laundry` & `app-cafe`)
-- **`app-laundry/MainActivity.kt` & `LaundryNavHost.kt`:**
-  * Navigasi Left Rail disederhanakan (4 item: Beranda, Order Baru, Cucian, Shift).
-  * Pengalihan rute pintar ke `SHIFT` jika kasir mengakses Order Baru saat shift belum buka.
-  * Penerusan `hasActiveShift` dan `shiftId` aktif ke layar pesanan dan pembayaran.
-- **`app-cafe/MainActivity.kt` & `CafeNavHost.kt`:**
-  * Gerbang `A3EmptyState` pada rute `KASIR` saat shift belum dibuka.
-  * Pengalihan rute pintar ke `SHIFT` pada Left Rail.
-  * Proteksi pembayaran pesanan terbuka saat belum buka shift.
+### C. Modul `app-cafe`
+- **`CafeNavHost.kt`:**
+  * Menambahkan rute `CafeDestinations.KAS_KELUAR` dan `CafeDestinations.ADMIN` (menggantikan `LAINNYA`).
+  * `CafeNavHost` menerima `shiftViewModel` yang di-hoist dari `MainActivity`.
+  * Membersihkan `ActiveShiftCard` dari tombol kas keluar.
+- **`MainActivity.kt`:**
+  * `ShiftViewModel` di-hoist di tingkat Activity sebagai SSOT.
+  * 5 menu Left Rail: Kasir, Pesanan, Menu Habis, Kas Keluar, Shift.
+  * Status `enabled` menu transaksi dikaitkan langsung ke `isShiftActive`.
+  * `isFocusFlowActive` disederhanakan: hanya aktif pada `PEMBAYARAN`.
+
+### D. Modul `app-laundry`
+- **`LaundryNavHost.kt`:**
+  * Menambahkan rute `LaundryDestinations.KAS_KELUAR`.
+  * `LaundryNavHost` menerima `shiftViewModel` yang di-hoist dari `MainActivity`.
+  * Membersihkan `ActiveShiftCard` dari tombol kas keluar.
+- **`MainActivity.kt`:**
+  * `ShiftViewModel` di-hoist di tingkat Activity sebagai SSOT.
+  * 5 menu Left Rail: Beranda, Order Baru, Cucian, Kas Keluar, Shift.
+  * Status `enabled` menu transaksi dikaitkan langsung ke `isShiftActive`.
+  * `isFocusFlowActive` hanya aktif pada `PEMBAYARAN`.
 
 ---
 
@@ -93,46 +78,29 @@ Menuntaskan **9 poin evaluasi & penyempurnaan alur kasir laundry** serta menerap
 - **Milestone M3 (Shift, Kas, & Kios Admin):** 11 dari 11 tuntas (100%)
 - **Milestone M4 (Laporan, WA, & Go-live):** 0 dari 4 (0%) — **Milestone Aktif**
 - **Total Fitur Selesai:** **40 dari 44 fitur tuntas (90,9%)**.
-- **Kondisi Kode:** Seluruh unit test proyek lulus 100%, kompilasi kedua aplikasi (`app-laundry` dan `app-cafe`) berhasil tuntas tanpa error.
+- **Kondisi Pengujian:** Seluruh unit test proyek (`:core:ui:test`, `:feature:*:test`, `:core:data:test`, dll) lulus 100%. Kompilasi kedua APK debug berhasil tuntas dan terpasang di perangkat fisik Redmi Pad 2.
+- **Kondisi Layar Tablet Saat Ini:** Berada dalam status **Pristine Reset (AA Coffeeshop)**, menampilkan form *Buka Shift Baru* (Kasir Budi Santoso, Kas Awal Rp 200.000) siap untuk uji transaksi.
 
 ---
 
-## 4. Langkah untuk Sesi Baru (Memulai Milestone Terakhir M4)
+## 4. Panduan untuk Sesi Baru (Memulai Milestone M4)
 
-Sisa 4 fitur penutup proyek pada **Milestone M4**:
-1. **F42 (Tombol Kirim via WA Manual dan Status Notifikasi) — *Rekomendasi Utama Sesi Berikutnya*:**
-   - Fitur spesifik laundry: tombol kirim WA manual (hijau taktil `#25D366`) dan tampilan chip status notifikasi server (`none`, `queued`, `sent`, `failed`) pada kartu rincian cucian (L06 / LDR-09).
-   - Menghubungkan client endpoint `GET /v1/orders/{id}/notification-status`.
-2. **F41 (Heartbeat dan Crashlytics):**
-   - Telemetri status perangkat berkala (`POST /v1/devices/heartbeat`) dan integrasi pelaporan crash/galat tanpa data sensitif pelanggan (OPS-01, OPS-02).
+Ketika memulai sesi berikutnya, lanjutkan ke **Milestone M4** dengan urutan fitur:
+1. **F42 (Tombol Kirim via WA Manual dan Status Notifikasi Laundry) — *Prioritas 1*:**
+   * Menampilkan chip status notifikasi dari server (`none`, `queued`, `sent`, `failed`) via polling `GET /v1/orders/{id}/notification-status`.
+   * Tombol hijau taktil `#25D366` **"Kirim via WA"** untuk membuka `Intent` WhatsApp resmi dengan teks template transaksi (nama pelanggan, nota, total/sisa, estimasi).
+2. **F41 (Heartbeat dan Crashlytics) — *Prioritas 2*:**
+   * Telemetri periodik perangkat (`POST /v1/devices/heartbeat`) via foreground coroutine & WorkManager cadangan.
+   * Crash logger lokal aman tanpa data sensitif.
 3. **F43 (Uji Offline 24 Jam):**
-   - Pengujian operasional offline 24 jam penuh pada tablet fisik Redmi Pad 2 (`needs_device: true`).
-4. **F44 (Paket Go-live: Nota Kertas Cadangan dan SOP Darurat):**
-   - Dokumen SOP darurat satu halaman saat tablet/printer/internet mati dan template buku nota manual bernomor.
+   * Verifikasi hardware di Redmi Pad 2 (`needs_device: true`).
+4. **F44 (Paket Go-live):**
+   * SOP darurat kasir dan template nota kertas cadangan.
 
 ---
 
-## 5. File Referensi Penting untuk Sesi Baru
-
-- `HANDOFF.md` (dokumen ini)
-- `feature_list.json` (baris 404–445 untuk Milestone M4)
-- `docs/milestones/M4-laporan-golive.md`
-- `docs/spec/13-whatsapp-lewat-fonnte-dan-penjadwal.md`
-- `docs/spec/16-infrastruktur-deployment-backup-dan-pema.md`
-- `docs/spec/17-skenario-uji-dan-kriteria-lulus.md`
-
----
-
-## 6. Panduan Pengujian Hardware & Demo
-
-Untuk pengujian fisik di perangkat Redmi Pad 2 dan printer iWare C58BT:
-- **Perintah Pasang APK:**
-  ```bash
-  ./gradlew :app-cafe:installDebug
-  ./gradlew :app-laundry:installDebug
-  ```
-- **Kredensial & PIN Sistem:**
-  * **Pintasan Demo:** Tombol *"Masuk Mode Demo / Lewati"* di layar pendaftaran perangkat awal.
-  * **PIN Kasir (Shift & Transaksi):** `1234`
-  * **PIN Manager (Otorisasi Khusus):** `4444` (Diskon manual, void/refund, kas keluar > 50rb, cuci ulang, ambil belum lunas, tutup paksa shift. Proteksi: salah 3x lockout 5 menit).
-  * **PIN Owner (Menu Admin S15):** `9999` (Uji cetak ESC/POS 58 mm, buka Wi-Fi, kunci/lepas mode kios LockTask, pasang APK update. Proteksi: salah 3x lockout 5 menit).
+## 5. Kredensial & Pintasan Pengujian Tablet
+- **Pintasan Demo Awal:** Tombol *"Masuk Mode Demo / Lewati"* di layar registrasi perangkat.
+- **PIN Kasir (Shift & Transaksi):** `1234`
+- **PIN Manager (Otorisasi Khusus):** `4444` *(Diskon manual, void/refund, kas keluar > 50rb, cuci ulang, ambil belum lunas, tutup paksa)*.
+- **PIN Owner (Menu Admin S15):** `9999` *(Kios, Wi-Fi, uji cetak struk)*.

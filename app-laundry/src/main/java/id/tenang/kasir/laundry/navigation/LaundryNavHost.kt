@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -46,6 +47,7 @@ import androidx.navigation.compose.composable
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.printer.PrinterService
 import id.a3.core.ui.component.A3Button
+import id.a3.core.ui.component.A3EmptyState
 import id.a3.core.ui.component.ButtonVariant
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
@@ -78,6 +80,7 @@ object LaundryDestinations {
     const val BERANDA = "beranda"
     const val ORDER = "order"
     const val CUCIAN = "cucian"
+    const val KAS_KELUAR = "kas_keluar"
     const val SCAN = "scan"
     const val SHIFT = "shift"
     const val LAINNYA = "shift"
@@ -90,7 +93,11 @@ fun LaundryNavHost(
     navController: NavHostController,
     paddingValues: PaddingValues,
     modifier: Modifier = Modifier,
-    printerService: PrinterService? = null
+    printerService: PrinterService? = null,
+    shiftViewModel: ShiftViewModel = viewModel(
+        factory = ShiftViewModelFactory(LocalContext.current, printerService)
+    ),
+    startDestination: String = LaundryDestinations.BERANDA
 ) {
     val context = LocalContext.current
 
@@ -108,9 +115,6 @@ fun LaundryNavHost(
     )
     val paymentViewModel: PaymentViewModel = viewModel(
         factory = PaymentViewModelFactory(context, printerService)
-    )
-    val shiftViewModel: ShiftViewModel = viewModel(
-        factory = ShiftViewModelFactory(context, printerService)
     )
     val closeShiftViewModel: CloseShiftViewModel = viewModel(
         factory = ShiftViewModelFactory(context, printerService)
@@ -132,7 +136,7 @@ fun LaundryNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = LaundryDestinations.BERANDA,
+        startDestination = startDestination,
         enterTransition = {
             if (targetState.destination.route == LaundryDestinations.PEMBAYARAN) {
                 slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(220)) + fadeIn(animationSpec = tween(220))
@@ -291,18 +295,75 @@ fun LaundryNavHost(
             LaundryScanScreen(viewModel = scanViewModel)
         }
 
-        composable(LaundryDestinations.LAINNYA) {
+        composable(LaundryDestinations.KAS_KELUAR) {
+            val shiftUiState by shiftViewModel.uiState.collectAsState()
+            val activeShift = shiftUiState.currentShift
+
+            if (activeShift == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(A3Theme.colors.canvas)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(520.dp)
+                            .clip(A3Theme.shapes.cardShape)
+                            .background(A3Theme.colors.surface)
+                            .border(1.dp, A3Theme.colors.border, A3Theme.shapes.cardShape)
+                            .padding(32.dp)
+                    ) {
+                        A3EmptyState(
+                            title = "Shift Belum Dibuka",
+                            description = "Pencatatan kas keluar memerlukan shift kasir aktif untuk memotong saldo kas laci.",
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.AccessTime,
+                                    contentDescription = null,
+                                    tint = A3Theme.colors.accent,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                            },
+                            action = {
+                                A3Button(
+                                    label = "Buka Shift Kasir Sekarang",
+                                    variant = ButtonVariant.PRIMARY,
+                                    onClick = {
+                                        navController.navigate(LaundryDestinations.SHIFT) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        )
+                    }
+                }
+            } else {
+                CashOutScreen(
+                    viewModel = cashOutViewModel,
+                    onBack = {
+                        navController.navigate(LaundryDestinations.BERANDA) {
+                            popUpTo(LaundryDestinations.BERANDA) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+        }
+
+        composable(LaundryDestinations.SHIFT) {
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
             var isClosingShift by remember { mutableStateOf(false) }
-            var isCashOutActive by remember { mutableStateOf(false) }
 
-            if (isCashOutActive && activeShift != null) {
-                CashOutScreen(
-                    viewModel = cashOutViewModel,
-                    onBack = { isCashOutActive = false }
-                )
-            } else if (isClosingShift && activeShift != null) {
+            if (isClosingShift && activeShift != null) {
                 CloseShiftScreen(
                     viewModel = closeShiftViewModel,
                     shiftId = activeShift.shiftId,
@@ -336,9 +397,6 @@ fun LaundryNavHost(
             } else {
                 ActiveShiftCard(
                     activeShift = activeShift,
-                    onCashOutClick = {
-                        isCashOutActive = true
-                    },
                     onCloseShiftClick = {
                         isClosingShift = true
                     },
@@ -401,7 +459,6 @@ fun LaundryNavHost(
 @Composable
 private fun ActiveShiftCard(
     activeShift: ActiveShift,
-    onCashOutClick: () -> Unit,
     onCloseShiftClick: () -> Unit,
     onForceCloseClick: () -> Unit
 ) {
@@ -448,7 +505,7 @@ private fun ActiveShiftCard(
             )
 
             Text(
-                text = "Kasir dapat menerima pembayaran tunai, mencatat kas keluar, dan mengelola pesanan laundry.",
+                text = "Kasir dapat melayani pesanan laundry, menerima pembayaran tunai & QRIS, serta menutup shift saat jam kerja berakhir.",
                 style = A3Theme.typography.body,
                 color = colors.inkMuted,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -482,24 +539,12 @@ private fun ActiveShiftCard(
 
             HorizontalDivider(color = colors.border)
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                A3Button(
-                    label = "Catat Kas Keluar",
-                    variant = ButtonVariant.PRIMARY,
-                    onClick = onCashOutClick,
-                    modifier = Modifier.weight(1f)
-                )
-
-                A3Button(
-                    label = "Tutup Shift",
-                    variant = ButtonVariant.SECONDARY,
-                    onClick = onCloseShiftClick,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            A3Button(
+                label = "Tutup Shift Sekarang",
+                variant = ButtonVariant.PRIMARY,
+                onClick = onCloseShiftClick,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Text(
                 text = "Tutup Paksa Shift (Manager)",

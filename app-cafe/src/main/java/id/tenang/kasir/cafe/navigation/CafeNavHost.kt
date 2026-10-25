@@ -78,8 +78,9 @@ object CafeDestinations {
     const val KASIR = "kasir"
     const val PESANAN = "pesanan"
     const val HABIS = "habis"
+    const val KAS_KELUAR = "kas_keluar"
     const val SHIFT = "shift"
-    const val LAINNYA = "lainnya"
+    const val ADMIN = "admin"
     const val PEMBAYARAN = "pembayaran"
 }
 
@@ -88,7 +89,11 @@ fun CafeNavHost(
     navController: NavHostController,
     paddingValues: PaddingValues,
     modifier: Modifier = Modifier,
-    printerService: PrinterService? = null
+    printerService: PrinterService? = null,
+    shiftViewModel: ShiftViewModel = viewModel(
+        factory = ShiftViewModelFactory(LocalContext.current, printerService)
+    ),
+    startDestination: String = CafeDestinations.KASIR
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -98,9 +103,6 @@ fun CafeNavHost(
     )
     val paymentViewModel: PaymentViewModel = viewModel(
         factory = PaymentViewModelFactory(context, printerService)
-    )
-    val shiftViewModel: ShiftViewModel = viewModel(
-        factory = ShiftViewModelFactory(context, printerService)
     )
     val closeShiftViewModel: CloseShiftViewModel = viewModel(
         factory = ShiftViewModelFactory(context, printerService)
@@ -120,7 +122,7 @@ fun CafeNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = CafeDestinations.KASIR,
+        startDestination = startDestination,
         enterTransition = {
             if (targetState.destination.route == CafeDestinations.PEMBAYARAN) {
                 slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(220)) + fadeIn(animationSpec = tween(220))
@@ -278,18 +280,74 @@ fun CafeNavHost(
         composable(CafeDestinations.HABIS) {
             CafeSoldOutScreen(viewModel = menuViewModel)
         }
+        composable(CafeDestinations.KAS_KELUAR) {
+            val shiftUiState by shiftViewModel.uiState.collectAsState()
+            val activeShift = shiftUiState.currentShift
+
+            if (activeShift == null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(A3Theme.colors.canvas)
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(520.dp)
+                            .clip(A3Theme.shapes.cardShape)
+                            .background(A3Theme.colors.surface)
+                            .border(1.dp, A3Theme.colors.border, A3Theme.shapes.cardShape)
+                            .padding(32.dp)
+                    ) {
+                        A3EmptyState(
+                            title = "Shift Belum Dibuka",
+                            description = "Pencatatan kas keluar memerlukan shift kasir aktif untuk memotong saldo kas laci.",
+                            icon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.AccessTime,
+                                    contentDescription = null,
+                                    tint = A3Theme.colors.accent,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                            },
+                            action = {
+                                A3Button(
+                                    label = "Buka Shift Kasir Sekarang",
+                                    variant = ButtonVariant.PRIMARY,
+                                    onClick = {
+                                        navController.navigate(CafeDestinations.SHIFT) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        )
+                    }
+                }
+            } else {
+                CashOutScreen(
+                    viewModel = cashOutViewModel,
+                    onBack = {
+                        navController.navigate(CafeDestinations.KASIR) {
+                            popUpTo(CafeDestinations.KASIR) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                )
+            }
+        }
         composable(CafeDestinations.SHIFT) {
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
             var isClosingShift by remember { mutableStateOf(false) }
-            var isCashOutActive by remember { mutableStateOf(false) }
 
-            if (isCashOutActive && activeShift != null) {
-                CashOutScreen(
-                    viewModel = cashOutViewModel,
-                    onBack = { isCashOutActive = false }
-                )
-            } else if (isClosingShift && activeShift != null) {
+            if (isClosingShift && activeShift != null) {
                 CloseShiftScreen(
                     viewModel = closeShiftViewModel,
                     shiftId = activeShift.shiftId,
@@ -323,9 +381,6 @@ fun CafeNavHost(
             } else {
                 ActiveShiftCard(
                     activeShift = activeShift,
-                    onCashOutClick = {
-                        isCashOutActive = true
-                    },
                     onCloseShiftClick = {
                         isClosingShift = true
                     },
@@ -354,7 +409,7 @@ fun CafeNavHost(
                 )
             }
         }
-        composable(CafeDestinations.LAINNYA) {
+        composable(CafeDestinations.ADMIN) {
             AdminMenuScreen(
                 viewModel = adminViewModel,
                 onBackClick = {
@@ -385,7 +440,6 @@ fun CafeNavHost(
 @Composable
 private fun ActiveShiftCard(
     activeShift: ActiveShift,
-    onCashOutClick: () -> Unit,
     onCloseShiftClick: () -> Unit,
     onForceCloseClick: () -> Unit
 ) {
@@ -432,7 +486,7 @@ private fun ActiveShiftCard(
             )
 
             Text(
-                text = "Kasir dapat menerima pembayaran tunai, mencatat kas keluar, dan mengelola pesanan meja.",
+                text = "Kasir dapat melayani pesanan cafe, menerima pembayaran tunai & QRIS, serta menutup shift saat jam kerja berakhir.",
                 style = A3Theme.typography.body,
                 color = colors.inkMuted,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -466,24 +520,12 @@ private fun ActiveShiftCard(
 
             HorizontalDivider(color = colors.border)
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                A3Button(
-                    label = "Catat Kas Keluar",
-                    variant = ButtonVariant.PRIMARY,
-                    onClick = onCashOutClick,
-                    modifier = Modifier.weight(1f)
-                )
-
-                A3Button(
-                    label = "Tutup Shift",
-                    variant = ButtonVariant.SECONDARY,
-                    onClick = onCloseShiftClick,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            A3Button(
+                label = "Tutup Shift Sekarang",
+                variant = ButtonVariant.PRIMARY,
+                onClick = onCloseShiftClick,
+                modifier = Modifier.fillMaxWidth()
+            )
 
             Text(
                 text = "Tutup Paksa Shift (Manager)",

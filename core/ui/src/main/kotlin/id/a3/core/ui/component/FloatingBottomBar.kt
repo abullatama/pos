@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,7 +37,8 @@ import id.a3.core.ui.theme.A3Theme
 data class NavItem(
     val id: String,
     val label: String,
-    val icon: ImageVector
+    val icon: ImageVector,
+    val enabled: Boolean = true
 )
 
 @Composable
@@ -81,8 +83,16 @@ fun FloatingBottomBar(
                 items.take(5).forEachIndexed { index, item ->
                     val isSelected = index == selectedIndex
 
-                    val targetBg = if (isSelected) colors.navItemActiveBackground else colors.navBackground
-                    val targetContentColor = if (isSelected) colors.navItemActiveText else colors.navItemText
+                    val targetBg = when {
+                        !item.enabled -> Color.Transparent
+                        isSelected -> colors.navItemActiveBackground
+                        else -> colors.navBackground
+                    }
+                    val targetContentColor = when {
+                        !item.enabled -> colors.navItemText.copy(alpha = 0.35f)
+                        isSelected -> colors.navItemActiveText
+                        else -> colors.navItemText
+                    }
 
                     val animatedBg by animateColorAsState(
                         targetValue = targetBg,
@@ -102,7 +112,13 @@ fun FloatingBottomBar(
                             .defaultMinSize(minWidth = 84.dp, minHeight = 56.dp)
                             .clip(itemShape)
                             .background(animatedBg)
-                            .clickable { onItemSelected(index) }
+                            .then(
+                                if (item.enabled) {
+                                    Modifier.clickable { onItemSelected(index) }
+                                } else {
+                                    Modifier
+                                }
+                            )
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {

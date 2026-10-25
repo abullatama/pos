@@ -164,14 +164,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
         fun build(context: Context): AppDatabase {
-            return Room.databaseBuilder(
-                context.applicationContext,
-                AppDatabase::class.java,
-                DATABASE_NAME
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
-                .fallbackToDestructiveMigration(false)
-                .build()
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    DATABASE_NAME
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .fallbackToDestructiveMigration(false)
+                    .build().also { INSTANCE = it }
+            }
         }
 
         fun buildInMemory(context: Context): AppDatabase {

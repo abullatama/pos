@@ -10,9 +10,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
-import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -39,6 +40,8 @@ import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.CafeTheme
+import id.a3.feature.shift.ShiftViewModelFactory
+import id.a3.feature.shift.presentation.ShiftViewModel
 import id.tenang.kasir.cafe.navigation.CafeDestinations
 import id.tenang.kasir.cafe.navigation.CafeNavHost
 import kotlinx.coroutines.Dispatchers
@@ -48,14 +51,6 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var deviceManager: DeviceManager
     private lateinit var printerService: DefaultPrinterService
-
-    private val cafeNavItems = listOf(
-        NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale),
-        NavItem(CafeDestinations.PESANAN, "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong),
-        NavItem(CafeDestinations.HABIS, "Menu Habis", Icons.Outlined.Block),
-        NavItem(CafeDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime),
-        NavItem(CafeDestinations.LAINNYA, "Lainnya", Icons.AutoMirrored.Outlined.ShortText)
-    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -160,20 +155,34 @@ class MainActivity : ComponentActivity() {
                 } else {
                     val navController = rememberNavController()
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
-                    val currentRoute = navBackStackEntry?.destination?.route ?: CafeDestinations.KASIR
 
-                    val activeShift by remember {
-                        val db = AppDatabase.build(this@MainActivity)
-                        db.shiftDao().observeActiveShift()
-                    }.collectAsState(initial = null)
+                    val shiftViewModel: ShiftViewModel = viewModel(
+                        factory = ShiftViewModelFactory(this@MainActivity, printerService)
+                    )
+                    val shiftUiState by shiftViewModel.uiState.collectAsState()
+                    val activeShift = shiftUiState.currentShift
+                    val isShiftActive = activeShift != null
 
-                    val selectedIndex = remember(currentRoute) {
+                    val cafeNavItems = remember(isShiftActive) {
+                        listOf(
+                            NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale, enabled = isShiftActive),
+                            NavItem(CafeDestinations.PESANAN, "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong, enabled = isShiftActive),
+                            NavItem(CafeDestinations.HABIS, "Menu Habis", Icons.Outlined.Block, enabled = isShiftActive),
+                            NavItem(CafeDestinations.KAS_KELUAR, "Kas Keluar", Icons.Outlined.Payments, enabled = isShiftActive),
+                            NavItem(CafeDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime, enabled = true)
+                        )
+                    }
+
+                    val defaultStartRoute = if (isShiftActive) CafeDestinations.KASIR else CafeDestinations.SHIFT
+                    val currentRoute = navBackStackEntry?.destination?.route ?: defaultStartRoute
+
+                    val selectedIndex = remember(currentRoute, cafeNavItems) {
                         val idx = cafeNavItems.indexOfFirst { it.id == currentRoute }
                         if (idx >= 0) idx else 0
                     }
 
-                    val isFocusFlowActive = remember(currentRoute, activeShift) {
-                        currentRoute == CafeDestinations.PEMBAYARAN || (currentRoute == CafeDestinations.SHIFT && activeShift == null)
+                    val isFocusFlowActive = remember(currentRoute) {
+                        currentRoute == CafeDestinations.PEMBAYARAN
                     }
 
                     AppShell(
@@ -191,7 +200,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onAdminClick = {
-                            navController.navigate(CafeDestinations.LAINNYA) {
+                            navController.navigate(CafeDestinations.ADMIN) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
                                 }
@@ -202,18 +211,15 @@ class MainActivity : ComponentActivity() {
                         navItems = cafeNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
-                            val rawTarget = cafeNavItems[index].id
-                            val targetRoute = if ((rawTarget == CafeDestinations.KASIR || rawTarget == CafeDestinations.PESANAN) && activeShift == null) {
-                                CafeDestinations.SHIFT
-                            } else {
-                                rawTarget
-                            }
-                            navController.navigate(targetRoute) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            val item = cafeNavItems[index]
+                            if (item.enabled) {
+                                navController.navigate(item.id) {
+                                    popUpTo(navController.graph.findStartDestination().id) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
                         },
                         isFocusFlowActive = isFocusFlowActive
@@ -221,7 +227,9 @@ class MainActivity : ComponentActivity() {
                         CafeNavHost(
                             navController = navController,
                             paddingValues = paddingValues,
-                            printerService = printerService
+                            printerService = printerService,
+                            shiftViewModel = shiftViewModel,
+                            startDestination = defaultStartRoute
                         )
                     }
                 }

@@ -82,7 +82,7 @@ fun AppShell(
                 isPrinterConnecting = isPrinterConnecting,
                 pendingPrintCount = pendingPrintCount,
                 onPrinterClick = onPrinterClick,
-                onAdminClick = onAdminClick,
+                onAdminClick = null, // TopBar murni telemetri & identitas; tombol Admin berjangkar di dasar Left Navigation Rail
                 modifier = Modifier
                     .padding(top = statusBarTop)
                     .testTag(APP_SHELL_TOP_BAR_TAG)

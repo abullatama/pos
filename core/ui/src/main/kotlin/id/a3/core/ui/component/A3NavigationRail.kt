@@ -97,8 +97,16 @@ fun A3NavigationRail(
                     items.take(5).forEachIndexed { index, item ->
                         val isSelected = index == selectedIndex
 
-                        val targetBg = if (isSelected) colors.navItemActiveBackground else colors.navBackground
-                        val targetContent = if (isSelected) colors.navItemActiveText else colors.navItemText
+                        val targetBg = when {
+                            !item.enabled -> colors.navBackground
+                            isSelected -> colors.navItemActiveBackground
+                            else -> colors.navBackground
+                        }
+                        val targetContent = when {
+                            !item.enabled -> colors.navItemText.copy(alpha = 0.30f)
+                            isSelected -> colors.navItemActiveText
+                            else -> colors.navItemText
+                        }
 
                         val animatedBg by animateColorAsState(
                             targetValue = targetBg,
@@ -116,7 +124,13 @@ fun A3NavigationRail(
                                 .size(width = 58.dp, height = 54.dp)
                                 .clip(shapes.navItemShape)
                                 .background(animatedBg)
-                                .clickable { onItemSelected(index) }
+                                .then(
+                                    if (item.enabled) {
+                                        Modifier.clickable { onItemSelected(index) }
+                                    } else {
+                                        Modifier
+                                    }
+                                )
                                 .padding(vertical = 4.dp, horizontal = 2.dp),
                             contentAlignment = Alignment.Center
                         ) {
