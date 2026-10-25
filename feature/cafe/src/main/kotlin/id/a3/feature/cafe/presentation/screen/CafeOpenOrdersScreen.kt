@@ -1,5 +1,6 @@
 package id.a3.feature.cafe.presentation.screen
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -193,11 +194,9 @@ fun CafeOpenOrdersScreen(
                         )
                         Text(
                             text = if (activeTab == CafeOrdersTab.OPEN_TABLES) {
-                                "${openOrders.size} meja sedang aktif"
-                            } else if (completedScope == CompletedShiftScope.CURRENT_SHIFT) {
-                                "${currentShiftCompletedOrders.size} pesanan shift ini • ${formatRupiah(currentShiftCompletedOrders.sumOf { it.order.total })}"
+                                "Kelola pesanan meja aktif"
                             } else {
-                                "${pastShiftCompletedOrders.size} pesanan shift lalu • ${formatRupiah(pastShiftCompletedOrders.sumOf { it.order.total })}"
+                                "Riwayat transaksi selesai"
                             },
                             color = colors.inkMuted,
                             style = A3Theme.typography.bodySmall,
@@ -379,6 +378,42 @@ fun CafeOpenOrdersScreen(
                                     fontWeight = if (isScopeSelected) FontWeight.Bold else FontWeight.Medium
                                 )
                             }
+                        }
+                    }
+
+                    // Summary Strip Penjualan Shift Terpilih (Opsi A)
+                    val totalPenjualanScope = remember(displayedCompletedOrders) {
+                        displayedCompletedOrders.sumOf { it.order.total }
+                    }
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        color = colors.surfaceAlt,
+                        border = BorderStroke(0.8.dp, Color(0xFFE5E7EB))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 9.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (completedScope == CompletedShiftScope.CURRENT_SHIFT) {
+                                    "Total Penjualan Shift Ini"
+                                } else {
+                                    "Total Penjualan Shift Lalu"
+                                },
+                                color = colors.inkMuted,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = formatRupiah(totalPenjualanScope),
+                                color = colors.accent,
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
 
@@ -818,7 +853,7 @@ private fun OpenOrderDetailView(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Pesanan #${order.displayNumber} • Terbuka • $detailDuration",
+                            text = "Pesanan #${order.displayNumber} - Terbuka - $detailDuration",
                             color = colors.inkMuted,
                             style = A3Theme.typography.bodySmall
                         )
@@ -1110,7 +1145,7 @@ private fun CompletedOrderCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "$tableOrType • $timeFormatted",
+                            text = "$tableOrType - $timeFormatted",
                             color = colors.inkMuted,
                             fontSize = 11.sp
                         )
@@ -1176,7 +1211,7 @@ private fun CompletedOrderDetailView(
     val lines = orderWithLines.lines
     val tableOrType = order.tableLabel ?: if (order.orderType == "dine_in") "Dine In" else "Take Away"
     val dateStr = remember(order.createdAt) {
-        SimpleDateFormat("dd MMMM yyyy, HH:mm 'WIB'", Locale.forLanguageTag("id-ID")).format(Date(order.createdAt))
+        SimpleDateFormat("dd MMM yyyy, HH:mm 'WIB'", Locale.forLanguageTag("id-ID")).format(Date(order.createdAt))
     }
 
     val (headerBg, headerTint, headerIcon) = when (order.status.lowercase()) {
@@ -1184,6 +1219,13 @@ private fun CompletedOrderDetailView(
         "void" -> Triple(colors.surfaceAlt, colors.inkMuted, Icons.Outlined.Cancel)
         "partial_refund" -> Triple(colors.status.warning.background, colors.status.warning.text, Icons.Outlined.Warning)
         else -> Triple(colors.status.success.background, colors.status.success.text, Icons.Outlined.CheckCircle)
+    }
+
+    val (statusToken, statusLabel, statusIcon) = when (order.status.lowercase()) {
+        "refunded" -> Triple(StatusToken.DANGER, "Refund", Icons.Outlined.Cancel)
+        "void" -> Triple(StatusToken.NEUTRAL, "Void", Icons.Outlined.Cancel)
+        "partial_refund" -> Triple(StatusToken.WARNING, "Refund Sebagian", Icons.Outlined.Warning)
+        else -> Triple(StatusToken.SUCCESS, "Lunas", Icons.Outlined.CheckCircle)
     }
 
     val isCancellable = order.status.lowercase() !in listOf("refunded", "void")
@@ -1195,7 +1237,7 @@ private fun CompletedOrderDetailView(
         verticalArrangement = Arrangement.SpaceBetween
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            // Header
+            // Header Baris 1: Identitas Struk & Status Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1203,7 +1245,8 @@ private fun CompletedOrderDetailView(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f, fill = false)
                 ) {
                     Box(
                         modifier = Modifier
@@ -1216,39 +1259,57 @@ private fun CompletedOrderDetailView(
                             imageVector = headerIcon,
                             contentDescription = null,
                             tint = headerTint,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
-                    Column {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             text = "Struk #${order.displayNumber}",
                             color = colors.ink,
                             style = A3Theme.typography.headline.copy(fontSize = 18.sp),
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "$tableOrType • $dateStr",
+                            text = "$tableOrType - $dateStr",
                             color = colors.inkMuted,
-                            style = A3Theme.typography.bodySmall
+                            style = A3Theme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                // Tombol Aksi Kanan Atas
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Spacer(modifier = Modifier.width(12.dp))
+
+                A3StatusChip(
+                    token = statusToken,
+                    label = statusLabel,
+                    icon = statusIcon
+                )
+            }
+
+            // Header Baris 2: Toolbar Tombol Aksi (Cetak Salinan, Void, Refund)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Tombol Cetak Ulang (SALINAN)
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = colors.surfaceAlt,
+                    modifier = Modifier
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onReprintReceipt)
                 ) {
-                    // Tombol Cetak Ulang (SALINAN)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(colors.surfaceAlt)
-                            .clickable(onClick = onReprintReceipt)
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Print,
@@ -1263,17 +1324,22 @@ private fun CompletedOrderDetailView(
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
 
-                    if (isCancellable) {
-                        // Tombol Void
+                if (isCancellable) {
+                    // Tombol Void
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = colors.surfaceAlt,
+                        modifier = Modifier
+                            .height(38.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onVoidClick)
+                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(colors.surfaceAlt)
-                                .clickable(onClick = onVoidClick)
-                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.Cancel,
@@ -1288,17 +1354,22 @@ private fun CompletedOrderDetailView(
                                 fontWeight = FontWeight.SemiBold
                             )
                         }
+                    }
 
-                        // Tombol Refund Tunai
+                    // Tombol Refund Tunai
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFFFEBEE),
+                        border = BorderStroke(1.dp, Color(0xFFFFCDD2)),
+                        modifier = Modifier
+                            .height(38.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onRefundClick)
+                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFFFFEBEE))
-                                .border(1.dp, Color(0xFFFFCDD2), RoundedCornerShape(8.dp))
-                                .clickable(onClick = onRefundClick)
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.MoneyOff,
@@ -1460,13 +1531,6 @@ private fun CompletedOrderDetailView(
                 }
             }
 
-            val (bottomToken, bottomLabel, bottomIcon) = when (order.status.lowercase()) {
-                "refunded" -> Triple(StatusToken.DANGER, "Telah Di-Refund (Tunai)", Icons.Outlined.Cancel)
-                "void" -> Triple(StatusToken.NEUTRAL, "Pesanan Di-Void", Icons.Outlined.Cancel)
-                "partial_refund" -> Triple(StatusToken.WARNING, "Refund Sebagian", Icons.Outlined.Warning)
-                else -> Triple(StatusToken.SUCCESS, "Lunas", Icons.Outlined.CheckCircle)
-            }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1486,11 +1550,13 @@ private fun CompletedOrderDetailView(
                     )
                 }
 
-                A3StatusChip(
-                    token = bottomToken,
-                    label = bottomLabel,
-                    icon = bottomIcon
-                )
+                if (isOldTransaction) {
+                    A3StatusChip(
+                        token = StatusToken.NEUTRAL,
+                        label = "Shift Lalu",
+                        icon = Icons.Outlined.History
+                    )
+                }
             }
         }
     }
