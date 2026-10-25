@@ -1,87 +1,84 @@
-# HANDOFF: Redesain UI/UX Daftar Pesanan Cafe (Header Detail Struk 2-Baris, Summary Strip Penjualan, & Standarisasi Separator)
+# HANDOFF: Perbaikan UI/UX Menu Tutup Shift Kasir (Unified Vertical Scroll, Eliminasi Kode Spek, & Proteksi Tinggi Tombol)
 
 ## 1. Ringkasan Perubahan yang Selesai Dikerjakan
 
-Sesi ini menyelesaikan perbaikan visual dan pengalaman pengguna (UI/UX) pada menu **Daftar Pesanan** aplikasi Cafe (`CafeOpenOrdersScreen.kt`) dengan menerapkan prinsip *design-taste-frontend*, *antislop-ui*, dan *ui-ux-pro-max*:
+Sesi ini menyelesaikan perbaikan pengalaman pengguna (UI/UX) dan tata letak visual pada wizard **Penutupan Shift Kasir** (`CloseShiftScreen.kt` & `CloseShiftViewModel.kt`) di aplikasi Cafe dan Laundry sesuai prinsip *antislop-ui* dan *ui-ux-pro-max*:
 
-### A. Perbaikan Subtitle di Bawah Judul "Daftar Pesanan" (Panel Kiri)
+### A. Eliminasi Menyeluruh Kode Spesifikasi Teknis (UI & ViewModel)
 * **Masalah Sebelumnya:**
-  - Teks subtitle sebelumnya menggabungkan jumlah pesanan, lingkup shift, dan angka uang dalam satu baris: `"${currentShiftCompletedOrders.size} pesanan shift ini • ${formatRupiah(...)}"`.
-  - Jumlah pesanan redundan dengan angka yang sudah ada di tab `Riwayat Selesai (X)` dan sub-filter `Shift Berjalan (X)`.
-  - Nominal uang tidak memiliki label yang jelas, menciptakan kerancuan seolah-olah itu adalah total kas fisik laci.
-  - Teks rentan terpotong (*ellipsis*) karena berebut ruang dengan tombol *"Pesanan Baru"*.
+  - Kode spesifikasi internal developer (`TUP-01`, `TUP-02`, `TUP-03`, `TUP-04`, `TUP-06`, `TUP-08`) bocor ke antarmuka pengguna pada beberapa elemen:
+    - Label kolom alasan: `"Alasan Selisih Kas (Wajib diisi - TUP-03):"`
+    - Peringatan hitung buta: `"Hitung Kas Buta (TUP-02)"`
+    - Header verifikasi QRIS: `"Verifikasi QRIS Statis (TUP-04)"`
+    - Header alokasi kas: `"Catatan Alokasi Kas (TUP-06)"`
+    - Pesan error validasi ViewModel: `"(TUP-03)"` dan `"(TUP-06)"`
+    - Banner offline alarmis: `"JANGAN RESET TABLET (TUP-08)"`
 * **Solusi yang Diimplementasikan:**
-  - Subtitle dibersihkan menjadi deskripsi fungsi halaman yang murni dan elegan:
-    - Tab Meja Terbuka: `"Kelola pesanan meja aktif"`
-    - Tab Riwayat Selesai: `"Riwayat transaksi selesai"`
-  - Menghilangkan duplikasi teks jumlah pesanan dan karakter dot (`•`).
+  - Seluruh kode teknis spek dihapus dari antarmuka pengguna.
+  - Teks **"Wajib diisi"** pada alasan selisih kas tetap dipertahankan dengan format bersih: **`Alasan Selisih Kas (Wajib diisi):`**. Ini sangat penting agar kasir memahami mengapa tombol *"Lanjut ke Alokasi Kas"* terkunci saat selisih kas fisik melebihi batas toleransi wajar (> Rp 2.000).
+  - Pesan error validasi ViewModel dibersihkan menjadi kalimat bahasa Indonesia yang ramah pengguna.
 
-### B. Penambahan Summary Strip Penjualan Shift Terpilih (Opsi A)
-* **Solusi yang Diimplementasikan:**
-  - Membangun kartu ringkasan penjualan mandiri (*Summary Strip*) tepat di bawah sub-filter shift (*Shift Berjalan / Shift Sebelumnya*).
-  - Menggunakan container `Surface` dengan sudut melengkung 10dp, background `colors.surfaceAlt`, dan border halus `0.8dp Color(0xFFE5E7EB)`.
-  - Menampilkan label semantik yang jelas: `"Total Penjualan Shift Ini"` atau `"Total Penjualan Shift Lalu"` dan nilai rupiah yang terformat tebal (`fontWeight = FontWeight.Bold`) berwarna aksen (`colors.accent`).
-  - Nilai penjualan kini relevan langsung dengan daftar struk yang sedang dilihat tanpa mengotori judul halaman.
-
-### C. Redesain Header Detail Pesanan Selesai Menjadi 2 Baris (Panel Kanan)
+### B. Tahap 2: Unified Vertical Scroll pada Kartu Evaluasi Selisih Kas
 * **Masalah Sebelumnya:**
-  - Seluruh elemen identitas struk (ikon status, nomor struk, nama meja, tanggal panjang) dan 3 tombol aksi (*Cetak Salinan*, *Void*, *Refund Tunai*) dipaksakan berada dalam satu baris horizontal (`Row` dengan `Arrangement.SpaceBetween`).
-  - Pada layar tablet landscape (terutama saat teks tanggal panjang), teks dan tombol saling bertabrakan, bergesekan, atau terpotong.
+  - Kartu Evaluasi Selisih Kas di sisi kanan (40%) sebelumnya memisahkan konten formulir atas dan tombol aksi bawah secara kaku (`Arrangement.SpaceBetween`).
+  - Ketika selisih kas melebihi toleransi dan kolom alasan muncul, bagian bawah input teks langsung menempel (berdempetan 0 dp) dengan tombol *"Lanjut ke Alokasi Kas"*.
 * **Solusi yang Diimplementasikan:**
-  - Memisahkan **Identitas Transaksi** dan **Aksi Transaksi** menjadi **2 baris independen** (*zero-collision layout*):
-    - **Baris 1 (Identitas & Status Transaksi):**
-      - Kiri: Lingkaran ikon status (44dp, ukuran ikon 22dp terpusat) + Kolom judul struk (`Struk #${order.displayNumber}`) dan keterangan meja serta tanggal (`"$tableOrType - $dateStr"`).
-      - Kanan: Badge status transaksi (`A3StatusChip`: *Lunas*, *Refund*, atau *Void*).
-    - **Baris 2 (Toolbar Tombol Aksi):**
-      - Diletakkan di bawah Baris 1 dengan *vertical spacing* 14dp.
-      - Berisi tombol-tombol aksi tertata rapi secara horizontal (*spacing* 8dp, tinggi 38dp, sudut melengkung 8dp, padding 14dp x 8dp):
-        1. **Cetak Salinan:** Background `surfaceAlt`, ikon `Print` 16dp, teks aksen hijau tebal.
-        2. **Void (Kondisional):** Background `surfaceAlt`, ikon `Cancel` 16dp, teks abu-abu semi-bold.
-        3. **Refund Tunai (Kondisional):** Background merah lembut (`0xFFFFEBEE`), border merah muda (`0xFFFFCDD2`), ikon `MoneyOff` 16dp, teks merah tebal.
-  - Membersihkan duplikasi chip status di bagian bawah struk agar informasi bagian bawah fokus pada total pembayaran.
+  - Mengubah seluruh kartu Evaluasi Selisih Kas menjadi **satu kontainer scroll vertikal utuh** (`Modifier.verticalScroll(rememberScrollState())`).
+  - Rincian arus kas, status toleransi, input alasan selisih kas, dan kedua tombol aksi (*"Lanjut ke Alokasi Kas"* serta *"Hitung Ulang Kas"*) mengalir bersama secara alami.
+  - Terdapat jarak pemisah teratur (`Spacer(height = 4.dp)` dan `spacedBy(8.dp)`) antara input dan tombol aksi, sehingga elemen tidak lagi berdempetan atau terpotong.
 
-### D. Standarisasi Separator (Eliminasi Karakter Dot / Bullet '•')
-* Mengganti seluruh karakter `•` menjadi `-` pada:
-  - Header detail pesanan terbuka (`"Pesanan #${order.displayNumber} - Terbuka - $detailDuration"`).
-  - Kartu riwayat pesanan selesai panel kiri (`"$tableOrType - $timeFormatted"`).
-  - Header detail pesanan selesai panel kanan (`"$tableOrType - $dateStr"`).
-  - Memperpendek format tanggal menjadi lebih ringkas: `"dd MMM yyyy, HH:mm 'WIB'"` (contoh: `25 Okt 2026, 14:30 WIB`).
+### C. Tahap 3: Resolusi Tombol Pipih & Unified Vertical Scroll Kartu Alokasi Kas
+* **Masalah Sebelumnya:**
+  - Tombol aksi *"Tutup Shift & Cetak Laporan Z"* dan *"Kembali ke Selisih"* menjadi sangat pipih / terkompresi karena terdesak oleh dua card di atasnya:
+    1. Card Validasi Alokasi yang tebal dan memanjang ketika input nama penerima muncul.
+    2. Banner Offline tebal berwarna oranye yang ditempatkan secara permanen di wadah tombol aksi bawah.
+* **Solusi yang Diimplementasikan:**
+  - Menerapkan arsitektur **Unified Vertical Scroll** yang sama pada kartu Catatan Alokasi Kas: seluruh form input, ringkasan keseimbangan alokasi, catatan offline, dan tombol-tombol aksi berada dalam satu aliran scroll utuh.
+  - **Proteksi Tinggi Tombol:** Kedua tombol aksi dijamin selalu memiliki tinggi penuh standar `56 dp` yang kokoh dan mudah disentuh (tidak akan pernah pipih atau tertekan).
+  - **Redesain Card Alokasi:** Menyederhanakan kartu alokasi menjadi strip status ramping (*compact balance indicator*) yang menampilkan status keseimbangan (*"Alokasi Sesuai Kas Fisik"* / *"Alokasi Belum Seimbang"*) beserta nominal kekurangan/kelebihan kas secara real-time.
+  - **Relokasi Catatan Offline:** Menghilangkan banner alarmis dari wadah tombol aksi dan mengubahnya menjadi catatan kaki informatif yang tenang di dalam formulir (*"Data shift dan Laporan Z tersimpan lokal dan disinkronkan otomatis saat online."*).
 
 ---
 
-## 2. Modul & File yang Diubah
+## 2. File yang Dimodifikasi
 
-1. **`feature/cafe/src/main/kotlin/id/a3/feature/cafe/presentation/screen/CafeOpenOrdersScreen.kt`**
-   - Menambahkan import `androidx.compose.foundation.BorderStroke`.
-   - Mengubah teks subtitle di bawah judul "Daftar Pesanan".
-   - Menambahkan komponen Summary Strip Total Penjualan Shift Terpilih.
-   - Merombak `CompletedOrderDetailView` menjadi struktur 2 baris (Baris 1: info + status chip, Baris 2: toolbar aksi).
-   - Mengganti seluruh separator `•` menjadi `-`.
-   - Membersihkan duplikasi status chip di footer rincian keuangan struk selesai.
-2. **`progress.md`**
-   - Menambahkan catatan progres untuk redesain UI/UX Daftar Pesanan Cafe.
-3. **`HANDOFF.md`**
-   - Mendokumentasikan perubahan visual dan panduan untuk sesi berikutnya.
+1. **`feature/shift/src/main/kotlin/id/a3/feature/shift/presentation/CloseShiftScreen.kt`**
+   - Menghapus seluruh tag spek internal `TUP-xx` pada banner order terbuka, peringatan hitung buta, verifikasi QRIS, label alasan selisih, dan judul alokasi kas.
+   - Mengubah kartu Evaluasi Selisih Kas (Tahap 2) menjadi satu kesatuan scroll vertikal utuh bersama tombol-tombol aksi.
+   - Mengubah kartu Catatan Alokasi Kas (Tahap 3) menjadi satu kesatuan scroll vertikal utuh bersama tombol-tombol aksi.
+   - Menyederhanakan strip validasi alokasi kas dan merelokasi catatan offline dari wadah tombol aksi.
+2. **`feature/shift/src/main/kotlin/id/a3/feature/shift/presentation/CloseShiftViewModel.kt`**
+   - Membersihkan teks error validasi dari embel-embel `(TUP-03)` dan `(TUP-06)`.
+3. **`progress.md`**
+   - Menambahkan catatan progres sesi penutupan shift ke dalam tabel milestone.
+4. **`HANDOFF.md`**
+   - Dokumentasi lengkap hasil perbaikan, verifikasi, dan panduan sesi baru.
 
 ---
 
 ## 3. Status Pengujian & Kualitas Kode
 
-- **Unit Test Cafe:**
-  `./gradlew :feature:cafe:testDebugUnitTest` $\rightarrow$ **BUILD SUCCESSFUL** (68 tasks, 100% lulus).
-- **Compile APK Debug:**
-  `./gradlew :app-cafe:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL** (210 tasks, 100% sukses).
-- **Audit Karakter:**
-  `grep '•'` pada `CafeOpenOrdersScreen.kt` $\rightarrow$ **0 matches** (seluruh dot pemisah telah bersih).
+- **Unit Test Feature Shift:**
+  `./gradlew :feature:shift:testDebugUnitTest` $\rightarrow$ **BUILD SUCCESSFUL** (100% lulus).
+- **Compile APK Debug Cafe:**
+  `./gradlew :app-cafe:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL** (100% lulus).
+- **Compile APK Debug Laundry:**
+  `./gradlew :app-laundry:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL** (100% lulus).
 
 ---
 
 ## 4. Panduan untuk Memulai Sesi Baru
 
-- **Status Git:** Perubahan telah siap di-commit dan diverifikasi.
-- **Rekomendasi Uji Visual di Hardware Fisik (Redmi Pad 2):**
-  1. Jalankan aplikasi Cafe di tablet.
-  2. Buka menu **Daftar Pesanan** (ikon kwitansi di rail kiri).
-  3. Perhatikan subtitle di bawah judul: terlihat bersih tanpa teks angka yang berhimpitan dengan tombol *Pesanan Baru*.
-  4. Masuk ke tab **Riwayat Selesai**: periksa tampilan *Summary Strip* total penjualan shift di bawah pill filter shift.
-  5. Pilih salah satu transaksi selesai: perhatikan header panel kanan sekarang memiliki 2 baris terpisah (nama meja & waktu berpemisah `-` di baris atas sejajar dengan status Lunas, dan tombol Cetak Salinan, Void, Refund tertata rapi di baris bawahnya tanpa ada teks yang terpotong/bertabrakan).
+- **Status Git:** Seluruh modifikasi telah diverifikasi, lolos uji, dan siap di-commit.
+- **Rekomendasi Uji Visual di Tablet (Redmi Pad 2):**
+  1. Jalankan aplikasi Cafe atau Laundry dengan shift aktif.
+  2. Buka menu **Shift** $\rightarrow$ tekan **Tutup Shift**.
+  3. **Tahap 1 (Hitung Kas Fisik):** Masukkan pecahan uang yang sengaja berselisih > Rp 2.000 (misal Rp 10.000 lebih sedikit dari penjualan).
+  4. **Tahap 2 (Selisih & QRIS):** 
+     - Perhatikan kolom *"Alasan Selisih Kas (Wajib diisi):"* muncul rapi tanpa kode `- TUP-03`.
+     - Coba lakukan scroll pada kartu kanan: formulir dan tombol *"Lanjut ke Alokasi Kas"* mengalir bersama secara halus tanpa ada elemen yang saling menindih atau berdempetan.
+     - Isi alasan selisih, lalu tekan *"Lanjut ke Alokasi Kas"*.
+  5. **Tahap 3 (Alokasi & Laporan Z):**
+     - Perhatikan kartu alokasi di sisi kiri: strip status alokasi tampil ramping dan elegan.
+     - Masukkan nominal uang disetor sehingga kolom input *"Nama Penerima"* muncul.
+     - Perhatikan tombol *"Tutup Shift & Cetak Laporan Z"* di bagian bawah: tombol tetap kokoh dengan tinggi 56 dp penuh dan tidak lagi pipih.

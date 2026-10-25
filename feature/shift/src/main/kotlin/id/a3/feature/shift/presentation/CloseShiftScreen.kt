@@ -172,7 +172,7 @@ fun CloseShiftScreen(
                 }
             }
 
-            // Banner Serah Terima Pesanan Terbuka (TUP-01, C08)
+            // Banner Serah Terima Pesanan Terbuka
             val openOrdersCount = uiState.summary?.openOrderIds?.size ?: 0
             if (openOrdersCount > 0) {
                 Box(
@@ -195,7 +195,7 @@ fun CloseShiftScreen(
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "Terdapat $openOrdersCount pesanan cafe masih terbuka. Pesanan ini otomatis diserahterimakan ke shift kasir berikutnya (TUP-01).",
+                            text = "Terdapat $openOrdersCount pesanan aktif masih terbuka. Pesanan ini otomatis dialihkan ke shift kasir berikutnya.",
                             style = A3Theme.typography.bodySmall,
                             color = colors.status.warning.text,
                             fontWeight = FontWeight.Medium
@@ -418,7 +418,7 @@ private fun Step1BlindCountContent(
                     }
                 }
 
-                // Kotak Peringatan Hitung Buta (TUP-02)
+                // Kotak Peringatan Hitung Buta
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -439,7 +439,7 @@ private fun Step1BlindCountContent(
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "Hitung Kas Buta (TUP-02)",
+                                text = "Prosedur Hitung Kas Fisik",
                                 style = A3Theme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.status.info.text
@@ -497,7 +497,7 @@ private fun Step2DiffAndQrisContent(
             ) {
                 Column {
                     Text(
-                        text = "Verifikasi QRIS Statis (TUP-04)",
+                        text = "Verifikasi Transaksi QRIS",
                         style = A3Theme.typography.title,
                         fontWeight = FontWeight.Bold,
                         color = colors.ink
@@ -583,7 +583,7 @@ private fun Step2DiffAndQrisContent(
             }
         }
 
-        // Kanan (40%): Perbandingan Kas Seharusnya (K1) vs Dihitung & Selisih
+        // Kanan (40%): Perbandingan Kas Seharusnya vs Dihitung & Selisih
         Column(
             modifier = Modifier
                 .weight(0.40f)
@@ -591,141 +591,142 @@ private fun Step2DiffAndQrisContent(
                 .clip(shapes.cardShape)
                 .background(colors.surface)
                 .border(1.dp, colors.border, shapes.cardShape)
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+            Text(
+                text = "Evaluasi Selisih Kas",
+                style = A3Theme.typography.headline,
+                color = colors.ink,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Rincian Arus Kas Sistem & Evaluasi Selisih
+            val openingCash = uiState.summary?.shift?.openingCash ?: 0L
+            val cashSales = uiState.summary?.cashSales ?: 0L
+            val cashDp = uiState.summary?.cashDpAndSettlement ?: 0L
+            val cashOuts = uiState.summary?.cashOuts ?: 0L
+            val cashRefunds = uiState.summary?.totalRefund ?: 0L
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(shapes.cardShape)
+                    .background(colors.canvas)
+                    .border(1.dp, colors.border, shapes.cardShape)
+                    .padding(14.dp)
             ) {
-                Text(
-                    text = "Evaluasi Selisih Kas",
-                    style = A3Theme.typography.headline,
-                    color = colors.ink,
-                    fontWeight = FontWeight.Bold
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Alur Mutasi Kas Sistem (Laci):",
+                        style = A3Theme.typography.label,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.ink
+                    )
 
-                // Rincian Arus Kas Sistem & Evaluasi Selisih (Test Vector K1)
-                val openingCash = uiState.summary?.shift?.openingCash ?: 0L
-                val cashSales = uiState.summary?.cashSales ?: 0L
-                val cashDp = uiState.summary?.cashDpAndSettlement ?: 0L
-                val cashOuts = uiState.summary?.cashOuts ?: 0L
-                val cashRefunds = uiState.summary?.totalRefund ?: 0L
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(text = "(+) Kas Awal Modal", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                        Text(text = formatRupiah(openingCash), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
+                    }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(shapes.cardShape)
-                        .background(colors.canvas)
-                        .border(1.dp, colors.border, shapes.cardShape)
-                        .padding(14.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(text = "(+) Penjualan Tunai", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                        Text(text = formatRupiah(cashSales), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
+                    }
+
+                    if (cashDp > 0L) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(text = "(+) DP & Pelunasan Tunai", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                            Text(text = formatRupiah(cashDp), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
+                        }
+                    }
+
+                    if (cashOuts > 0L) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(text = "(-) Kas Keluar (Petty Cash)", style = A3Theme.typography.bodySmall, color = colors.status.danger.text)
+                            Text(text = "-${formatRupiah(cashOuts)}", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.status.danger.text)
+                        }
+                    }
+
+                    if (cashRefunds > 0L) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(text = "(-) Refund Tunai", style = A3Theme.typography.bodySmall, color = colors.status.danger.text)
+                            Text(text = "-${formatRupiah(cashRefunds)}", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.status.danger.text)
+                        }
+                    }
+
+                    HorizontalDivider(color = colors.border)
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(text = "(=) Kas Seharusnya (Sistem):", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Bold, color = colors.ink)
+                        Text(text = formatRupiah(uiState.expectedCash), style = A3Theme.typography.body, fontWeight = FontWeight.Bold, color = colors.ink)
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(text = "Kas Dihitung (Fisik):", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                        Text(text = formatRupiah(uiState.countedCash), style = A3Theme.typography.body, fontWeight = FontWeight.Bold, color = colors.accent)
+                    }
+
+                    HorizontalDivider(color = colors.border)
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(text = "Selisih Kas:", style = A3Theme.typography.body, fontWeight = FontWeight.Bold, color = colors.ink)
+                        val diff = uiState.cashDifference
+                        val diffFormatted = when {
+                            diff == 0L -> "Rp 0 (Pas)"
+                            diff > 0 -> "+${formatRupiah(diff)}"
+                            else -> "-${formatRupiah(-diff)}"
+                        }
                         Text(
-                            text = "Alur Mutasi Kas Sistem (Laci):",
-                            style = A3Theme.typography.label,
+                            text = diffFormatted,
+                            style = A3Theme.typography.body,
                             fontWeight = FontWeight.Bold,
-                            color = colors.ink
-                        )
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "(+) Kas Awal Modal", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
-                            Text(text = formatRupiah(openingCash), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "(+) Penjualan Tunai", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
-                            Text(text = formatRupiah(cashSales), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
-                        }
-
-                        if (cashDp > 0L) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(text = "(+) DP & Pelunasan Tunai", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
-                                Text(text = formatRupiah(cashDp), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
-                            }
-                        }
-
-                        if (cashOuts > 0L) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(text = "(-) Kas Keluar (Petty Cash)", style = A3Theme.typography.bodySmall, color = colors.status.danger.text)
-                                Text(text = "-${formatRupiah(cashOuts)}", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.status.danger.text)
-                            }
-                        }
-
-                        if (cashRefunds > 0L) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(text = "(-) Refund Tunai", style = A3Theme.typography.bodySmall, color = colors.status.danger.text)
-                                Text(text = "-${formatRupiah(cashRefunds)}", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.status.danger.text)
-                            }
-                        }
-
-                        HorizontalDivider(color = colors.border)
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "(=) Kas Seharusnya (Sistem):", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Bold, color = colors.ink)
-                            Text(text = formatRupiah(uiState.expectedCash), style = A3Theme.typography.body, fontWeight = FontWeight.Bold, color = colors.ink)
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "Kas Dihitung (Fisik):", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
-                            Text(text = formatRupiah(uiState.countedCash), style = A3Theme.typography.body, fontWeight = FontWeight.Bold, color = colors.accent)
-                        }
-
-                        HorizontalDivider(color = colors.border)
-
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "Selisih Kas:", style = A3Theme.typography.body, fontWeight = FontWeight.Bold, color = colors.ink)
-                            val diff = uiState.cashDifference
-                            val diffFormatted = when {
-                                diff == 0L -> "Rp 0 (Pas)"
-                                diff > 0 -> "+${formatRupiah(diff)}"
-                                else -> "-${formatRupiah(-diff)}"
-                            }
-                            Text(
-                                text = diffFormatted,
-                                style = A3Theme.typography.body,
-                                fontWeight = FontWeight.Bold,
-                                color = if (diff == 0L) colors.status.success.text else if (uiState.isDifferenceOverTolerance) colors.status.danger.text else colors.status.warning.text
-                            )
-                        }
-                    }
-                }
-
-                // Toleransi OQ-07 Status
-                if (uiState.isDifferenceOverTolerance) {
-                    A3StatusChip(
-                        label = "Selisih di atas toleransi Rp 2.000",
-                        token = StatusToken.DANGER
-                    )
-
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "Alasan Selisih Kas (Wajib diisi - TUP-03):",
-                            style = A3Theme.typography.label,
-                            color = colors.status.danger.text,
-                            fontWeight = FontWeight.Bold
-                        )
-                        A3TextField(
-                            value = uiState.differenceReason,
-                            onValueChange = viewModel::setDifferenceReason,
-                            placeholder = "Cth: Selisih kembalian / salah hitung fisik...",
-                            modifier = Modifier.fillMaxWidth()
+                            color = if (diff == 0L) colors.status.success.text else if (uiState.isDifferenceOverTolerance) colors.status.danger.text else colors.status.warning.text
                         )
                     }
-                } else if (uiState.cashDifference != 0L) {
-                    A3StatusChip(
-                        label = "Dalam batas toleransi wajar (≤ Rp 2.000)",
-                        token = StatusToken.WARNING
-                    )
-                } else {
-                    A3StatusChip(
-                        label = "Kas Pas Tanpa Selisih",
-                        token = StatusToken.SUCCESS
-                    )
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Toleransi Status & Alasan Selisih
+            if (uiState.isDifferenceOverTolerance) {
+                A3StatusChip(
+                    label = "Selisih di atas toleransi Rp 2.000",
+                    token = StatusToken.DANGER
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "Alasan Selisih Kas (Wajib diisi):",
+                        style = A3Theme.typography.label,
+                        color = colors.status.danger.text,
+                        fontWeight = FontWeight.Bold
+                    )
+                    A3TextField(
+                        value = uiState.differenceReason,
+                        onValueChange = viewModel::setDifferenceReason,
+                        placeholder = "Cth: Selisih kembalian / salah hitung fisik...",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            } else if (uiState.cashDifference != 0L) {
+                A3StatusChip(
+                    label = "Dalam batas toleransi wajar (≤ Rp 2.000)",
+                    token = StatusToken.WARNING
+                )
+            } else {
+                A3StatusChip(
+                    label = "Kas Pas Tanpa Selisih",
+                    token = StatusToken.SUCCESS
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 A3Button(
                     label = "Lanjut ke Alokasi Kas",
                     variant = ButtonVariant.PRIMARY,
@@ -763,7 +764,7 @@ private fun Step3AllocationAndZContent(
         modifier = Modifier.fillMaxSize(),
         horizontalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        // Kiri (50%): Form Alokasi Kas (TUP-06)
+        // Kiri (50%): Form Alokasi Kas
         Column(
             modifier = Modifier
                 .weight(0.50f)
@@ -771,134 +772,156 @@ private fun Step3AllocationAndZContent(
                 .clip(shapes.cardShape)
                 .background(colors.surface)
                 .border(1.dp, colors.border, shapes.cardShape)
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
-            verticalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    text = "Catatan Alokasi Kas (TUP-06)",
-                    style = A3Theme.typography.headline,
-                    color = colors.ink,
-                    fontWeight = FontWeight.Bold
-                )
+            Text(
+                text = "Catatan Alokasi Kas",
+                style = A3Theme.typography.headline,
+                color = colors.ink,
+                fontWeight = FontWeight.Bold
+            )
 
-                Text(
-                    text = "Tentukan pembagian uang fisik yang ada di laci saat ini:",
-                    style = A3Theme.typography.bodySmall,
-                    color = colors.inkMuted
-                )
+            Text(
+                text = "Tentukan pembagian uang fisik yang ada di laci saat ini:",
+                style = A3Theme.typography.bodySmall,
+                color = colors.inkMuted
+            )
 
-                // Input Kas Ditinggal di Laci
+            // Input Kas Ditinggal di Laci
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "1. Ditinggal di Laci (Modal Shift Berikutnya):",
+                    style = A3Theme.typography.label,
+                    color = colors.ink
+                )
+                A3TextField(
+                    value = if (uiState.cashLeft == 0L) "" else uiState.cashLeft.toString(),
+                    onValueChange = { str ->
+                        val num = str.filter { it.isDigit() }.toLongOrNull() ?: 0L
+                        viewModel.setCashLeft(num)
+                    },
+                    placeholder = "Rp 200.000",
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Input Kas Disetor ke Owner / Bank
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "2. Disetor ke Owner / Bank:",
+                    style = A3Theme.typography.label,
+                    color = colors.ink
+                )
+                A3TextField(
+                    value = if (uiState.cashDeposited == 0L) "" else uiState.cashDeposited.toString(),
+                    onValueChange = { str ->
+                        val num = str.filter { it.isDigit() }.toLongOrNull() ?: 0L
+                        viewModel.setCashDeposited(num)
+                    },
+                    placeholder = "Rp 0",
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Nama Penerima jika Uang Dibawa
+            if (uiState.cashDeposited > 0L) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        text = "1. Ditinggal di Laci (Modal Shift Berikutnya):",
+                        text = "3. Nama Penerima / Yang Membawa Uang (Wajib):",
                         style = A3Theme.typography.label,
                         color = colors.ink
                     )
                     A3TextField(
-                        value = if (uiState.cashLeft == 0L) "" else uiState.cashLeft.toString(),
-                        onValueChange = { str ->
-                            val num = str.filter { it.isDigit() }.toLongOrNull() ?: 0L
-                            viewModel.setCashLeft(num)
-                        },
-                        placeholder = "Rp 200.000",
+                        value = uiState.cashTakenBy,
+                        onValueChange = viewModel::setCashTakenBy,
+                        placeholder = "Cth: Pak Owner / Bu Dewi / Disetor Bank...",
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-
-                // Input Kas Disetor ke Owner / Bank
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "2. Disetor ke Owner / Bank:",
-                        style = A3Theme.typography.label,
-                        color = colors.ink
-                    )
-                    A3TextField(
-                        value = if (uiState.cashDeposited == 0L) "" else uiState.cashDeposited.toString(),
-                        onValueChange = { str ->
-                            val num = str.filter { it.isDigit() }.toLongOrNull() ?: 0L
-                            viewModel.setCashDeposited(num)
-                        },
-                        placeholder = "Rp 0",
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // Nama Penerima jika Uang Dibawa
-                if (uiState.cashDeposited > 0L) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = "3. Nama Penerima / Yang Membawa Uang (Wajib):",
-                            style = A3Theme.typography.label,
-                            color = colors.ink
-                        )
-                        A3TextField(
-                            value = uiState.cashTakenBy,
-                            onValueChange = viewModel::setCashTakenBy,
-                            placeholder = "Cth: Pak Owner / Bu Dewi / Disetor Bank...",
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-
-                // Validasi Keseimbangan Alokasi (TUP-06)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(shapes.cardShape)
-                        .background(if (uiState.isAllocationBalanced) colors.status.success.background else colors.status.danger.background)
-                        .border(1.dp, if (uiState.isAllocationBalanced) colors.status.success.text else colors.status.danger.text, shapes.cardShape)
-                        .padding(12.dp)
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            text = if (uiState.isAllocationBalanced) "Alokasi Seimbang Sempurna" else "Alokasi Belum Seimbang!",
-                            style = A3Theme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (uiState.isAllocationBalanced) colors.status.success.text else colors.status.danger.text
-                        )
-                        Text(
-                            text = "Total Alokasi: ${formatRupiah(uiState.totalAllocated)} (Harus sama dengan kas fisik: ${formatRupiah(uiState.countedCash)})",
-                            style = A3Theme.typography.bodySmall,
-                            color = if (uiState.isAllocationBalanced) colors.status.success.text else colors.status.danger.text,
-                            fontSize = 11.sp
-                        )
-                    }
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Banner Kepatuhan Offline TUP-08
+            // Ringkasan Keseimbangan Alokasi Kas
+            val isBalanced = uiState.isAllocationBalanced
+            val statusColor = if (isBalanced) colors.status.success else colors.status.danger
+            val diffAllocation = uiState.countedCash - uiState.totalAllocated
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(shapes.cardShape)
+                    .background(statusColor.background)
+                    .border(1.dp, statusColor.text.copy(alpha = 0.35f), shapes.cardShape)
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFFFF3E0))
-                        .border(1.dp, Color(0xFFFFB74D), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = Color(0xFFE65100),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "Mode Offline: Shift tetap bisa ditutup lokal. Data penutupan & Laporan Z menunggu sinkron. JANGAN RESET TABLET (TUP-08).",
-                        color = Color(0xFFE65100),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = if (isBalanced) "Alokasi Sesuai Kas Fisik" else "Alokasi Belum Seimbang",
+                            style = A3Theme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = statusColor.text
+                        )
+                        Text(
+                            text = if (isBalanced) {
+                                "Total alokasi pas ${formatRupiah(uiState.totalAllocated)}"
+                            } else if (diffAllocation > 0) {
+                                "Kurang ${formatRupiah(diffAllocation)} dari total fisik (${formatRupiah(uiState.countedCash)})"
+                            } else {
+                                "Lebih ${formatRupiah(-diffAllocation)} dari total fisik (${formatRupiah(uiState.countedCash)})"
+                            },
+                            style = A3Theme.typography.bodySmall,
+                            color = statusColor.text,
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    A3StatusChip(
+                        label = if (isBalanced) "Seimbang" else "Belum Pas",
+                        token = if (isBalanced) StatusToken.SUCCESS else StatusToken.DANGER
                     )
                 }
+            }
 
+            // Catatan Penyimpanan Offline
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = null,
+                    tint = colors.inkMuted,
+                    modifier = Modifier.size(15.dp)
+                )
+                Text(
+                    text = "Data shift dan Laporan Z tersimpan lokal dan disinkronkan otomatis saat online.",
+                    style = A3Theme.typography.bodySmall,
+                    color = colors.inkMuted,
+                    fontSize = 11.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 A3Button(
                     label = if (uiState.isClosing) "Menutup Shift & Mencetak..." else "Tutup Shift & Cetak Laporan Z",
                     variant = ButtonVariant.PRIMARY,

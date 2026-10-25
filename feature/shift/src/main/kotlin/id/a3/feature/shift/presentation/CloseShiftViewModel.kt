@@ -209,7 +209,7 @@ class CloseShiftViewModel(
     fun proceedToStep3() {
         val state = _uiState.value
         if (!state.isStep2Valid) {
-            _uiState.update { it.copy(error = "Selisih kas melebihi batas toleransi (Rp 2.000). Alasan wajib diisi (TUP-03)") }
+            _uiState.update { it.copy(error = "Selisih kas melebihi batas toleransi (Rp 2.000). Alasan wajib diisi.") }
             return
         }
         _uiState.update { it.copy(currentStep = CloseShiftStep.STEP_3_ALLOCATION_AND_Z, error = null) }
@@ -322,9 +322,9 @@ class CloseShiftViewModel(
 
         if (!state.canProceedToClose) {
             if (!state.isAllocationBalanced) {
-                _uiState.update { it.copy(error = "Total alokasi kas (${state.totalAllocated}) harus sama dengan kas dihitung (${state.countedCash}) (TUP-06)") }
+                _uiState.update { it.copy(error = "Total alokasi kas harus sama dengan total kas fisik yang dihitung") }
             } else if (state.cashDepositedOverZeroWithoutTaker) {
-                _uiState.update { it.copy(error = "Kas yang disetor/dibawa pulang wajib mencatat nama penerimanya (TUP-06)") }
+                _uiState.update { it.copy(error = "Kas yang disetor wajib mencatat nama penerimanya") }
             }
             return
         }
