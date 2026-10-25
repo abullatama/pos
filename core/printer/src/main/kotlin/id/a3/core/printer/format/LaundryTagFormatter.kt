@@ -19,6 +19,7 @@ data class LaundryTagData(
     val isExpress: Boolean = false,
     val lines: List<LaundryTagLine>,
     val cashierOrStaffName: String? = null,
+    val storeName: String = "ATHIA LAUNDRY HOUSE",
     val isCopy: Boolean = false,
     val reprintInfo: String? = null
 )
@@ -57,7 +58,7 @@ object LaundryTagFormatter {
 
         builder.alignCenter()
             .boldOn()
-            .textLine("ATHIA LAUNDRY HOUSE")
+            .textLine(data.storeName)
             .textSize(widthMultiplier = 1, heightMultiplier = 2)
             .textLine("TAG CUCIAN")
             .textSize(widthMultiplier = 1, heightMultiplier = 1)
@@ -128,7 +129,7 @@ object LaundryTagFormatter {
             .feed(1)
             .textLine(data.orderId)
             .feed(1)
-            .textLine("*** KERTAS ROLL 58MM ATHIA ***")
+            .textLine("*** KERTAS ROLL 58MM ***")
             .textLine("*** TANPA HARGA ***")
             .feed(5)
 

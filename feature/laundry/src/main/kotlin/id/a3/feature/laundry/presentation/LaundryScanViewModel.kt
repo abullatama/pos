@@ -144,7 +144,10 @@ class LaundryScanViewModel(
         }
     }
 
-    fun printLaundryTag() {
+    fun printLaundryTag(
+        cashierOrStaffName: String = "Staf Laundry",
+        storeName: String = "ATHIA LAUNDRY HOUSE"
+    ) {
         val current = _uiState.value.scannedOrder ?: return
         val order = current.order
         val customer = _uiState.value.customer
@@ -178,7 +181,8 @@ class LaundryScanViewModel(
                     estimatedCompletion = "Sesuai Nota",
                     isExpress = lines.any { it.isExpress },
                     lines = lines,
-                    cashierOrStaffName = "Staf Laundry"
+                    cashierOrStaffName = cashierOrStaffName,
+                    storeName = storeName
                 )
 
                 val bytes = LaundryTagFormatter.format(tagData)

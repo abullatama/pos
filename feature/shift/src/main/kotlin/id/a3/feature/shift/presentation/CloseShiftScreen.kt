@@ -167,6 +167,38 @@ fun CloseShiftScreen(
                 }
             }
 
+            // Banner Serah Terima Pesanan Terbuka (TUP-01, C08)
+            val openOrdersCount = uiState.summary?.openOrderIds?.size ?: 0
+            if (openOrdersCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(shapes.cardShape)
+                        .background(colors.status.warning.background)
+                        .border(1.dp, colors.status.warning.text.copy(alpha = 0.5f), shapes.cardShape)
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = null,
+                            tint = colors.status.warning.text,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Terdapat $openOrdersCount pesanan cafe masih terbuka. Pesanan ini otomatis diserahterimakan ke shift kasir berikutnya (TUP-01).",
+                            style = A3Theme.typography.bodySmall,
+                            color = colors.status.warning.text,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
             // Pesan Error jika Ada
             if (uiState.error != null) {
                 Box(
@@ -568,7 +600,13 @@ private fun Step2DiffAndQrisContent(
                     fontWeight = FontWeight.Bold
                 )
 
-                // Rincian Kas Seharusnya (Test Vector K1)
+                // Rincian Arus Kas Sistem & Evaluasi Selisih (Test Vector K1)
+                val openingCash = uiState.summary?.shift?.openingCash ?: 0L
+                val cashSales = uiState.summary?.cashSales ?: 0L
+                val cashDp = uiState.summary?.cashDpAndSettlement ?: 0L
+                val cashOuts = uiState.summary?.cashOuts ?: 0L
+                val cashRefunds = uiState.summary?.totalRefund ?: 0L
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -578,8 +616,48 @@ private fun Step2DiffAndQrisContent(
                         .padding(14.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Alur Mutasi Kas Sistem (Laci):",
+                            style = A3Theme.typography.label,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.ink
+                        )
+
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(text = "Kas Seharusnya (Sistem):", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                            Text(text = "(+) Kas Awal Modal", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                            Text(text = formatRupiah(openingCash), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(text = "(+) Penjualan Tunai", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                            Text(text = formatRupiah(cashSales), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
+                        }
+
+                        if (cashDp > 0L) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(text = "(+) DP & Pelunasan Tunai", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                                Text(text = formatRupiah(cashDp), style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.ink)
+                            }
+                        }
+
+                        if (cashOuts > 0L) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(text = "(-) Kas Keluar (Petty Cash)", style = A3Theme.typography.bodySmall, color = colors.status.danger.text)
+                                Text(text = "-${formatRupiah(cashOuts)}", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.status.danger.text)
+                            }
+                        }
+
+                        if (cashRefunds > 0L) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(text = "(-) Refund Tunai", style = A3Theme.typography.bodySmall, color = colors.status.danger.text)
+                                Text(text = "-${formatRupiah(cashRefunds)}", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Medium, color = colors.status.danger.text)
+                            }
+                        }
+
+                        HorizontalDivider(color = colors.border)
+
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(text = "(=) Kas Seharusnya (Sistem):", style = A3Theme.typography.bodySmall, fontWeight = FontWeight.Bold, color = colors.ink)
                             Text(text = formatRupiah(uiState.expectedCash), style = A3Theme.typography.body, fontWeight = FontWeight.Bold, color = colors.ink)
                         }
 

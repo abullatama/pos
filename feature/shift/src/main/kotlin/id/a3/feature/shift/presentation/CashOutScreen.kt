@@ -3,6 +3,7 @@ package id.a3.feature.shift.presentation
 import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -95,8 +96,15 @@ const val CASH_OUT_SCREEN_TAG = "cash_out_screen_tag"
 fun CashOutScreen(
     viewModel: CashOutViewModel,
     onBack: () -> Unit,
+    storeName: String = "AA COFFEESHOP",
+    storeAddress: String = "Jl. Kopi Pilihan No. 3",
+    storePhone: String = "0812-3456-7890",
     modifier: Modifier = Modifier
 ) {
+    LaunchedEffect(storeName, storeAddress, storePhone) {
+        viewModel.setStoreProfile(storeName, storeAddress, storePhone)
+    }
+
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
     val focusManager = LocalFocusManager.current

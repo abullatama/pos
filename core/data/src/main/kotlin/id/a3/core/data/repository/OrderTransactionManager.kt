@@ -404,6 +404,8 @@ class OrderTransactionManager(
                 paidAmount = newPaidAmount
             )
 
+            val activeShift = shiftDao.getActiveShift()
+            val effectiveShiftId = shiftId ?: activeShift?.id ?: currentOrder.shiftId
             val paymentEntity = PaymentEntity(
                 id = paymentId,
                 orderId = orderId,
@@ -411,7 +413,7 @@ class OrderTransactionManager(
                 amount = amount,
                 tendered = tendered,
                 idempotencyKey = idempotencyKey,
-                shiftId = shiftId ?: currentOrder.shiftId,
+                shiftId = effectiveShiftId,
                 isDp = isDp
             )
             paymentDao.insertPayment(paymentEntity)
@@ -465,7 +467,13 @@ class OrderTransactionManager(
         shiftId: String? = null
     ): OutboxEntity {
         return database.withTransaction {
-            val paidOrder = order.copy(status = "paid", paidAmount = amount)
+            val activeShift = shiftDao.getActiveShift()
+            val effectiveShiftId = shiftId ?: activeShift?.id ?: order.shiftId
+            val paidOrder = order.copy(
+                status = "paid",
+                paidAmount = amount,
+                shiftId = effectiveShiftId
+            )
             orderDao.insertOrder(paidOrder)
             if (lines.isNotEmpty()) {
                 orderDao.insertLines(lines)
@@ -478,7 +486,7 @@ class OrderTransactionManager(
                 amount = amount,
                 tendered = tendered,
                 idempotencyKey = idempotencyKey,
-                shiftId = shiftId ?: paidOrder.shiftId,
+                shiftId = effectiveShiftId,
                 isDp = false
             )
             paymentDao.insertPayment(paymentEntity)

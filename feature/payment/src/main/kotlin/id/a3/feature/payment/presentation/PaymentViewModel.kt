@@ -45,7 +45,8 @@ data class PaymentUiState(
     val isProcessing: Boolean = false,
     val errorMessage: String? = null,
     val printStatusMessage: String? = null,
-    val orderDetail: OrderWithLines? = null
+    val orderDetail: OrderWithLines? = null,
+    val shiftId: String? = null
 )
 
 class PaymentViewModel(
@@ -65,7 +66,8 @@ class PaymentViewModel(
         storeName: String = "AA COFFEESHOP",
         storeAddress: String = "Jl. Kopi Pilihan No. 3",
         storePhone: String = "0812-3456-7890",
-        isDp: Boolean = false
+        isDp: Boolean = false,
+        shiftId: String? = null
     ) {
         val quickOptions = generateQuickCashOptions(totalAmount)
         _uiState.value = PaymentUiState(
@@ -83,7 +85,8 @@ class PaymentViewModel(
             cashReceived = totalAmount,
             change = 0L,
             isExactPayment = true,
-            quickCashOptions = quickOptions
+            quickCashOptions = quickOptions,
+            shiftId = shiftId
         )
 
         // Muat detail item pesanan untuk pencetakan struk
@@ -164,7 +167,8 @@ class PaymentViewModel(
                 totalAmount = current.totalAmount,
                 cashReceived = current.cashReceived,
                 change = current.change,
-                isDp = current.isDp
+                isDp = current.isDp,
+                shiftId = current.shiftId
             )
 
             val result = repository.processPayment(transaction)

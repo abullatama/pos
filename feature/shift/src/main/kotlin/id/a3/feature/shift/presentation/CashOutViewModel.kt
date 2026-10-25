@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import id.a3.core.data.local.entity.CashOutEntity
+import id.a3.core.domain.security.ManagerPinVerifier
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.CashOutReceiptData
 import id.a3.core.printer.format.CashOutReceiptFormatter
@@ -104,6 +105,16 @@ class CashOutViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun setStoreProfile(name: String, address: String, phone: String) {
+        _uiState.update {
+            it.copy(
+                storeName = name,
+                storeAddress = address,
+                storePhone = phone
+            )
         }
     }
 
@@ -256,8 +267,7 @@ class CashOutViewModel(
             return
         }
 
-        // PIN Manager default seed: "4444"
-        val isCorrect = pin == "4444"
+        val isCorrect = ManagerPinVerifier.verify(pin)
         if (!isCorrect) {
             failedPinAttempts++
             if (failedPinAttempts >= 3) {

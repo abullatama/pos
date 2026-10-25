@@ -18,6 +18,7 @@ interface CafeOrderRepository {
         lines: List<OrderLineEntity>,
         eventsJson: String
     ): Result<Unit>
+    suspend fun getNextDisplayNumber(prefix: String = "C1-"): String
 }
 
 class DefaultCafeOrderRepository(
@@ -55,5 +56,14 @@ class DefaultCafeOrderRepository(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun getNextDisplayNumber(prefix: String): String {
+        val zone = java.time.ZoneId.systemDefault()
+        val localDate = java.time.LocalDate.now(zone)
+        val startOfDay = localDate.atStartOfDay(zone).toInstant().toEpochMilli()
+        val endOfDay = localDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val dailyCount = orderDao.countOrdersForPrefixAndDate(prefix, startOfDay, endOfDay)
+        return "%s%04d".format(prefix, dailyCount + 1)
     }
 }

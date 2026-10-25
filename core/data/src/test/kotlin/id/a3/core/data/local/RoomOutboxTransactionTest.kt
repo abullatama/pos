@@ -385,6 +385,52 @@ class RoomOutboxTransactionTest {
     }
 
     @Test
+    fun `recordPayment without explicit shiftId links to active shift and counts toward cashSales`() = runBlocking {
+        val activeShiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = activeShiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "u-cashier-1",
+            cashierName = "Budi Kasir",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{}",
+            openedAt = System.currentTimeMillis()
+        )
+        database.shiftDao().insertShift(shift)
+
+        // Buat pesanan cafe (misal Rp 32.000) yang awalnya ber-shiftId lama / null
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "C1-0008",
+            businessUnitId = "bu-cafe-01",
+            shiftId = "shift-old",
+            deviceId = "dev-cafe-1",
+            cashierId = "cashier-1",
+            orderType = "dine_in",
+            tableLabel = "3",
+            status = "open",
+            subtotal = 32000L,
+            total = 32000L
+        )
+        database.orderDao().insertOrder(order)
+
+        // Pembayaran tunai Rp 32.000 dicatat saat shift aktif
+        transactionManager.recordPayment(
+            orderId = orderId,
+            method = "cash",
+            amount = 32000L,
+            tendered = 50000L
+        )
+
+        // Verifikasi pembayaran dikaitkan ke shift yang aktif (bukan shift-old)
+        val cashSales = database.paymentDao().getCashSalesForShift(activeShiftId)
+        assertEquals(32000L, cashSales)
+    }
+
+    @Test
     fun `recordPayment on laundry order updates paidAmount and preserves physical status`() = runBlocking {
         val orderId = UUID.randomUUID().toString()
         val order = OrderEntity(

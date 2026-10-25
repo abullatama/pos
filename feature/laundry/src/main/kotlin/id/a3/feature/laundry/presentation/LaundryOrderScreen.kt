@@ -89,7 +89,12 @@ fun LaundryOrderScreen(
     onNavigateToShift: () -> Unit = {},
     onProceedToPayment: (orderId: String, totalAmount: Long, displayNumber: String, isDp: Boolean) -> Unit,
     onOrderSavedSuccessfully: (displayNumber: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    deviceId: String = "dev-laundry-1",
+    shiftId: String? = null,
+    cashierId: String = "u-cashier-2",
+    cashierName: String = "Kasir Laundry",
+    storeName: String = "ATHIA LAUNDRY HOUSE"
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
@@ -211,7 +216,12 @@ fun LaundryOrderScreen(
                     hasActiveShift = hasActiveShift,
                     onRequireShift = { showShiftRequiredDialog = true },
                     onProceedToPayment = onProceedToPayment,
-                    onOrderSavedSuccessfully = onOrderSavedSuccessfully
+                    onOrderSavedSuccessfully = onOrderSavedSuccessfully,
+                    deviceId = deviceId,
+                    shiftId = shiftId,
+                    cashierId = cashierId,
+                    cashierName = cashierName,
+                    storeName = storeName
                 )
             }
         }
@@ -821,7 +831,12 @@ private fun OrderReceiptPanel(
     hasActiveShift: Boolean,
     onRequireShift: () -> Unit,
     onProceedToPayment: (orderId: String, totalAmount: Long, displayNumber: String, isDp: Boolean) -> Unit,
-    onOrderSavedSuccessfully: (displayNumber: String) -> Unit
+    onOrderSavedSuccessfully: (displayNumber: String) -> Unit,
+    deviceId: String = "dev-laundry-1",
+    shiftId: String? = null,
+    cashierId: String = "u-cashier-2",
+    cashierName: String = "Kasir Laundry",
+    storeName: String = "ATHIA LAUNDRY HOUSE"
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
@@ -1145,7 +1160,13 @@ private fun OrderReceiptPanel(
                     }
 
                     coroutineScope.launch {
-                        val result = viewModel.submitOrder()
+                        val result = viewModel.submitOrder(
+                            deviceId = deviceId,
+                            shiftId = shiftId,
+                            cashierId = cashierId,
+                            cashierName = cashierName,
+                            storeName = storeName
+                        )
                         if (result.isSuccess) {
                             val order = result.getOrNull()!!
                             if (isPayLater) {

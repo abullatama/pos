@@ -409,7 +409,10 @@ class LaundryOrderViewModel(
     suspend fun submitOrder(
         displayNumber: String? = null,
         deviceId: String = "dev-laundry-1",
-        shiftId: String? = null
+        shiftId: String? = null,
+        cashierId: String = "u-cashier-2",
+        cashierName: String = "Kasir Laundry",
+        storeName: String = "ATHIA LAUNDRY HOUSE"
     ): Result<OrderEntity> {
         val finalDisplayNumber = if (!displayNumber.isNullOrBlank()) {
             displayNumber
@@ -425,7 +428,7 @@ class LaundryOrderViewModel(
             businessUnitId = "bu-laundry-01",
             shiftId = shiftId,
             deviceId = deviceId,
-            cashierId = "cashier-1",
+            cashierId = cashierId,
             orderType = "laundry",
             customerId = currentState.selectedCustomer?.id,
             status = "open",
@@ -483,7 +486,8 @@ class LaundryOrderViewModel(
                                     note = line.note.ifBlank { null }
                                 )
                             },
-                            cashierOrStaffName = "Kasir Laundry"
+                            cashierOrStaffName = cashierName,
+                            storeName = storeName
                         )
                         val bytes = LaundryTagFormatter.format(tagData)
                         printerService.print(bytes)

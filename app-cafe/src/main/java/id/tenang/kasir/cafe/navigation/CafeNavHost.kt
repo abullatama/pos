@@ -93,7 +93,11 @@ fun CafeNavHost(
     shiftViewModel: ShiftViewModel = viewModel(
         factory = ShiftViewModelFactory(LocalContext.current, printerService)
     ),
-    startDestination: String = CafeDestinations.KASIR
+    startDestination: String = CafeDestinations.KASIR,
+    deviceId: String = "dev-cafe-1",
+    businessUnitId: String = "bu-cafe-01",
+    cashierName: String = "Kasir Cafe",
+    cashierId: String = "u-cashier-1"
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -114,8 +118,8 @@ fun CafeNavHost(
         factory = AdminViewModelFactory(
             database = AppDatabase.build(context),
             printerService = printerService,
-            deviceId = "C1-DEV-01",
-            businessUnitId = "bu-cafe-01",
+            deviceId = deviceId,
+            businessUnitId = businessUnitId,
             appVersion = "1.0.0"
         )
     )
@@ -222,7 +226,8 @@ fun CafeNavHost(
                                     totalAmount = calculation.total,
                                     displayNumber = header.receiptId,
                                     tableOrQueueLabel = header.tableOrQueueLabel,
-                                    cashierName = activeShift.cashierName
+                                    cashierName = activeShift.cashierName,
+                                    shiftId = activeShift.shiftId
                                 )
                                 navController.navigate(CafeDestinations.PEMBAYARAN)
                             } finally {
@@ -270,7 +275,8 @@ fun CafeNavHost(
                         paymentViewModel.initializeWithOrder(
                             orderId = orderId,
                             totalAmount = total,
-                            cashierName = activeShift.cashierName
+                            cashierName = activeShift.cashierName,
+                            shiftId = activeShift.shiftId
                         )
                         navController.navigate(CafeDestinations.PEMBAYARAN)
                     }
@@ -338,7 +344,10 @@ fun CafeNavHost(
                             popUpTo(CafeDestinations.KASIR) { inclusive = false }
                             launchSingleTop = true
                         }
-                    }
+                    },
+                    storeName = "AA COFFEESHOP",
+                    storeAddress = "Jl. Kopi Pilihan No. 3",
+                    storePhone = "0812-3456-7890"
                 )
             }
         }
@@ -364,10 +373,10 @@ fun CafeNavHost(
             } else if (activeShift == null) {
                 OpenShiftScreen(
                     viewModel = shiftViewModel,
-                    cashierName = "Budi Santoso",
-                    cashierId = "u-cashier-1",
-                    businessUnitId = "bu-cafe-01",
-                    deviceId = "dev-cafe-1",
+                    cashierName = cashierName,
+                    cashierId = cashierId,
+                    businessUnitId = businessUnitId,
+                    deviceId = deviceId,
                     onShiftOpened = {
                         navController.navigate(CafeDestinations.KASIR) {
                             popUpTo(navController.graph.findStartDestination().id) {

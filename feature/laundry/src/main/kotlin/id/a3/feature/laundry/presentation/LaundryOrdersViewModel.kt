@@ -6,6 +6,7 @@ import id.a3.core.data.local.entity.CustomerEntity
 import id.a3.core.data.local.entity.LaundryPickupEntity
 import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.data.repository.LaundryPickupItem
+import id.a3.core.domain.security.ManagerPinVerifier
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.LaundryTagData
 import id.a3.core.printer.format.LaundryTagFormatter
@@ -363,8 +364,7 @@ class LaundryOrdersViewModel(
             return
         }
 
-        // Bawaan seed users.json role "manager" PIN: "4444"
-        val isCorrect = pin == "4444"
+        val isCorrect = ManagerPinVerifier.verify(pin)
         if (!isCorrect) {
             failedPinAttempts++
             if (failedPinAttempts >= 3) {
@@ -467,7 +467,10 @@ class LaundryOrdersViewModel(
         }
     }
 
-    fun printLaundryTag() {
+    fun printLaundryTag(
+        cashierOrStaffName: String = "Kasir Laundry",
+        storeName: String = "ATHIA LAUNDRY HOUSE"
+    ) {
         val current = uiState.value.selectedOrder ?: return
         val order = current.order
         val customer = uiState.value.customer
@@ -499,7 +502,8 @@ class LaundryOrdersViewModel(
                     estimatedCompletion = "Sesuai Nota",
                     isExpress = lines.any { it.isExpress },
                     lines = lines,
-                    cashierOrStaffName = "Kasir Laundry"
+                    cashierOrStaffName = cashierOrStaffName,
+                    storeName = storeName
                 )
 
                 val bytes = LaundryTagFormatter.format(tagData)

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import id.a3.core.domain.cash.CashCalculator
 import id.a3.core.domain.cash.ShiftCashInput
+import id.a3.core.domain.security.ManagerPinVerifier
 import id.a3.feature.shift.model.StandardDenominations
 import id.a3.feature.shift.repository.ActiveShift
 import id.a3.feature.shift.repository.ShiftRepository
@@ -200,8 +201,7 @@ class ShiftViewModel(
             return
         }
 
-        // PIN Manager default seed: "4444"
-        val isCorrect = pin == "4444"
+        val isCorrect = ManagerPinVerifier.verify(pin)
         if (!isCorrect) {
             failedPinAttempts++
             if (failedPinAttempts >= 3) {

@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import id.a3.core.data.local.dao.OutboxDao
 import id.a3.core.data.local.dao.ShiftDao
+import id.a3.core.domain.security.ManagerPinVerifier
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.PrinterStatus
 import id.a3.core.printer.escpos.EscPosBuilder
@@ -54,7 +55,7 @@ class AdminViewModel(
     private val deviceId: String = "DEV-TABLET-01",
     private val businessUnitId: String = "BU-01",
     private val appVersion: String = "1.0.0",
-    private val ownerPin: String = "9999"
+    private val ownerPinHash: String = ManagerPinVerifier.hashPin("9999")
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -135,7 +136,8 @@ class AdminViewModel(
 
     fun verifyOwnerPin(pin: String = _uiState.value.enteredPin) {
         if (_uiState.value.isPinLocked) return
-        if (pin == ownerPin) {
+        val isCorrect = ManagerPinVerifier.hashPin(pin) == ownerPinHash
+        if (isCorrect) {
             failedPinAttempts = 0
             _uiState.update {
                 it.copy(

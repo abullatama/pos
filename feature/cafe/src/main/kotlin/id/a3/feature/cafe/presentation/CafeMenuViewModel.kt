@@ -13,6 +13,7 @@ import id.a3.core.domain.cafe.CafeCalculator
 import id.a3.core.domain.cafe.CafeOrderLine
 import id.a3.core.domain.cafe.OrderDiscount
 import id.a3.core.domain.cafe.TaxMode
+import id.a3.core.domain.security.ManagerPinVerifier
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.CustomerReceiptData
 import id.a3.core.printer.format.CustomerReceiptFormatter
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -102,9 +104,23 @@ class CafeMenuViewModel(
     private var failedPinAttempts = 0
     private var isManagerLockedUntilMs = 0L
 
+    suspend fun generateNextReceiptId(prefix: String = "C1-"): String {
+        val tm = transactionManager ?: return prefix + "0001"
+        return withContext(ioDispatcher) {
+            val zone = java.time.ZoneId.systemDefault()
+            val localDate = java.time.LocalDate.now(zone)
+            val startOfDay = localDate.atStartOfDay(zone).toInstant().toEpochMilli()
+            val endOfDay = localDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val dailyCount = tm.orderDao.countOrdersForPrefixAndDate(prefix, startOfDay, endOfDay)
+            "%s%04d".format(prefix, dailyCount + 1)
+        }
+    }
+
     init {
         viewModelScope.launch {
             menuRepository.seedInitialMenuIfEmpty()
+            val nextReceipt = generateNextReceiptId("C1-")
+            _orderHeader.update { it.copy(receiptId = nextReceipt) }
         }
     }
 
@@ -275,8 +291,11 @@ class CafeMenuViewModel(
         _cartLines.value = emptyList()
         _discount.value = null
         _appliedDiscount.value = null
-        _orderHeader.value = CafeOrderHeader()
         _isCheckingOut.value = false
+        viewModelScope.launch {
+            val nextReceipt = generateNextReceiptId("C1-")
+            _orderHeader.value = CafeOrderHeader(receiptId = nextReceipt)
+        }
     }
 
     fun applyDiscount(discount: OrderDiscount?) {
@@ -312,8 +331,7 @@ class CafeMenuViewModel(
             return false
         }
 
-        // Bawaan seed users.json role "manager" PIN: "4444"
-        val isCorrect = pin == "4444"
+        val isCorrect = ManagerPinVerifier.verify(pin)
 
         if (isCorrect) {
             failedPinAttempts = 0
@@ -401,13 +419,17 @@ class CafeMenuViewModel(
         val header = _orderHeader.value
         val calc = uiState.value.calculation
 
+        val active = activeShift.value ?: transactionManager?.shiftDao?.getActiveShift()
+        val currentShiftId = active?.id ?: "shift-001"
+        val currentCashierId = active?.cashierId ?: "cashier-1"
+
         val orderEntity = OrderEntity(
             id = header.orderId,
             displayNumber = header.receiptId,
             businessUnitId = "bu-cafe-01",
-            shiftId = "shift-001",
+            shiftId = currentShiftId,
             deviceId = "dev-cafe-1",
-            cashierId = "cashier-1",
+            cashierId = currentCashierId,
             orderType = header.orderType.name.lowercase(),
             tableLabel = header.tableOrQueueLabel,
             status = "open",
@@ -474,7 +496,8 @@ class CafeMenuViewModel(
         _cartLines.value = emptyList()
         _discount.value = null
         _appliedDiscount.value = null
-        _orderHeader.value = CafeOrderHeader()
+        val nextReceipt = generateNextReceiptId("C1-")
+        _orderHeader.value = CafeOrderHeader(receiptId = nextReceipt)
 
         return Result.success(sentOrderId)
     }
@@ -491,13 +514,17 @@ class CafeMenuViewModel(
         }
         val header = _orderHeader.value
 
+        val active = activeShift.value ?: transactionManager?.shiftDao?.getActiveShift()
+        val currentShiftId = active?.id ?: "shift-001"
+        val currentCashierId = active?.cashierId ?: "cashier-1"
+
         val orderEntity = OrderEntity(
             id = header.orderId,
             displayNumber = header.receiptId,
             businessUnitId = "bu-cafe-01",
-            shiftId = "shift-001",
+            shiftId = currentShiftId,
             deviceId = "dev-cafe-1",
-            cashierId = "cashier-1",
+            cashierId = currentCashierId,
             orderType = header.orderType.name.lowercase(),
             tableLabel = header.tableOrQueueLabel,
             status = "open",
@@ -649,7 +676,7 @@ class CafeMenuViewModel(
                     storePhone = "0812-3456-7890",
                     orderDisplayNumber = order.displayNumber,
                     tableOrQueueLabel = order.tableLabel,
-                    cashierName = "Kasir",
+                    cashierName = active?.cashierName ?: "Kasir",
                     approvedBy = approvedBy,
                     occurredAt = dateStr,
                     correctionType = if (type == "refund") "REFUND TUNAI" else "VOID PESANAN",

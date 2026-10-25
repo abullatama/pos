@@ -97,7 +97,11 @@ fun LaundryNavHost(
     shiftViewModel: ShiftViewModel = viewModel(
         factory = ShiftViewModelFactory(LocalContext.current, printerService)
     ),
-    startDestination: String = LaundryDestinations.BERANDA
+    startDestination: String = LaundryDestinations.BERANDA,
+    deviceId: String = "dev-laundry-1",
+    businessUnitId: String = "bu-laundry-01",
+    cashierName: String = "Kasir Laundry",
+    cashierId: String = "u-cashier-2"
 ) {
     val context = LocalContext.current
 
@@ -126,8 +130,8 @@ fun LaundryNavHost(
         factory = AdminViewModelFactory(
             database = AppDatabase.build(context),
             printerService = printerService,
-            deviceId = "L1-DEV-01",
-            businessUnitId = "bu-laundry-01",
+            deviceId = deviceId,
+            businessUnitId = businessUnitId,
             appVersion = "1.0.0"
         )
     )
@@ -214,6 +218,11 @@ fun LaundryNavHost(
                 uiState = uiState,
                 viewModel = laundryViewModel,
                 hasActiveShift = activeShift != null,
+                deviceId = deviceId,
+                shiftId = activeShift?.shiftId,
+                cashierId = activeShift?.cashierId ?: cashierId,
+                cashierName = activeShift?.cashierName ?: cashierName,
+                storeName = "ATHIA LAUNDRY HOUSE",
                 onNavigateToShift = {
                     navController.navigate(LaundryDestinations.SHIFT) {
                         popUpTo(navController.graph.findStartDestination().id) {
@@ -233,7 +242,8 @@ fun LaundryNavHost(
                         storeName = "ATHIA LAUNDRY HOUSE",
                         storeAddress = "Jl. Trans Sulawesi, Bintauna",
                         storePhone = "+62 823-4778-5986",
-                        isDp = isDp
+                        isDp = isDp,
+                        shiftId = activeShift?.shiftId
                     )
                     navController.navigate(LaundryDestinations.PEMBAYARAN)
                 },
@@ -284,7 +294,8 @@ fun LaundryNavHost(
                         storeName = "ATHIA LAUNDRY HOUSE",
                         storeAddress = "Jl. Trans Sulawesi, Bintauna",
                         storePhone = "+62 823-4778-5986",
-                        isDp = false
+                        isDp = false,
+                        shiftId = activeShift?.shiftId
                     )
                     navController.navigate(LaundryDestinations.PEMBAYARAN)
                 }
@@ -353,7 +364,10 @@ fun LaundryNavHost(
                             popUpTo(LaundryDestinations.BERANDA) { inclusive = false }
                             launchSingleTop = true
                         }
-                    }
+                    },
+                    storeName = "ATHIA LAUNDRY HOUSE",
+                    storeAddress = "Jl. Trans Sulawesi, Bintauna",
+                    storePhone = "+62 823-4778-5986"
                 )
             }
         }
@@ -380,10 +394,10 @@ fun LaundryNavHost(
             } else if (activeShift == null) {
                 OpenShiftScreen(
                     viewModel = shiftViewModel,
-                    cashierName = "Siti Rahma",
-                    cashierId = "cashier-ldr-1",
-                    businessUnitId = "bu-laundry-01",
-                    deviceId = "dev-laundry-1",
+                    cashierName = cashierName,
+                    cashierId = cashierId,
+                    businessUnitId = businessUnitId,
+                    deviceId = deviceId,
                     onShiftOpened = {
                         navController.navigate(LaundryDestinations.BERANDA) {
                             popUpTo(navController.graph.findStartDestination().id) {

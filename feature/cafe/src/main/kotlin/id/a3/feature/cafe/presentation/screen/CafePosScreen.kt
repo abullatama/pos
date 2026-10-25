@@ -979,7 +979,7 @@ internal fun PurchaseReceiptCard(
                         PaymentRow(label = "Biaya Layanan", amount = calculation.serviceCharge)
                     }
                     if (calculation.tax > 0L) {
-                        PaymentRow(label = "Tax (10%)", amount = calculation.tax)
+                        PaymentRow(label = "Pajak", amount = calculation.tax)
                     }
                     if (calculation.rounding != 0L) {
                         PaymentRow(label = "Pembulatan", amount = calculation.rounding)

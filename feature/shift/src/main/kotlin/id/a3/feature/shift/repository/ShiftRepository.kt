@@ -155,8 +155,10 @@ class DefaultShiftRepository(
             val refund = transactionManager.correctionDao.getCashRefundTotalForShift(shiftId)
             val cashOuts = transactionManager.cashOutDao.getCashOutTotalForShift(shiftId)
 
-            val gross = cashSales + cashDp + qrisSales
-            val discount = 0L
+            val orderDiscount = transactionManager.orderDao.getDiscountTotalForShift(shiftId)
+            val grossSubtotal = transactionManager.orderDao.getGrossSubtotalForShift(shiftId)
+            val gross = if (grossSubtotal > 0L) grossSubtotal else (cashSales + cashDp + qrisSales + orderDiscount)
+            val discount = orderDiscount
             val net = gross - discount - refund
 
             val expected = CashCalculator.calculateExpectedCash(

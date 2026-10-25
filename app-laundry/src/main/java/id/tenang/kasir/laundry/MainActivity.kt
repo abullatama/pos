@@ -99,21 +99,24 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                var registeredDeviceId by remember { mutableStateOf("") }
+                LaunchedEffect(Unit) {
+                    registeredDeviceId = deviceManager.getDeviceId()
+                }
+
                 if (deviceStatus != DeviceStatus.ACTIVE) {
                     var deviceNameInput by remember { mutableStateOf(LaundryAppConfig.appName) }
                     var regCodeInput by remember { mutableStateOf("") }
                     var isActionLoading by remember { mutableStateOf(false) }
                     var actionErrorMessage by remember { mutableStateOf<String?>(null) }
-                    var deviceId by remember { mutableStateOf("") }
 
                     LaunchedEffect(Unit) {
-                        deviceId = deviceManager.getDeviceId()
                         deviceManager.getDeviceName()?.let { deviceNameInput = it }
                     }
 
                     DeviceRegistrationScreen(
                         deviceStatus = deviceStatus,
-                        deviceId = deviceId,
+                        deviceId = registeredDeviceId,
                         deviceName = deviceNameInput,
                         onDeviceNameChange = { deviceNameInput = it },
                         registrationCode = regCodeInput,
@@ -234,7 +237,8 @@ class MainActivity : ComponentActivity() {
                             paddingValues = paddingValues,
                             printerService = printerService,
                             shiftViewModel = shiftViewModel,
-                            startDestination = defaultStartRoute
+                            startDestination = defaultStartRoute,
+                            deviceId = registeredDeviceId.ifBlank { "dev-laundry-1" }
                         )
                     }
                 }

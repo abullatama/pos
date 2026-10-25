@@ -94,6 +94,12 @@ interface OrderDao {
     @Query("SELECT COUNT(*) FROM orders WHERE orderType = 'laundry' AND status != 'picked_up' AND paidAmount < total")
     fun observeLaundryUnpaidCount(): Flow<Int>
 
+    @Query("SELECT COALESCE(SUM(discount), 0) FROM orders WHERE id IN (SELECT DISTINCT orderId FROM payments WHERE shiftId = :shiftId)")
+    suspend fun getDiscountTotalForShift(shiftId: String): Long
+
+    @Query("SELECT COALESCE(SUM(subtotal), 0) FROM orders WHERE id IN (SELECT DISTINCT orderId FROM payments WHERE shiftId = :shiftId)")
+    suspend fun getGrossSubtotalForShift(shiftId: String): Long
+
     @Transaction
     @Query("SELECT * FROM orders WHERE orderType = 'laundry' AND status = 'ready' ORDER BY createdAt DESC LIMIT :limit")
     fun observeReadyLaundryOrders(limit: Int = 10): Flow<List<OrderWithLines>>

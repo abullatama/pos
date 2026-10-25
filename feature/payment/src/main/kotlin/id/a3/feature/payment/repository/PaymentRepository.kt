@@ -16,7 +16,8 @@ data class PaymentTransaction(
     val totalAmount: Long,
     val cashReceived: Long = 0L,
     val change: Long = 0L,
-    val isDp: Boolean = false
+    val isDp: Boolean = false,
+    val shiftId: String? = null
 )
 
 interface PaymentRepository {
@@ -44,7 +45,8 @@ class DefaultPaymentRepository(
                 method = payment.method.apiKey,
                 amount = payment.totalAmount,
                 tendered = if (payment.method == PaymentMethod.CASH) payment.cashReceived else null,
-                isDp = payment.isDp
+                isDp = payment.isDp,
+                shiftId = payment.shiftId
             )
             Result.success(Unit)
         } catch (e: Exception) {
@@ -63,7 +65,8 @@ class DefaultPaymentRepository(
                 lines = lines,
                 method = payment.method.apiKey,
                 amount = payment.totalAmount,
-                tendered = if (payment.method == PaymentMethod.CASH) payment.cashReceived else null
+                tendered = if (payment.method == PaymentMethod.CASH) payment.cashReceived else null,
+                shiftId = payment.shiftId
             )
             Result.success(Unit)
         } catch (e: Exception) {

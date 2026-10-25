@@ -2,6 +2,7 @@ package id.a3.feature.shift.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import id.a3.core.domain.security.ManagerPinVerifier
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.ZReportData
 import id.a3.core.printer.format.ZReportFormatter
@@ -240,8 +241,7 @@ class CloseShiftViewModel(
             return
         }
 
-        // PIN Manager default seed: "4444"
-        val isCorrect = pin == "4444"
+        val isCorrect = ManagerPinVerifier.verify(pin)
         if (isCorrect) {
             failedRecountPinAttempts = 0
             _uiState.update {
