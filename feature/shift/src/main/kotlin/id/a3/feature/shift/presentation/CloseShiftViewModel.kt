@@ -91,14 +91,30 @@ class CloseShiftViewModel(
     private val _uiState = MutableStateFlow(CloseShiftUiState())
     val uiState: StateFlow<CloseShiftUiState> = _uiState.asStateFlow()
 
+    fun resetState() {
+        failedRecountPinAttempts = 0
+        recountLockedUntilMs = 0L
+        _uiState.value = CloseShiftUiState()
+    }
+
     fun initializeWithShift(
         shiftId: String,
         storeName: String = "AA COFFEESHOP",
         storeAddress: String = "Jl. Kopi Pilihan No. 3",
         storePhone: String = "0812-3456-7890"
     ) {
+        failedRecountPinAttempts = 0
+        recountLockedUntilMs = 0L
+        _uiState.value = CloseShiftUiState(
+            currentStep = CloseShiftStep.STEP_1_BLIND_COUNT,
+            isLoading = true,
+            storeName = storeName,
+            storeAddress = storeAddress,
+            storePhone = storePhone,
+            error = null
+        )
+
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, storeName = storeName, storeAddress = storeAddress, storePhone = storePhone, error = null) }
             val result = repository.getShiftSummary(shiftId)
             if (result.isSuccess) {
                 val summary = result.getOrNull()!!

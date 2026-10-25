@@ -108,9 +108,6 @@ fun CafeNavHost(
     val paymentViewModel: PaymentViewModel = viewModel(
         factory = PaymentViewModelFactory(context, printerService)
     )
-    val closeShiftViewModel: CloseShiftViewModel = viewModel(
-        factory = ShiftViewModelFactory(context, printerService)
-    )
     val cashOutViewModel: CashOutViewModel = viewModel(
         factory = ShiftViewModelFactory(context, printerService)
     )
@@ -446,6 +443,10 @@ fun CafeNavHost(
             var isClosingShift by remember { mutableStateOf(false) }
 
             if (isClosingShift && activeShift != null) {
+                val closeShiftViewModel: CloseShiftViewModel = viewModel(
+                    key = activeShift.shiftId,
+                    factory = ShiftViewModelFactory(context, printerService)
+                )
                 CloseShiftScreen(
                     viewModel = closeShiftViewModel,
                     shiftId = activeShift.shiftId,
@@ -453,9 +454,11 @@ fun CafeNavHost(
                     storeAddress = "Jl. Kopi Pilihan No. 3",
                     storePhone = "0812-3456-7890",
                     onCloseCompleted = {
+                        closeShiftViewModel.resetState()
                         isClosingShift = false
                     },
                     onCancel = {
+                        closeShiftViewModel.resetState()
                         isClosingShift = false
                     }
                 )

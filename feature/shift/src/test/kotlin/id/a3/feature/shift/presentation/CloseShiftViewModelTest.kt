@@ -248,4 +248,53 @@ class CloseShiftViewModelTest {
         assertNull(viewModel.uiState.value.recountPinError)
         assertEquals(CloseShiftStep.STEP_1_BLIND_COUNT, viewModel.uiState.value.currentStep)
     }
+
+    @Test
+    fun `initializeWithShift resets state cleanly when closing subsequent shift`() = runTest {
+        viewModel.initializeWithShift(shiftId)
+        viewModel.adjustDenominationCount(100000L, 7)
+        viewModel.proceedToStep2()
+        viewModel.setDifferenceReason("Catatan selisih shift 1")
+        viewModel.proceedToStep3()
+        viewModel.setCashTakenBy("Owner Shift 1")
+
+        // Pastikan berada di Step 3 dengan state terisi
+        assertEquals(CloseShiftStep.STEP_3_ALLOCATION_AND_Z, viewModel.uiState.value.currentStep)
+        assertEquals(700000L, viewModel.uiState.value.countedCash)
+        assertEquals("Catatan selisih shift 1", viewModel.uiState.value.differenceReason)
+
+        // Buka proses tutup shift berikutnya (Shift B)
+        viewModel.initializeWithShift("shift-002")
+
+        val state = viewModel.uiState.value
+        assertEquals(CloseShiftStep.STEP_1_BLIND_COUNT, state.currentStep)
+        assertEquals(0L, state.countedCash)
+        assertTrue(state.denominations.isEmpty())
+        assertTrue(state.differenceReason.isEmpty())
+        assertEquals(0L, state.cashDeposited)
+        assertTrue(state.cashTakenBy.isEmpty())
+        assertFalse(state.isSuccess)
+        assertFalse(state.isClosing)
+        assertFalse(state.isRecountPinDialogOpen)
+        assertTrue(state.checkedQrisPaymentIds.isEmpty())
+    }
+
+    @Test
+    fun `resetState restores fresh clean state`() = runTest {
+        viewModel.initializeWithShift(shiftId)
+        viewModel.adjustDenominationCount(100000L, 5)
+        viewModel.proceedToStep2()
+
+        assertEquals(CloseShiftStep.STEP_2_DIFF_AND_QRIS, viewModel.uiState.value.currentStep)
+        assertEquals(500000L, viewModel.uiState.value.countedCash)
+
+        viewModel.resetState()
+
+        val state = viewModel.uiState.value
+        assertEquals(CloseShiftStep.STEP_1_BLIND_COUNT, state.currentStep)
+        assertEquals(0L, state.countedCash)
+        assertTrue(state.denominations.isEmpty())
+        assertNull(state.summary)
+        assertFalse(state.isLoading)
+    }
 }

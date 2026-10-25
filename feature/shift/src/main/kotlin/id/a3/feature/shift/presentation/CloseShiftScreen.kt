@@ -123,7 +123,12 @@ fun CloseShiftScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     val onBackAction = when (uiState.currentStep) {
-                        CloseShiftStep.STEP_1_BLIND_COUNT -> onCancel
+                        CloseShiftStep.STEP_1_BLIND_COUNT -> {
+                            {
+                                viewModel.resetState()
+                                onCancel()
+                            }
+                        }
                         CloseShiftStep.STEP_2_DIFF_AND_QRIS -> viewModel::openRecountPinDialog
                         CloseShiftStep.STEP_3_ALLOCATION_AND_Z -> viewModel::backToStep2
                     }

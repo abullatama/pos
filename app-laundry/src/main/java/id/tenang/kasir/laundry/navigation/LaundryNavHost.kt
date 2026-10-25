@@ -120,9 +120,6 @@ fun LaundryNavHost(
     val paymentViewModel: PaymentViewModel = viewModel(
         factory = PaymentViewModelFactory(context, printerService)
     )
-    val closeShiftViewModel: CloseShiftViewModel = viewModel(
-        factory = ShiftViewModelFactory(context, printerService)
-    )
     val cashOutViewModel: CashOutViewModel = viewModel(
         factory = ShiftViewModelFactory(context, printerService)
     )
@@ -378,6 +375,10 @@ fun LaundryNavHost(
             var isClosingShift by remember { mutableStateOf(false) }
 
             if (isClosingShift && activeShift != null) {
+                val closeShiftViewModel: CloseShiftViewModel = viewModel(
+                    key = activeShift.shiftId,
+                    factory = ShiftViewModelFactory(context, printerService)
+                )
                 CloseShiftScreen(
                     viewModel = closeShiftViewModel,
                     shiftId = activeShift.shiftId,
@@ -385,9 +386,11 @@ fun LaundryNavHost(
                     storeAddress = "Jl. Trans Sulawesi, Bintauna",
                     storePhone = "+62 823-4778-5986",
                     onCloseCompleted = {
+                        closeShiftViewModel.resetState()
                         isClosingShift = false
                     },
                     onCancel = {
+                        closeShiftViewModel.resetState()
                         isClosingShift = false
                     }
                 )
