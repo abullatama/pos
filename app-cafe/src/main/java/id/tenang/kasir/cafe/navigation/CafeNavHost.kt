@@ -413,9 +413,18 @@ fun CafeNavHost(
             AdminMenuScreen(
                 viewModel = adminViewModel,
                 onBackClick = {
-                    navController.navigate(CafeDestinations.KASIR) {
-                        popUpTo(CafeDestinations.KASIR) { inclusive = false }
-                        launchSingleTop = true
+                    if (!navController.popBackStack()) {
+                        val fallback = if (shiftViewModel.uiState.value.currentShift != null) {
+                            CafeDestinations.KASIR
+                        } else {
+                            CafeDestinations.SHIFT
+                        }
+                        navController.navigate(fallback) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                        }
                     }
                 }
             )

@@ -52,6 +52,7 @@ fun A3NavigationRail(
     onItemSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
     onAdminClick: (() -> Unit)? = null,
+    isAdminSelected: Boolean = false,
     visible: Boolean = true
 ) {
     val colors = A3Theme.colors
@@ -160,10 +161,25 @@ fun A3NavigationRail(
 
                 // Dasar Bawah: Tombol Cepat Pengaturan Admin
                 if (onAdminClick != null) {
+                    val adminBg = if (isAdminSelected) colors.navItemActiveBackground else colors.navBackground
+                    val adminContent = if (isAdminSelected) colors.navItemActiveText else colors.navItemText
+
+                    val animatedAdminBg by animateColorAsState(
+                        targetValue = adminBg,
+                        animationSpec = tween(durationMillis = 100),
+                        label = "floating_rail_admin_bg"
+                    )
+                    val animatedAdminContent by animateColorAsState(
+                        targetValue = adminContent,
+                        animationSpec = tween(durationMillis = 100),
+                        label = "floating_rail_admin_content"
+                    )
+
                     Box(
                         modifier = Modifier
                             .size(width = 58.dp, height = 48.dp)
                             .clip(shapes.buttonShape)
+                            .background(animatedAdminBg)
                             .clickable(onClick = onAdminClick)
                             .testTag(A3_NAV_RAIL_ADMIN_TAG)
                             .padding(2.dp),
@@ -176,15 +192,15 @@ fun A3NavigationRail(
                             Icon(
                                 imageVector = Icons.Outlined.Settings,
                                 contentDescription = "Admin",
-                                tint = colors.navItemText,
+                                tint = animatedAdminContent,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "Admin",
-                                color = colors.navItemText,
+                                color = animatedAdminContent,
                                 fontSize = 9.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = if (isAdminSelected) FontWeight.Bold else FontWeight.Medium
                             )
                         }
                     }

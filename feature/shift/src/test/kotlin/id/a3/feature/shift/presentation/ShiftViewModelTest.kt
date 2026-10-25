@@ -1,5 +1,6 @@
 package id.a3.feature.shift.presentation
 
+import id.a3.core.data.local.entity.CashOutEntity
 import id.a3.core.data.local.entity.PaymentEntity
 import id.a3.feature.shift.model.StandardDenominations
 import id.a3.feature.shift.repository.ActiveShift
@@ -27,10 +28,12 @@ import java.util.UUID
 
 class FakeShiftRepository : ShiftRepository {
     val currentShiftFlow = MutableStateFlow<ActiveShift?>(null)
+    val cashOutsFlow = MutableStateFlow<List<CashOutEntity>>(emptyList())
     var lastOpenedShift: ActiveShift? = null
     var shouldFailOpen: Boolean = false
 
     override fun observeCurrentShift(): Flow<ActiveShift?> = currentShiftFlow.asStateFlow()
+    override fun observeCashOutsForShift(shiftId: String): Flow<List<CashOutEntity>> = cashOutsFlow.asStateFlow()
 
     override suspend fun getActiveShift(): ActiveShift? = currentShiftFlow.value
 
@@ -86,6 +89,17 @@ class FakeShiftRepository : ShiftRepository {
         lastCashOutCategory = category
         lastCashOutReason = reason
         lastCashOutApprovedBy = approvedBy
+        val entity = CashOutEntity(
+            id = java.util.UUID.randomUUID().toString(),
+            shiftId = currentShiftFlow.value?.shiftId ?: "shift-1",
+            amount = amount,
+            category = category,
+            reason = reason,
+            receiptFileId = receiptFileId,
+            receiptFilePath = receiptFilePath,
+            approvedBy = approvedBy
+        )
+        cashOutsFlow.value = listOf(entity) + cashOutsFlow.value
         return Result.success(Unit)
     }
 

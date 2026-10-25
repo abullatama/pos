@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +32,7 @@ fun A3TextField(
     helper: String? = null,
     error: String? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     singleLine: Boolean = true,
     textStyle: TextStyle = A3Theme.typography.body
@@ -71,6 +73,7 @@ fun A3TextField(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             textStyle = textStyle.copy(color = colors.ink),
             keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             visualTransformation = visualTransformation,
             singleLine = singleLine,
             decorationBox = { innerTextField ->

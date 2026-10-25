@@ -85,3 +85,11 @@ Perbarui bagian ini setelah proyek Gradle dibuat di M1.
 - Teks antarmuka di resource string, Bahasa Indonesia, tanpa istilah teknis.
 - Printer di balik `PrinterService`; pembayaran di balik interface metode bayar (Tunai, QRIS Statis).
 - Jika menemukan bug atau celah di spek, catat di `docs/open-questions.md`; jangan diam-diam mengubah perilaku.
+
+## Investigasi Bug & Efisiensi Konteks
+
+1. **Kunci Cakupan Modul (Strict Scoping):** Jika laporan masalah spesifik pada satu aplikasi (misal: Cafe), dilarang membuka modul lain (Laundry, Spike, Web) kecuali ada ketergantungan kode yang terbukti langsung.
+2. **Dilarang Over-Investigation Riwayat Git:** Jangan menelusuri commit masa lalu (`git log -p`, `git show commit_lama`) untuk mencari penyebab bug aktif, kecuali pengguna secara eksplisit meminta pelacakan riwayat perubahan. Fokus langsung pada status kode saat ini (*HEAD*).
+3. **Targeted Reading:** Gunakan `grep` dan baca irisan baris spesifik (30–50 baris di sekitar aksi/navigasi yang bermasalah). Dilarang membaca file ratusan baris secara utuh jika hanya memeriksa *event handler* atau navigasi.
+4. **Batas Investigasi & Konfirmasi (Max 3 Langkah):** Jika dalam 2–3 kali pembacaan alat (*tool calls*) tidak ditemukan baris kode penyebab langsung, agen **wajib berhenti menggali**, laporkan hipotesis awal, dan konfirmasi kondisi layar/perilaku kepada pengguna. Jangan berspekulasi dengan membuka puluhan berkas.
+

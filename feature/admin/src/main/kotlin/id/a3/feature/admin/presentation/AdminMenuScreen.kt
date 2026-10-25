@@ -5,6 +5,9 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -18,19 +21,25 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Print
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.TabletAndroid
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,7 +52,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -108,6 +119,7 @@ fun AdminMenuScreen(
                 uiState = uiState,
                 onPinDigit = viewModel::onPinDigit,
                 onPinBackspace = viewModel::onPinBackspace,
+                onPinClear = viewModel::onPinClear,
                 onBackClick = onBackClick
             )
         } else {
@@ -176,142 +188,361 @@ private fun OwnerPinGate(
     uiState: AdminUiState,
     onPinDigit: (String) -> Unit,
     onPinBackspace: () -> Unit,
+    onPinClear: () -> Unit,
     onBackClick: () -> Unit
 ) {
     val colors = A3Theme.colors
+    val shapes = A3Theme.shapes
 
     Row(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
-        horizontalArrangement = Arrangement.spacedBy(32.dp),
+            .padding(horizontal = 40.dp, vertical = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(48.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Sisi Kiri: Informasi Otorisasi
+        // ==========================================
+        // 1. SISI KIRI: Panel Otorisasi & Konteks Keamanan
+        // ==========================================
         Column(
             modifier = Modifier
-                .weight(1f)
+                .weight(1.1f)
                 .fillMaxHeight(),
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(colors.surfaceAlt),
-                contentAlignment = Alignment.Center
+            // Badge & Kategori
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Outlined.Lock,
-                    contentDescription = "Gembok Owner",
-                    tint = colors.ink,
-                    modifier = Modifier.size(32.dp)
-                )
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(shapes.cardShape)
+                        .background(colors.surfaceAlt)
+                        .border(1.dp, colors.accent.copy(alpha = 0.25f), shapes.cardShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AdminPanelSettings,
+                        contentDescription = "Otorisasi Admin",
+                        tint = colors.accent,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    A3StatusChip(
+                        label = "Otorisasi Owner",
+                        token = StatusToken.INFO
+                    )
+                    Text(
+                        text = "Area Khusus Owner",
+                        style = A3Theme.typography.label,
+                        color = colors.inkMuted
+                    )
+                }
             }
+
             Spacer(modifier = Modifier.height(20.dp))
+
+            // Judul Layar & Deskripsi
             Text(
-                text = "Menu Admin Tablet (S15)",
-                style = A3Theme.typography.display,
+                text = "Pengaturan Admin",
+                style = A3Theme.typography.headline.copy(fontSize = 24.sp),
+                fontWeight = FontWeight.Bold,
                 color = colors.ink
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Area operasional terlindungi. Masukkan 4-digit PIN Owner untuk mengakses pengaturan sistem perangkat, kontrol mode kios, dan pembaruan aplikasi.",
+                text = "Area konfigurasi tingkat sistem perangkat tablet POS. Memerlukan PIN Owner untuk memastikan stabilitas dan keamanan operasional kasir.",
                 style = A3Theme.typography.body,
                 color = colors.inkMuted,
                 lineHeight = 22.sp
             )
 
-            if (uiState.pinError != null) {
-                Spacer(modifier = Modifier.height(20.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFFBE9E7))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Warning,
-                        contentDescription = "Peringatan",
-                        tint = Color(0xFFD32F2F),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = uiState.pinError,
-                        style = A3Theme.typography.body,
-                        color = Color(0xFFD32F2F),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Fitur-fitur yang dilindungi (3 Kartu Ringkas Elegan)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                AdminFeatureItem(
+                    icon = Icons.Outlined.LockOpen,
+                    title = "Mode Kios & Keamanan",
+                    subtitle = "Kontrol pinning layar tablet dan reset aplikasi"
+                )
+                AdminFeatureItem(
+                    icon = Icons.Outlined.Print,
+                    title = "Hardware & Jaringan",
+                    subtitle = "Diagnostik printer thermal struk & setelan Wi-Fi"
+                )
+                AdminFeatureItem(
+                    icon = Icons.Outlined.SystemUpdate,
+                    title = "Pembaruan Aplikasi",
+                    subtitle = "Verifikasi prasyarat dan instalasi berkas APK rilis"
+                )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
-            A3Button(
-                label = "Kembali ke Kasir",
-                onClick = onBackClick,
-                variant = ButtonVariant.GHOST
-            )
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Baris Bawah: Info Perangkat & Tombol Kembali
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.TabletAndroid,
+                        contentDescription = null,
+                        tint = colors.inkMuted,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        text = "${uiState.deviceId} · Unit ${uiState.businessUnitId} · v${uiState.appVersionName}",
+                        style = A3Theme.typography.bodySmall,
+                        color = colors.inkMuted
+                    )
+                }
+
+                A3Button(
+                    label = "Kembali ke Kasir",
+                    onClick = onBackClick,
+                    variant = ButtonVariant.GHOST
+                )
+            }
         }
 
-        // Sisi Kanan: Tampilan PIN Dots & Keypad Numerik 3x4
+        // ==========================================
+        // 2. SISI KANAN: Kartu Input PIN & Keypad Ergonomis
+        // ==========================================
         Column(
             modifier = Modifier
-                .weight(1f)
+                .weight(0.9f)
                 .fillMaxHeight(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             A3Card(
-                modifier = Modifier.fillMaxWidth(0.85f)
+                modifier = Modifier.widthIn(max = 380.dp)
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(24.dp),
+                        .padding(horizontal = 20.dp, vertical = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Header Kartu
                     Text(
-                        text = "PIN OWNER",
-                        style = A3Theme.typography.label,
+                        text = "Masukkan PIN Owner",
+                        style = A3Theme.typography.title,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.ink
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "4 digit angka keamanan",
+                        style = A3Theme.typography.bodySmall,
                         color = colors.inkMuted
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // 4 Digit Dots
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    // 4 Digit Dots dengan Umpan Balik Visual Halus
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         for (i in 0 until 4) {
                             val isFilled = i < uiState.enteredPin.length
+                            val isError = uiState.pinError != null && !uiState.isPinLocked
+                            val isLocked = uiState.isPinLocked
+
+                            val dotScale by animateFloatAsState(
+                                targetValue = if (isFilled) 1.15f else 1.0f,
+                                animationSpec = tween(durationMillis = 150),
+                                label = "pin_dot_scale"
+                            )
+
+                            val dotBgColor by animateColorAsState(
+                                targetValue = when {
+                                    isLocked -> colors.status.danger.background
+                                    isError -> colors.status.danger.background
+                                    isFilled -> colors.accent
+                                    else -> Color.Transparent
+                                },
+                                animationSpec = tween(durationMillis = 150),
+                                label = "pin_dot_bg"
+                            )
+
+                            val dotBorderColor by animateColorAsState(
+                                targetValue = when {
+                                    isLocked -> colors.status.danger.text
+                                    isError -> colors.status.danger.text
+                                    isFilled -> colors.accent
+                                    else -> colors.border
+                                },
+                                animationSpec = tween(durationMillis = 150),
+                                label = "pin_dot_border"
+                            )
+
                             Box(
                                 modifier = Modifier
                                     .size(20.dp)
+                                    .scale(dotScale)
                                     .clip(CircleShape)
-                                    .background(if (isFilled) colors.ink else Color.Transparent)
+                                    .background(dotBgColor)
                                     .border(
-                                        width = 2.dp,
-                                        color = if (isFilled) colors.ink else colors.border,
+                                        width = if (isFilled || isError || isLocked) 2.dp else 1.5.dp,
+                                        color = dotBorderColor,
                                         shape = CircleShape
                                     )
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // Keypad
+                    // Kotak Status Kontekstual (Lockout / Error / Petunjuk)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when {
+                            uiState.isPinLocked -> {
+                                val minutes = uiState.lockoutRemainingSeconds / 60
+                                val seconds = uiState.lockoutRemainingSeconds % 60
+                                val timeText = String.format("%02d:%02d", minutes, seconds)
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colors.status.danger.background)
+                                        .border(1.dp, colors.status.danger.text.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.LockClock,
+                                        contentDescription = "Terkunci",
+                                        tint = colors.status.danger.text,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Terkunci sementara ($timeText)",
+                                        style = A3Theme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                        color = colors.status.danger.text
+                                    )
+                                }
+                            }
+                            uiState.pinError != null -> {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colors.status.danger.background)
+                                        .border(1.dp, colors.status.danger.text.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.ErrorOutline,
+                                        contentDescription = "Galat",
+                                        tint = colors.status.danger.text,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = uiState.pinError,
+                                        style = A3Theme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                        color = colors.status.danger.text,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            else -> {
+                                Text(
+                                    text = "PIN default bawaan: 9999",
+                                    style = A3Theme.typography.bodySmall,
+                                    color = colors.inkMuted
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Keypad Numerik 3x4 (dengan Tombol C Clear Aktif & Disabled saat Lockout)
                     A3Keypad(
                         onDigitClick = onPinDigit,
                         onBackspace = onPinBackspace,
-                        onClear = null,
-                        modifier = Modifier.fillMaxWidth()
+                        onClear = onPinClear,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .alpha(if (uiState.isPinLocked) 0.38f else 1.0f)
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AdminFeatureItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String
+) {
+    val colors = A3Theme.colors
+    val shapes = A3Theme.shapes
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shapes.cardShape)
+            .background(colors.surface)
+            .border(0.5.dp, colors.border, shapes.cardShape)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(colors.surfaceAlt),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = colors.ink,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = A3Theme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.ink
+            )
+            Text(
+                text = subtitle,
+                style = A3Theme.typography.bodySmall.copy(fontSize = 11.sp),
+                color = colors.inkMuted
+            )
         }
     }
 }
@@ -339,42 +570,42 @@ private fun AdminDashboard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 20.dp),
+                .padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Menu Admin Tablet",
-                        style = A3Theme.typography.display,
+                        text = "Pengaturan Admin",
+                        style = A3Theme.typography.headline.copy(fontSize = 24.sp),
+                        fontWeight = FontWeight.Bold,
                         color = colors.ink
                     )
                     A3StatusChip(
-                        label = "Akses Owner Aktif",
+                        label = "Akses Aktif",
                         token = StatusToken.SUCCESS,
                         icon = Icons.Outlined.CheckCircle
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "ID Perangkat: ${uiState.deviceId}  ·  Unit: ${uiState.businessUnitId}  ·  Versi: v${uiState.appVersionName}",
-                    style = A3Theme.typography.body,
+                    text = "ID: ${uiState.deviceId}  ·  Unit: ${uiState.businessUnitId}  ·  v${uiState.appVersionName}",
+                    style = A3Theme.typography.bodySmall,
                     color = colors.inkMuted
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 A3Button(
-                    label = "Kunci Akses Admin",
+                    label = "Kunci Akses",
                     onClick = onLockAdmin,
                     variant = ButtonVariant.SECONDARY
                 )
                 A3Button(
-                    label = "Tutup Menu",
+                    label = "Tutup",
                     onClick = onBackClick,
                     variant = ButtonVariant.PRIMARY
                 )
@@ -386,7 +617,7 @@ private fun AdminDashboard(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // KOLOM KIRI (48%): Status Perangkat, Wi-Fi, Printer & Mode Kios
             Column(
@@ -401,11 +632,11 @@ private fun AdminDashboard(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(20.dp),
+                            .padding(18.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Text(
-                            text = "Pengaturan Perangkat & Hardware",
+                            text = "Perangkat & Hardware",
                             style = A3Theme.typography.headline,
                             color = colors.ink
                         )
@@ -424,7 +655,7 @@ private fun AdminDashboard(
                                     imageVector = Icons.Outlined.Wifi,
                                     contentDescription = "Wi-Fi",
                                     tint = colors.ink,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                                 Column {
                                     Text(
@@ -433,14 +664,14 @@ private fun AdminDashboard(
                                         color = colors.ink
                                     )
                                     Text(
-                                        text = "Buka pengaturan jaringan Android",
+                                        text = "Jaringan Wi-Fi tablet",
                                         style = A3Theme.typography.bodySmall,
                                         color = colors.inkMuted
                                     )
                                 }
                             }
                             A3Button(
-                                label = "Buka Wi-Fi",
+                                label = "Atur Wi-Fi",
                                 onClick = onOpenWifi,
                                 variant = ButtonVariant.SECONDARY
                             )
@@ -460,18 +691,18 @@ private fun AdminDashboard(
                                     imageVector = Icons.Outlined.Print,
                                     contentDescription = "Printer",
                                     tint = colors.ink,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                                 Column {
                                     Text(
-                                        text = "Printer iWare C58BT",
+                                        text = "Printer Kasir",
                                         style = A3Theme.typography.label,
                                         color = colors.ink
                                     )
                                     Text(
                                         text = uiState.printerStatusText,
                                         style = A3Theme.typography.bodySmall,
-                                        color = if (uiState.isPrinterConnected) colors.ink else colors.status.danger.text
+                                        color = if (uiState.isPrinterConnected) colors.inkMuted else colors.status.danger.text
                                     )
                                 }
                             }
@@ -497,16 +728,16 @@ private fun AdminDashboard(
                                     imageVector = Icons.Outlined.Sync,
                                     contentDescription = "Sync",
                                     tint = colors.ink,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                                 Column {
                                     Text(
-                                        text = "Antrean Outbox",
+                                        text = "Antrean Sinkron",
                                         style = A3Theme.typography.label,
                                         color = colors.ink
                                     )
                                     Text(
-                                        text = if (uiState.unsyncedOutboxCount == 0) "Seluruh data tersinkron" else "${uiState.unsyncedOutboxCount} data menunggu sinkron",
+                                        text = if (uiState.unsyncedOutboxCount == 0) "Tersinkron penuh" else "${uiState.unsyncedOutboxCount} data menunggu",
                                         style = A3Theme.typography.bodySmall,
                                         color = if (uiState.unsyncedOutboxCount == 0) colors.inkMuted else colors.status.warning.text
                                     )
@@ -520,13 +751,13 @@ private fun AdminDashboard(
                     }
                 }
 
-                // Kartu 2: Mode Kios (Lock Task SET-04, SET-05)
+                // Kartu 2: Mode Kios
                 A3Card {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -534,36 +765,35 @@ private fun AdminDashboard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Mode Kios Kasir (Lock Task)",
+                                text = "Mode Kios",
                                 style = A3Theme.typography.headline,
                                 color = colors.ink
                             )
                             A3StatusChip(
-                                label = if (uiState.isKioskActive) "Kios Terkunci" else "Kios Bebas",
+                                label = if (uiState.isKioskActive) "Kios Aktif" else "Kios Bebas",
                                 token = if (uiState.isKioskActive) StatusToken.INFO else StatusToken.NEUTRAL,
                                 icon = if (uiState.isKioskActive) Icons.Outlined.Lock else Icons.Outlined.LockOpen
                             )
                         }
 
                         Text(
-                            text = "Mode Kios mengunci tablet pada aplikasi kasir sehingga navigasi Back, Home, dan Recent Apps diblokir oleh sistem Android. Kasir toko tidak dapat menutup atau beralih ke aplikasi lain.",
+                            text = "Mengunci tablet pada aplikasi kasir dan membatasi navigasi sistem Android.",
                             style = A3Theme.typography.body,
-                            color = colors.inkMuted,
-                            lineHeight = 20.sp
+                            color = colors.inkMuted
                         )
 
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
 
                         if (uiState.isKioskActive) {
                             A3Button(
-                                label = "Lepaskan Kios (Buka Navigasi Tablet)",
+                                label = "Lepas Mode Kios",
                                 onClick = onDisableKiosk,
                                 variant = ButtonVariant.DANGER,
                                 fillWidth = true
                             )
                         } else {
                             A3Button(
-                                label = "Kunci Tablet ke Mode Kios",
+                                label = "Aktifkan Mode Kios",
                                 onClick = onEnableKiosk,
                                 variant = ButtonVariant.PRIMARY,
                                 fillWidth = true
@@ -573,7 +803,7 @@ private fun AdminDashboard(
                 }
             }
 
-            // KOLOM KANAN (52%): Pembaruan Aplikasi Mandiri (OPS-03 & F39)
+            // KOLOM KANAN (52%): Pembaruan Aplikasi Mandiri
             Column(
                 modifier = Modifier
                     .weight(0.52f)
@@ -584,8 +814,8 @@ private fun AdminDashboard(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -600,10 +830,10 @@ private fun AdminDashboard(
                                     imageVector = Icons.Outlined.SystemUpdate,
                                     contentDescription = "Update",
                                     tint = colors.ink,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                                 Text(
-                                    text = "Pembaruan Aplikasi (OPS-03)",
+                                    text = "Pembaruan Aplikasi",
                                     style = A3Theme.typography.headline,
                                     color = colors.ink
                                 )
@@ -619,23 +849,22 @@ private fun AdminDashboard(
                         }
 
                         Text(
-                            text = "Aturan Kepatuhan OPS-03: Distribusi lewat jalur privat. Update hanya saat tidak ada shift aktif dan outbox kosong, di luar jam ramai.",
+                            text = "Pemasangan paket APK baru saat shift ditutup dan antrean sinkron bersih.",
                             style = A3Theme.typography.body,
-                            color = colors.inkMuted,
-                            lineHeight = 20.sp
+                            color = colors.inkMuted
                         )
 
-                        // 2 Indikator Prasyarat OPS-03
+                        // Indikator Prasyarat
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(colors.surfaceAlt)
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Text(
-                                text = "STATUS PRASYARAT PEMBARUAN",
+                                text = "SYARAT PEMBARUAN",
                                 style = A3Theme.typography.bodySmall,
                                 color = colors.inkMuted,
                                 fontWeight = FontWeight.Bold
@@ -648,19 +877,19 @@ private fun AdminDashboard(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "1. Tidak Ada Shift Berjalan:",
+                                    text = "Shift Kasir",
                                     style = A3Theme.typography.body,
                                     color = colors.ink
                                 )
                                 if (uiState.activeShiftCashierName != null) {
                                     A3StatusChip(
-                                        label = "Shift Aktif: ${uiState.activeShiftCashierName}",
+                                        label = "Aktif: ${uiState.activeShiftCashierName}",
                                         token = StatusToken.DANGER,
                                         icon = Icons.Outlined.Warning
                                     )
                                 } else {
                                     A3StatusChip(
-                                        label = "Shift Ditutup (Aman)",
+                                        label = "Ditutup",
                                         token = StatusToken.SUCCESS,
                                         icon = Icons.Outlined.CheckCircle
                                     )
@@ -674,19 +903,19 @@ private fun AdminDashboard(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "2. Seluruh Outbox Tersinkron:",
+                                    text = "Antrean Sinkron",
                                     style = A3Theme.typography.body,
                                     color = colors.ink
                                 )
                                 if (uiState.unsyncedOutboxCount > 0) {
                                     A3StatusChip(
-                                        label = "${uiState.unsyncedOutboxCount} Belum Sinkron",
+                                        label = "${uiState.unsyncedOutboxCount} Menunggu",
                                         token = StatusToken.WARNING,
                                         icon = Icons.Outlined.Warning
                                     )
                                 } else {
                                     A3StatusChip(
-                                        label = "Outbox Kosong (Aman)",
+                                        label = "Bersih",
                                         token = StatusToken.SUCCESS,
                                         icon = Icons.Outlined.CheckCircle
                                     )
@@ -701,9 +930,10 @@ private fun AdminDashboard(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(Color(0xFFE8F5E9))
-                                        .padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        .background(colors.status.success.background)
+                                        .border(1.dp, colors.status.success.text.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -712,27 +942,27 @@ private fun AdminDashboard(
                                         Icon(
                                             imageVector = Icons.Outlined.CheckCircle,
                                             contentDescription = "Aman",
-                                            tint = Color(0xFF2E7D32),
-                                            modifier = Modifier.size(20.dp)
+                                            tint = colors.status.success.text,
+                                            modifier = Modifier.size(18.dp)
                                         )
                                         Text(
-                                            text = "Siap Menerima Pembaruan APK",
+                                            text = "Siap Pasang Pembaruan",
                                             style = A3Theme.typography.label,
-                                            color = Color(0xFF2E7D32),
+                                            color = colors.status.success.text,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                     Text(
-                                        text = "Kondisi tablet memenuhi seluruh aturan OPS-03. Tidak ada data transaksi yang berisiko terganggu.",
-                                        style = A3Theme.typography.body,
-                                        color = Color(0xFF1B5E20)
+                                        text = "Kondisi tablet aman untuk memasang pembaruan.",
+                                        style = A3Theme.typography.bodySmall,
+                                        color = colors.status.success.text
                                     )
                                 }
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
 
                                 A3Button(
-                                    label = "Pilih & Pasang Paket APK Pembaruan",
+                                    label = "Pasang Pembaruan APK",
                                     onClick = onSelectApkFile,
                                     variant = ButtonVariant.PRIMARY,
                                     fillWidth = true
@@ -743,9 +973,10 @@ private fun AdminDashboard(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(Color(0xFFFFF3E0))
-                                        .padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        .background(colors.status.warning.background)
+                                        .border(1.dp, colors.status.warning.text.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -754,29 +985,29 @@ private fun AdminDashboard(
                                         Icon(
                                             imageVector = Icons.Outlined.Warning,
                                             contentDescription = "Diblokir",
-                                            tint = Color(0xFFE65100),
-                                            modifier = Modifier.size(20.dp)
+                                            tint = colors.status.warning.text,
+                                            modifier = Modifier.size(18.dp)
                                         )
                                         Text(
-                                            text = "Pembaruan Diblokir (Aturan OPS-03)",
+                                            text = "Pembaruan Belum Diizinkan",
                                             style = A3Theme.typography.label,
-                                            color = Color(0xFFE65100),
+                                            color = colors.status.warning.text,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                     for (reason in eligibility.reasons) {
                                         Text(
                                             text = "• ${reason.description}",
-                                            style = A3Theme.typography.body,
-                                            color = Color(0xFFBF360C)
+                                            style = A3Theme.typography.bodySmall,
+                                            color = colors.status.warning.text
                                         )
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
 
                                 A3Button(
-                                    label = "Pembaruan Tidak Dapat Dijalankan",
+                                    label = "Pembaruan Dinonaktifkan",
                                     onClick = {},
                                     variant = ButtonVariant.SECONDARY,
                                     enabled = false,

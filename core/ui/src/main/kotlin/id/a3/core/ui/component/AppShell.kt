@@ -10,8 +10,8 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -49,6 +49,7 @@ fun AppShell(
     pendingPrintCount: Int = 0,
     onPrinterClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
+    isAdminSelected: Boolean = false,
     navItems: List<NavItem> = emptyList(),
     selectedNavIndex: Int = 0,
     onNavItemSelected: (Int) -> Unit = {},
@@ -60,7 +61,8 @@ fun AppShell(
     val isRailVisible = !isFocusFlowActive && navItems.isNotEmpty()
 
     // WindowInsets untuk edge-to-edge (Android 15+ default)
-    val safeDrawing = WindowInsets.safeDrawing.asPaddingValues()
+    // Gunakan navigationBars (bukan safeDrawing) agar animasi keyboard (IME) tidak memicu rekomposisi massal atau menciutkan viewport
+    val navigationBarsBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     Box(
@@ -102,6 +104,7 @@ fun AppShell(
                     selectedIndex = selectedNavIndex,
                     onItemSelected = onNavItemSelected,
                     onAdminClick = onAdminClick,
+                    isAdminSelected = isAdminSelected,
                     visible = isRailVisible,
                     modifier = Modifier
                         .padding(start = 12.dp)
@@ -114,7 +117,7 @@ fun AppShell(
                         .weight(1f)
                         .fillMaxHeight()
                 ) {
-                    content(PaddingValues(bottom = safeDrawing.calculateBottomPadding()))
+                    content(PaddingValues(bottom = navigationBarsBottom))
                 }
             }
         }

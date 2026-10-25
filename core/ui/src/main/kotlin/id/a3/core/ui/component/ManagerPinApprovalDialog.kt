@@ -78,6 +78,7 @@ fun ManagerPinApprovalDialog(
     errorMessage: String? = null,
     isManagerLocked: Boolean = false,
     lockoutRemainingSeconds: Int = 0,
+    showAuditReasons: Boolean = true,
     onDismiss: () -> Unit,
     onSubmitApproval: (pin: String, reasonCode: String, note: String?) -> Unit,
     modifier: Modifier = Modifier
@@ -216,65 +217,82 @@ fun ManagerPinApprovalDialog(
                             }
                         }
 
-                        // Pilihan Alasan Audit (COR-01)
-                        Text(
-                            text = "Alasan Pembatalan / Refund (Wajib):",
-                            color = colors.ink,
-                            style = A3Theme.typography.label,
-                            fontWeight = FontWeight.Bold
-                        )
+                        if (showAuditReasons) {
+                            // Pilihan Alasan Audit (COR-01)
+                            Text(
+                                text = "Alasan Pembatalan / Refund (Wajib):",
+                                color = colors.ink,
+                                style = A3Theme.typography.label,
+                                fontWeight = FontWeight.Bold
+                            )
 
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            STANDARD_AUDIT_REASONS.forEach { opt ->
-                                val isSelected = opt.code == selectedReasonCode
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) colors.accent.copy(alpha = 0.08f) else colors.surface)
-                                        .border(
-                                            width = if (isSelected) 1.5.dp else 1.dp,
-                                            color = if (isSelected) colors.accent else colors.border,
-                                            shape = RoundedCornerShape(8.dp)
-                                        )
-                                        .clickable {
-                                            selectedReasonCode = opt.code
-                                            inlineError = null
-                                        }
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    Box(
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                STANDARD_AUDIT_REASONS.forEach { opt ->
+                                    val isSelected = opt.code == selectedReasonCode
+                                    Row(
                                         modifier = Modifier
-                                            .size(16.dp)
-                                            .clip(CircleShape)
-                                            .background(if (isSelected) colors.accent else Color.Transparent)
-                                            .border(1.5.dp, if (isSelected) colors.accent else colors.border, CircleShape)
-                                    )
-                                    Text(
-                                        text = opt.label,
-                                        color = if (isSelected) colors.accent else colors.ink,
-                                        fontSize = 13.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) colors.accent.copy(alpha = 0.08f) else colors.surface)
+                                            .border(
+                                                width = if (isSelected) 1.5.dp else 1.dp,
+                                                color = if (isSelected) colors.accent else colors.border,
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable {
+                                                selectedReasonCode = opt.code
+                                                inlineError = null
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(16.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isSelected) colors.accent else Color.Transparent)
+                                                .border(1.5.dp, if (isSelected) colors.accent else colors.border, CircleShape)
+                                        )
+                                        Text(
+                                            text = opt.label,
+                                            color = if (isSelected) colors.accent else colors.ink,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    }
                                 }
                             }
-                        }
 
-                        // Input Catatan jika 'other' dipilih
-                        if (selectedReasonCode == "other") {
-                            A3TextField(
-                                value = noteInput,
-                                onValueChange = {
-                                    noteInput = it
-                                    inlineError = null
-                                },
-                                label = "Catatan Alasan Tambahan",
-                                placeholder = "Tuliskan keterangan detail alasan...",
-                                error = if (selectedReasonCode == "other" && noteInput.isBlank()) inlineError else null,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            // Input Catatan jika 'other' dipilih
+                            if (selectedReasonCode == "other") {
+                                A3TextField(
+                                    value = noteInput,
+                                    onValueChange = {
+                                        noteInput = it
+                                        inlineError = null
+                                    },
+                                    label = "Catatan Alasan Tambahan",
+                                    placeholder = "Tuliskan keterangan detail alasan...",
+                                    error = if (selectedReasonCode == "other" && noteInput.isBlank()) inlineError else null,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(colors.surfaceAlt)
+                                    .padding(14.dp)
+                            ) {
+                                Text(
+                                    text = "Pemeriksaan otorisasi Manager untuk persetujuan pengeluaran dana kas laci.",
+                                    style = A3Theme.typography.body,
+                                    color = colors.inkMuted,
+                                    lineHeight = 20.sp
+                                )
+                            }
                         }
                     }
 
@@ -392,14 +410,14 @@ fun ManagerPinApprovalDialog(
                                         inlineError = "Masukkan 4 digit PIN lengkap"
                                         return@A3Button
                                     }
-                                    if (selectedReasonCode == "other" && noteInput.trim().isBlank()) {
+                                    if (showAuditReasons && selectedReasonCode == "other" && noteInput.trim().isBlank()) {
                                         inlineError = "Alasan 'Lainnya' wajib mengisi catatan"
                                         return@A3Button
                                     }
                                     onSubmitApproval(
                                         pinInput,
-                                        selectedReasonCode,
-                                        if (selectedReasonCode == "other") noteInput.trim() else null
+                                        if (showAuditReasons) selectedReasonCode else "authorized",
+                                        if (showAuditReasons && selectedReasonCode == "other") noteInput.trim() else null
                                     )
                                 },
                                 variant = ButtonVariant.DANGER,

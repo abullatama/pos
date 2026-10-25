@@ -155,7 +155,7 @@ object ZReportFormatter {
             .boldOff()
 
         val diffLabel = when {
-            data.cashDifference == 0L -> "Nol (Sesuai)"
+            data.cashDifference == 0L -> "Rp 0 (Pas)"
             data.cashDifference > 0L -> "+${formatRupiah(data.cashDifference)}"
             else -> formatRupiah(data.cashDifference)
         }

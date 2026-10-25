@@ -163,22 +163,22 @@ class MainActivity : ComponentActivity() {
                     val activeShift = shiftUiState.currentShift
                     val isShiftActive = activeShift != null
 
-                    val cafeNavItems = remember(isShiftActive) {
+                    val cafeNavItems = remember {
                         listOf(
-                            NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale, enabled = isShiftActive),
-                            NavItem(CafeDestinations.PESANAN, "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong, enabled = isShiftActive),
-                            NavItem(CafeDestinations.HABIS, "Menu Habis", Icons.Outlined.Block, enabled = isShiftActive),
-                            NavItem(CafeDestinations.KAS_KELUAR, "Kas Keluar", Icons.Outlined.Payments, enabled = isShiftActive),
+                            NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale, enabled = true),
+                            NavItem(CafeDestinations.PESANAN, "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong, enabled = true),
+                            NavItem(CafeDestinations.HABIS, "Menu Habis", Icons.Outlined.Block, enabled = true),
+                            NavItem(CafeDestinations.KAS_KELUAR, "Kas", Icons.Outlined.Payments, enabled = true),
                             NavItem(CafeDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime, enabled = true)
                         )
                     }
 
                     val defaultStartRoute = if (isShiftActive) CafeDestinations.KASIR else CafeDestinations.SHIFT
                     val currentRoute = navBackStackEntry?.destination?.route ?: defaultStartRoute
+                    val isAdminSelected = currentRoute == CafeDestinations.ADMIN
 
                     val selectedIndex = remember(currentRoute, cafeNavItems) {
-                        val idx = cafeNavItems.indexOfFirst { it.id == currentRoute }
-                        if (idx >= 0) idx else 0
+                        cafeNavItems.indexOfFirst { it.id == currentRoute }
                     }
 
                     val isFocusFlowActive = remember(currentRoute) {
@@ -200,25 +200,29 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onAdminClick = {
-                            navController.navigate(CafeDestinations.ADMIN) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
+                            if (currentRoute != CafeDestinations.ADMIN) {
+                                navController.navigate(CafeDestinations.ADMIN) {
+                                    launchSingleTop = true
                                 }
-                                launchSingleTop = true
-                                restoreState = true
                             }
                         },
+                        isAdminSelected = isAdminSelected,
                         navItems = cafeNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
                             val item = cafeNavItems[index]
                             if (item.enabled) {
-                                navController.navigate(item.id) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                                if (currentRoute == CafeDestinations.ADMIN) {
+                                    navController.popBackStack(CafeDestinations.ADMIN, inclusive = true)
+                                }
+                                if (navController.currentDestination?.route != item.id) {
+                                    navController.navigate(item.id) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
                             }
                         },

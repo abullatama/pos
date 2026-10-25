@@ -223,4 +223,29 @@ class CloseShiftViewModelTest {
         assertTrue(text.contains("LAPORAN Z"))
         assertTrue(text.contains("725.000"))
     }
+
+    @Test
+    fun `recount requires manager pin authorization to return to step 1`() = runTest {
+        viewModel.initializeWithShift(shiftId)
+        viewModel.adjustDenominationCount(100000L, 5)
+        viewModel.proceedToStep2()
+
+        assertEquals(CloseShiftStep.STEP_2_DIFF_AND_QRIS, viewModel.uiState.value.currentStep)
+
+        // Buka dialog recount
+        viewModel.openRecountPinDialog()
+        assertTrue(viewModel.uiState.value.isRecountPinDialogOpen)
+
+        // PIN salah
+        viewModel.verifyManagerPinForRecount("1111")
+        assertTrue(viewModel.uiState.value.isRecountPinDialogOpen)
+        assertNotNull(viewModel.uiState.value.recountPinError)
+        assertEquals(CloseShiftStep.STEP_2_DIFF_AND_QRIS, viewModel.uiState.value.currentStep)
+
+        // PIN benar
+        viewModel.verifyManagerPinForRecount("4444")
+        assertFalse(viewModel.uiState.value.isRecountPinDialogOpen)
+        assertNull(viewModel.uiState.value.recountPinError)
+        assertEquals(CloseShiftStep.STEP_1_BLIND_COUNT, viewModel.uiState.value.currentStep)
+    }
 }

@@ -122,13 +122,19 @@ fun CloseShiftScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    val onBackAction = when (uiState.currentStep) {
+                        CloseShiftStep.STEP_1_BLIND_COUNT -> onCancel
+                        CloseShiftStep.STEP_2_DIFF_AND_QRIS -> viewModel::openRecountPinDialog
+                        CloseShiftStep.STEP_3_ALLOCATION_AND_Z -> viewModel::backToStep2
+                    }
+
                     IconButton(
-                        onClick = onCancel,
+                        onClick = onBackAction,
                         modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                            contentDescription = "Batal",
+                            contentDescription = "Kembali",
                             tint = colors.ink
                         )
                     }
@@ -230,6 +236,24 @@ fun CloseShiftScreen(
                         )
                     }
                 }
+            }
+
+            // Dialog Proteksi Hitung Ulang Kasir (TUP-03)
+            if (uiState.isRecountPinDialogOpen) {
+                id.a3.core.ui.component.ManagerPinApprovalDialog(
+                    title = "Otorisasi Hitung Ulang Kas",
+                    actionType = "Hitung Ulang Kasir",
+                    amountToApprove = uiState.countedCash,
+                    isOldTransaction = false,
+                    showAuditReasons = false,
+                    errorMessage = uiState.recountPinError,
+                    isManagerLocked = uiState.isRecountLocked,
+                    lockoutRemainingSeconds = uiState.recountLockoutSeconds,
+                    onDismiss = viewModel::closeRecountPinDialog,
+                    onSubmitApproval = { pin, _, _ ->
+                        viewModel.verifyManagerPinForRecount(pin)
+                    }
+                )
             }
         }
     }
@@ -628,9 +652,9 @@ private fun Step2DiffAndQrisContent(
                 )
 
                 A3Button(
-                    label = "Kembali ke Hitung Kas",
+                    label = "Hitung Ulang Kas (Butuh PIN Manager)",
                     variant = ButtonVariant.GHOST,
-                    onClick = viewModel::backToStep1,
+                    onClick = viewModel::openRecountPinDialog,
                     fillWidth = true
                 )
             }

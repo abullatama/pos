@@ -1,6 +1,7 @@
 package id.a3.core.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -111,6 +112,7 @@ fun A3Keypad(
                     .aspectRatio(1.65f)
                     .clip(RoundedCornerShape(10.dp))
                     .background(colors.surfaceAlt)
+                    .border(1.dp, colors.border, RoundedCornerShape(10.dp))
                     .clickable(onClick = onBackspace)
                     .testTag(A3_KEYPAD_BACKSPACE_TAG),
                 contentAlignment = Alignment.Center
@@ -172,6 +174,7 @@ private fun KeypadCell(
             .aspectRatio(1.65f)
             .clip(RoundedCornerShape(10.dp))
             .background(bg)
+            .border(1.dp, colors.border, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {

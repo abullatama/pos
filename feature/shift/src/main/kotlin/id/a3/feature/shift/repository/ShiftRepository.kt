@@ -55,6 +55,7 @@ interface ShiftRepository {
         deviceId: String = "dev-1"
     ): Result<ActiveShift>
     suspend fun getShiftSummary(shiftId: String): Result<ShiftSummary>
+    fun observeCashOutsForShift(shiftId: String): Flow<List<CashOutEntity>>
     suspend fun recordCashOut(
         amount: Long,
         category: String,
@@ -187,6 +188,10 @@ class DefaultShiftRepository(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override fun observeCashOutsForShift(shiftId: String): Flow<List<CashOutEntity>> {
+        return transactionManager.cashOutDao.observeCashOutsForShift(shiftId)
     }
 
     override suspend fun recordCashOut(

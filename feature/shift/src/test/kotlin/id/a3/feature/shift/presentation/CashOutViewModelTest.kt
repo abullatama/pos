@@ -1,5 +1,6 @@
 package id.a3.feature.shift.presentation
 
+import id.a3.core.data.local.entity.CashOutEntity
 import id.a3.feature.shift.repository.ActiveShift
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -191,5 +192,81 @@ class CashOutViewModelTest {
         val text = String(fakePrinter.printedBytes.first(), Charsets.ISO_8859_1)
         assertTrue(text.contains("u-manager-1"))
         assertTrue(text.contains("Rp75.000"))
+    }
+
+    @Test
+    fun `selectTab switches between INPUT and HISTORY tabs correctly`() {
+        assertEquals(CashOutTab.INPUT, viewModel.uiState.value.selectedTab)
+
+        viewModel.selectTab(CashOutTab.HISTORY)
+        assertEquals(CashOutTab.HISTORY, viewModel.uiState.value.selectedTab)
+
+        viewModel.selectTab(CashOutTab.INPUT)
+        assertEquals(CashOutTab.INPUT, viewModel.uiState.value.selectedTab)
+    }
+
+    @Test
+    fun `resetSuccess clears form and resets isSuccess state`() {
+        viewModel.setAmount(20000L)
+        viewModel.setReason("Beli tisu")
+        viewModel.setReceiptPhoto(bitmap = null, filePath = "/path/test.jpg")
+        viewModel.submitCashOut()
+
+        assertTrue(viewModel.uiState.value.isSuccess)
+        assertEquals(20000L, viewModel.uiState.value.amount)
+
+        viewModel.resetSuccess()
+
+        assertFalse(viewModel.uiState.value.isSuccess)
+        assertEquals(0L, viewModel.uiState.value.amount)
+        assertEquals("", viewModel.uiState.value.reason)
+        assertNull(viewModel.uiState.value.receiptFilePath)
+    }
+
+    @Test
+    fun `reprintCashOut prints copy receipt with SALINAN marker`() = runTest {
+        val cashOut = CashOutEntity(
+            id = "csh-999",
+            shiftId = "shift-001",
+            amount = 35000L,
+            category = "Operasional",
+            reason = "Beli plastik sampah",
+            approvedBy = null,
+            createdAt = System.currentTimeMillis()
+        )
+
+        viewModel.reprintCashOut(cashOut)
+
+        assertEquals(1, fakePrinter.printedBytes.size)
+        val text = String(fakePrinter.printedBytes.first(), Charsets.ISO_8859_1)
+        assertTrue(text.contains("*** SALINAN ***"))
+        assertTrue(text.contains("Rp35.000"))
+        assertTrue(text.contains("Beli plastik sampah"))
+    }
+
+    @Test
+    fun `cashOutsFlow in repository updates cashOutHistory and totalCashOutAmount in state`() = runTest {
+        val item1 = CashOutEntity(
+            id = "csh-1",
+            shiftId = "shift-001",
+            amount = 15000L,
+            category = "Bahan baku",
+            reason = "Beli jeruk nipis",
+            createdAt = System.currentTimeMillis()
+        )
+        val item2 = CashOutEntity(
+            id = "csh-2",
+            shiftId = "shift-001",
+            amount = 25000L,
+            category = "Operasional",
+            reason = "Beli baterai remote",
+            createdAt = System.currentTimeMillis()
+        )
+
+        fakeRepository.cashOutsFlow.value = listOf(item2, item1)
+
+        val state = viewModel.uiState.value
+        assertEquals(2, state.cashOutHistory.size)
+        assertEquals(40000L, state.totalCashOutAmount)
     }
 }

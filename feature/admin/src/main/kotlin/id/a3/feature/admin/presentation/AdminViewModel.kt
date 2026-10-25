@@ -128,6 +128,11 @@ class AdminViewModel(
         _uiState.update { it.copy(enteredPin = it.enteredPin.dropLast(1), pinError = null) }
     }
 
+    fun onPinClear() {
+        if (_uiState.value.isPinLocked || _uiState.value.enteredPin.isEmpty()) return
+        _uiState.update { it.copy(enteredPin = "", pinError = null) }
+    }
+
     fun verifyOwnerPin(pin: String = _uiState.value.enteredPin) {
         if (_uiState.value.isPinLocked) return
         if (pin == ownerPin) {

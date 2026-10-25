@@ -430,7 +430,19 @@ fun LaundryNavHost(
             AdminMenuScreen(
                 viewModel = adminViewModel,
                 onBackClick = {
-                    navController.popBackStack()
+                    if (!navController.popBackStack()) {
+                        val fallback = if (shiftViewModel.uiState.value.currentShift != null) {
+                            LaundryDestinations.BERANDA
+                        } else {
+                            LaundryDestinations.SHIFT
+                        }
+                        navController.navigate(fallback) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                        }
+                    }
                 }
             )
         }

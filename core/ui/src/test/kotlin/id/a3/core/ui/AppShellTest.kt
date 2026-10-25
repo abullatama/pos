@@ -129,4 +129,24 @@ class AppShellTest {
         composeTestRule.onNodeWithText("5 Menunggu").assertIsDisplayed()
         composeTestRule.onNodeWithText("Printer Putus").assertIsDisplayed()
     }
+
+    @Test
+    fun `navigation rail highlights admin button when isAdminSelected is true`() {
+        composeTestRule.setContent {
+            CafeTheme {
+                AppShell(
+                    businessName = "AA COFFEESHOP",
+                    navItems = testNavItems,
+                    selectedNavIndex = -1,
+                    isAdminSelected = true,
+                    onAdminClick = {}
+                ) {
+                    Text("Halaman Admin")
+                }
+            }
+        }
+
+        composeTestRule.onNodeWithTag(id.a3.core.ui.component.A3_NAV_RAIL_ADMIN_TAG).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Admin").assertIsDisplayed()
+    }
 }

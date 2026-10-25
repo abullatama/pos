@@ -50,7 +50,13 @@ data class CloseShiftUiState(
     val storeName: String = "AA COFFEESHOP",
     val storeAddress: String = "Jl. Kopi Pilihan No. 3",
     val storePhone: String = "0812-3456-7890",
-    val printStatusMessage: String? = null
+    val printStatusMessage: String? = null,
+
+    // Proteksi Hitung Ulang Kasir (TUP-03: Kunci Hitungan Buta & Wajib PIN Manager)
+    val isRecountPinDialogOpen: Boolean = false,
+    val recountPinError: String? = null,
+    val isRecountLocked: Boolean = false,
+    val recountLockoutSeconds: Int = 0
 ) {
     val expectedCash: Long get() = summary?.expectedCash ?: 0L
     val cashDifference: Long get() = countedCash - expectedCash
@@ -180,6 +186,9 @@ class CloseShiftViewModel(
         _uiState.update { it.copy(differenceReason = reason, error = null) }
     }
 
+    private var failedRecountPinAttempts = 0
+    private var recountLockedUntilMs = 0L
+
     fun proceedToStep3() {
         val state = _uiState.value
         if (!state.isStep2Valid) {
@@ -189,8 +198,81 @@ class CloseShiftViewModel(
         _uiState.update { it.copy(currentStep = CloseShiftStep.STEP_3_ALLOCATION_AND_Z, error = null) }
     }
 
+    fun openRecountPinDialog() {
+        val now = System.currentTimeMillis()
+        if (now < recountLockedUntilMs) {
+            val remainingSec = ((recountLockedUntilMs - now) / 1000).coerceAtLeast(1).toInt()
+            _uiState.update {
+                it.copy(
+                    isRecountPinDialogOpen = true,
+                    isRecountLocked = true,
+                    recountLockoutSeconds = remainingSec,
+                    recountPinError = "Akses terkunci sementara. Sisa $remainingSec detik"
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    isRecountPinDialogOpen = true,
+                    isRecountLocked = false,
+                    recountLockoutSeconds = 0,
+                    recountPinError = null
+                )
+            }
+        }
+    }
+
+    fun closeRecountPinDialog() {
+        _uiState.update { it.copy(isRecountPinDialogOpen = false, recountPinError = null) }
+    }
+
+    fun verifyManagerPinForRecount(pin: String) {
+        val now = System.currentTimeMillis()
+        if (now < recountLockedUntilMs) {
+            val remainingSec = ((recountLockedUntilMs - now) / 1000).coerceAtLeast(1).toInt()
+            _uiState.update {
+                it.copy(
+                    isRecountLocked = true,
+                    recountLockoutSeconds = remainingSec,
+                    recountPinError = "Akses terkunci sementara. Sisa $remainingSec detik"
+                )
+            }
+            return
+        }
+
+        // PIN Manager default seed: "4444"
+        val isCorrect = pin == "4444"
+        if (isCorrect) {
+            failedRecountPinAttempts = 0
+            _uiState.update {
+                it.copy(
+                    isRecountPinDialogOpen = false,
+                    recountPinError = null,
+                    currentStep = CloseShiftStep.STEP_1_BLIND_COUNT,
+                    error = null
+                )
+            }
+        } else {
+            failedRecountPinAttempts++
+            if (failedRecountPinAttempts >= 3) {
+                recountLockedUntilMs = now + (300 * 1000L)
+                _uiState.update {
+                    it.copy(
+                        isRecountLocked = true,
+                        recountLockoutSeconds = 300,
+                        recountPinError = "PIN salah 3 kali. Akses terkunci selama 5 menit"
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(recountPinError = "PIN Manager salah. Sisa ${3 - failedRecountPinAttempts} percobaan")
+                }
+            }
+        }
+    }
+
     fun backToStep1() {
-        _uiState.update { it.copy(currentStep = CloseShiftStep.STEP_1_BLIND_COUNT, error = null) }
+        openRecountPinDialog()
     }
 
     // --- STEP 3: ALOKASI KAS & LAPORAN Z (S11) ---

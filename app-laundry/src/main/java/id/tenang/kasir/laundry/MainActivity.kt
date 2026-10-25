@@ -164,22 +164,22 @@ class MainActivity : ComponentActivity() {
                     val activeShift = shiftUiState.currentShift
                     val isShiftActive = activeShift != null
 
-                    val laundryNavItems = remember(isShiftActive) {
+                    val laundryNavItems = remember {
                         listOf(
-                            NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home, enabled = isShiftActive),
-                            NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle, enabled = isShiftActive),
-                            NavItem(LaundryDestinations.CUCIAN, "Cucian", Icons.Outlined.Inventory2, enabled = isShiftActive),
-                            NavItem(LaundryDestinations.KAS_KELUAR, "Kas Keluar", Icons.Outlined.Payments, enabled = isShiftActive),
+                            NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home, enabled = true),
+                            NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle, enabled = true),
+                            NavItem(LaundryDestinations.CUCIAN, "Cucian", Icons.Outlined.Inventory2, enabled = true),
+                            NavItem(LaundryDestinations.KAS_KELUAR, "Kas Keluar", Icons.Outlined.Payments, enabled = true),
                             NavItem(LaundryDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime, enabled = true)
                         )
                     }
 
                     val defaultStartRoute = if (isShiftActive) LaundryDestinations.BERANDA else LaundryDestinations.SHIFT
                     val currentRoute = navBackStackEntry?.destination?.route ?: defaultStartRoute
+                    val isAdminSelected = currentRoute == LaundryDestinations.ADMIN
 
                     val selectedIndex = remember(currentRoute, laundryNavItems) {
-                        val idx = laundryNavItems.indexOfFirst { it.id == currentRoute }
-                        if (idx >= 0) idx else 0
+                        laundryNavItems.indexOfFirst { it.id == currentRoute }
                     }
 
                     val isFocusFlowActive = remember(currentRoute) {
@@ -201,21 +201,29 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onAdminClick = {
-                            navController.navigate(LaundryDestinations.ADMIN) {
-                                launchSingleTop = true
+                            if (currentRoute != LaundryDestinations.ADMIN) {
+                                navController.navigate(LaundryDestinations.ADMIN) {
+                                    launchSingleTop = true
+                                }
                             }
                         },
+                        isAdminSelected = isAdminSelected,
                         navItems = laundryNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
                             val item = laundryNavItems[index]
                             if (item.enabled) {
-                                navController.navigate(item.id) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
+                                if (currentRoute == LaundryDestinations.ADMIN) {
+                                    navController.popBackStack(LaundryDestinations.ADMIN, inclusive = true)
+                                }
+                                if (navController.currentDestination?.route != item.id) {
+                                    navController.navigate(item.id) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
                             }
                         },

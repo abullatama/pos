@@ -3,6 +3,7 @@ package id.a3.feature.shift.presentation
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import id.a3.core.data.local.entity.CashOutEntity
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.CashOutReceiptData
 import id.a3.core.printer.format.CashOutReceiptFormatter
@@ -20,6 +21,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+enum class CashOutTab {
+    INPUT,
+    HISTORY
+}
+
 val CASHOUT_CATEGORIES = listOf(
     "Bahan baku",
     "Operasional",
@@ -29,6 +35,7 @@ val CASHOUT_CATEGORIES = listOf(
 )
 
 data class CashOutUiState(
+    val selectedTab: CashOutTab = CashOutTab.INPUT,
     val amount: Long = 0L,
     val category: String = "Bahan baku",
     val reason: String = "",
@@ -47,7 +54,9 @@ data class CashOutUiState(
     val storeName: String = "AA COFFEESHOP",
     val storeAddress: String = "Jl. Kopi Pilihan No. 3",
     val storePhone: String = "0812-3456-7890",
-    val printStatusMessage: String? = null
+    val printStatusMessage: String? = null,
+    val cashOutHistory: List<CashOutEntity> = emptyList(),
+    val totalCashOutAmount: Long = 0L
 ) {
     val isPinRequired: Boolean get() = amount > 50_000L
     val isPhotoRequired: Boolean get() = amount > 50_000L
@@ -71,11 +80,29 @@ class CashOutViewModel(
     init {
         viewModelScope.launch {
             val shift = repository.getActiveShift()
+            val shiftId = shift?.shiftId
             _uiState.update {
                 it.copy(
-                    activeShiftId = shift?.shiftId,
+                    activeShiftId = shiftId,
                     cashierName = shift?.cashierName ?: "Kasir"
                 )
+            }
+            if (shiftId != null) {
+                observeShiftHistory(shiftId)
+            }
+        }
+    }
+
+    private fun observeShiftHistory(shiftId: String) {
+        viewModelScope.launch {
+            repository.observeCashOutsForShift(shiftId).collect { history ->
+                val total = history.sumOf { it.amount }
+                _uiState.update {
+                    it.copy(
+                        cashOutHistory = history,
+                        totalCashOutAmount = total
+                    )
+                }
             }
         }
     }
@@ -119,6 +146,58 @@ class CashOutViewModel(
                 receiptFileId = fileId,
                 errorMessage = null
             )
+        }
+    }
+
+    fun selectTab(tab: CashOutTab) {
+        _uiState.update { it.copy(selectedTab = tab, errorMessage = null) }
+    }
+
+    fun resetSuccess() {
+        _uiState.update {
+            it.copy(
+                amount = 0L,
+                reason = "",
+                receiptBitmap = null,
+                receiptFilePath = null,
+                receiptFileId = null,
+                isSuccess = false,
+                errorMessage = null
+            )
+        }
+    }
+
+    fun reprintCashOut(cashOut: CashOutEntity) {
+        val state = _uiState.value
+        val dateStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.forLanguageTag("id-ID")).format(Date(cashOut.createdAt))
+        val currentTimeStr = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.forLanguageTag("id-ID")).format(Date())
+        val receiptData = CashOutReceiptData(
+            storeName = state.storeName,
+            storeAddress = state.storeAddress,
+            storePhone = state.storePhone,
+            cashoutId = cashOut.id,
+            shiftId = cashOut.shiftId,
+            cashierName = state.cashierName,
+            occurredAt = dateStr,
+            category = cashOut.category,
+            reason = cashOut.reason,
+            amount = cashOut.amount,
+            hasPhotoReceipt = !cashOut.receiptFileId.isNullOrBlank() || !cashOut.receiptFilePath.isNullOrBlank(),
+            approvedBy = cashOut.approvedBy,
+            isCopy = true,
+            reprintInfo = "Dicetak ulang oleh ${state.cashierName} · $currentTimeStr"
+        )
+
+        printerService?.let { printer ->
+            viewModelScope.launch(ioDispatcher) {
+                try {
+                    val bytes = CashOutReceiptFormatter.format(receiptData)
+                    printer.print(bytes)
+                    _uiState.update { it.copy(printStatusMessage = "Salinan bukti kas keluar berhasil dicetak") }
+                } catch (e: Exception) {
+                    _uiState.update { it.copy(errorMessage = "Gagal mencetak salinan: ${e.message}") }
+                }
+            }
         }
     }
 
@@ -171,7 +250,7 @@ class CashOutViewModel(
                 it.copy(
                     isManagerLocked = true,
                     lockoutRemainingSeconds = remainingSec,
-                    managerPinErrorMessage = "Akun terkunci ($remainingSec dtk)"
+                    managerPinErrorMessage = "Akses terkunci sementara. Sisa $remainingSec detik"
                 )
             }
             return
@@ -187,12 +266,12 @@ class CashOutViewModel(
                     it.copy(
                         isManagerLocked = true,
                         lockoutRemainingSeconds = 300,
-                        managerPinErrorMessage = "PIN salah 3x. Akun terkunci 5 menit (COR-07)"
+                        managerPinErrorMessage = "PIN salah 3 kali. Akses terkunci selama 5 menit"
                     )
                 }
             } else {
                 _uiState.update {
-                    it.copy(managerPinErrorMessage = "PIN Manager salah (${3 - failedPinAttempts}x percobaan tersisa)")
+                    it.copy(managerPinErrorMessage = "PIN Manager salah. Sisa ${3 - failedPinAttempts} percobaan")
                 }
             }
             return

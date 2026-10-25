@@ -54,6 +54,7 @@ class ZReportFormatterTest {
         assertTrue(text.contains("ALOKASI KAS FISIK:"))
         assertTrue(text.contains("Ditinggal di Laci"))
         assertTrue(text.contains("Pak Owner"))
+        assertTrue(text.contains("Rp 0 (Pas)"))
         assertFalse(text.contains("*** SALINAN ***"))
     }
 
