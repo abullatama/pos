@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -45,6 +46,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import id.a3.core.data.local.entity.PaymentEntity
 import id.a3.core.ui.component.A3Button
 import id.a3.core.ui.component.A3Card
+import id.a3.core.ui.component.A3Dialog
 import id.a3.core.ui.component.A3StatusChip
 import id.a3.core.ui.component.A3TextField
 import id.a3.core.ui.component.ButtonVariant
@@ -292,6 +297,115 @@ fun CloseShiftScreen(
                     }
                 )
             }
+
+            // Dialog Konfirmasi & Warning Kunci Hitungan Kas (TUP-03)
+            if (uiState.isStep1ConfirmationDialogOpen) {
+                var isAgreementChecked by remember { mutableStateOf(false) }
+
+                A3Dialog(
+                    onDismissRequest = viewModel::closeStep1ConfirmationDialog,
+                    title = "Konfirmasi Hitungan Kas Fisik",
+                    modifier = Modifier.widthIn(max = 560.dp),
+                    dismissLabel = "Periksa Ulang",
+                    onDismiss = viewModel::closeStep1ConfirmationDialog,
+                    confirmLabel = "Kunci & Lanjut ke Selisih",
+                    confirmEnabled = isAgreementChecked,
+                    onConfirm = viewModel::proceedToStep2,
+                    body = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            // Ringkasan Kas yang Dihitung
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(shapes.cardShape)
+                                    .background(colors.canvas)
+                                    .border(1.dp, colors.border, shapes.cardShape)
+                                    .padding(16.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        text = "Total Kas Fisik Dihitung:",
+                                        style = A3Theme.typography.label,
+                                        color = colors.inkMuted
+                                    )
+                                    Text(
+                                        text = formatRupiah(uiState.countedCash),
+                                        style = A3Theme.typography.headline,
+                                        color = colors.ink,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 28.sp
+                                    )
+                                }
+                            }
+
+                            // Banner Peringatan Kunci Hitungan (Warning / Audit TUP-03)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(shapes.cardShape)
+                                    .background(colors.status.warning.background)
+                                    .border(1.dp, colors.status.warning.text.copy(alpha = 0.35f), shapes.cardShape)
+                                    .padding(14.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.Top,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Warning,
+                                        contentDescription = null,
+                                        tint = colors.status.warning.text,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(
+                                            text = "Hitungan Akan Dikunci",
+                                            style = A3Theme.typography.body,
+                                            fontWeight = FontWeight.Bold,
+                                            color = colors.status.warning.text
+                                        )
+                                        Text(
+                                            text = "Setelah melanjutkan ke tahap Selisih & QRIS, nominal kas ini langsung dikunci dan angka penjualan sistem dibuka. Anda tidak dapat mengubah atau menghitung ulang nominal kas tanpa otorisasi PIN Manager.",
+                                            style = A3Theme.typography.bodySmall,
+                                            color = colors.status.warning.text,
+                                            lineHeight = 18.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Baris Checkbox Persetujuan (Touch Target >= 48dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(shapes.cardShape)
+                                    .clickable { isAgreementChecked = !isAgreementChecked }
+                                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Checkbox(
+                                    checked = isAgreementChecked,
+                                    onCheckedChange = { isAgreementChecked = it },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = colors.accent,
+                                        uncheckedColor = colors.inkMuted
+                                    )
+                                )
+                                Text(
+                                    text = "Saya menyatakan telah menghitung seluruh fisik uang tunai di laci kasir dengan teliti dan yakin nominalnya sudah sesuai.",
+                                    style = A3Theme.typography.bodySmall,
+                                    color = colors.ink,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                )
+            }
         }
     }
 }
@@ -459,7 +573,7 @@ private fun Step1BlindCountContent(
                 label = "Lanjut ke Evaluasi Selisih",
                 variant = ButtonVariant.PRIMARY,
                 enabled = uiState.countedCash > 0L,
-                onClick = viewModel::proceedToStep2,
+                onClick = viewModel::openStep1ConfirmationDialog,
                 fillWidth = true
             )
         }

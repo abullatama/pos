@@ -37,6 +37,7 @@ data class CloseShiftUiState(
     // Step 1: Blind Count (TUP-02)
     val denominations: Map<Long, Int> = emptyMap(),
     val countedCash: Long = 0L,
+    val isStep1ConfirmationDialogOpen: Boolean = false,
 
     // Step 2: QRIS Check & Difference (TUP-03, TUP-04)
     val checkedQrisPaymentIds: Set<String> = emptySet(),
@@ -176,8 +177,24 @@ class CloseShiftViewModel(
         }
     }
 
+    fun openStep1ConfirmationDialog() {
+        if (_uiState.value.countedCash > 0L) {
+            _uiState.update { it.copy(isStep1ConfirmationDialogOpen = true, error = null) }
+        }
+    }
+
+    fun closeStep1ConfirmationDialog() {
+        _uiState.update { it.copy(isStep1ConfirmationDialogOpen = false) }
+    }
+
     fun proceedToStep2() {
-        _uiState.update { it.copy(currentStep = CloseShiftStep.STEP_2_DIFF_AND_QRIS, error = null) }
+        _uiState.update {
+            it.copy(
+                currentStep = CloseShiftStep.STEP_2_DIFF_AND_QRIS,
+                isStep1ConfirmationDialogOpen = false,
+                error = null
+            )
+        }
     }
 
     // --- STEP 2: SELISIH & CEK QRIS (S10) ---

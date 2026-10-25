@@ -296,5 +296,37 @@ class CloseShiftViewModelTest {
         assertTrue(state.denominations.isEmpty())
         assertNull(state.summary)
         assertFalse(state.isLoading)
+        assertFalse(state.isStep1ConfirmationDialogOpen)
+    }
+
+    @Test
+    fun `openStep1ConfirmationDialog opens dialog when countedCash is positive`() = runTest {
+        viewModel.initializeWithShift(shiftId)
+        assertFalse(viewModel.uiState.value.isStep1ConfirmationDialogOpen)
+
+        // Tidak boleh terbuka jika countedCash masih 0
+        viewModel.openStep1ConfirmationDialog()
+        assertFalse(viewModel.uiState.value.isStep1ConfirmationDialogOpen)
+
+        // Setelah kas dihitung
+        viewModel.adjustDenominationCount(50000L, 2)
+        assertEquals(100000L, viewModel.uiState.value.countedCash)
+
+        viewModel.openStep1ConfirmationDialog()
+        assertTrue(viewModel.uiState.value.isStep1ConfirmationDialogOpen)
+        assertEquals(CloseShiftStep.STEP_1_BLIND_COUNT, viewModel.uiState.value.currentStep)
+
+        // Tutup dialog konfirmasi
+        viewModel.closeStep1ConfirmationDialog()
+        assertFalse(viewModel.uiState.value.isStep1ConfirmationDialogOpen)
+        assertEquals(CloseShiftStep.STEP_1_BLIND_COUNT, viewModel.uiState.value.currentStep)
+
+        // Buka lagi lalu konfirmasi lanjut ke Step 2
+        viewModel.openStep1ConfirmationDialog()
+        assertTrue(viewModel.uiState.value.isStep1ConfirmationDialogOpen)
+
+        viewModel.proceedToStep2()
+        assertFalse(viewModel.uiState.value.isStep1ConfirmationDialogOpen)
+        assertEquals(CloseShiftStep.STEP_2_DIFF_AND_QRIS, viewModel.uiState.value.currentStep)
     }
 }

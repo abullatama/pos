@@ -32,6 +32,7 @@ import id.a3.core.ui.theme.A3Theme
  * @param dismissLabel label tombol batal; null berarti tombol batal disembunyikan.
  * @param onDismiss callback tombol batal; jika null, fallback ke [onDismissRequest].
  * @param danger true untuk aksi destruktif (warna Bahaya); false untuk aksi utama (warna aksen).
+ * @param confirmEnabled status aktif/tidaknya tombol aksi utama (default true).
  */
 @Composable
 fun A3Dialog(
@@ -44,7 +45,8 @@ fun A3Dialog(
     onConfirm: (() -> Unit)? = null,
     dismissLabel: String? = null,
     onDismiss: (() -> Unit)? = null,
-    danger: Boolean = false
+    danger: Boolean = false,
+    confirmEnabled: Boolean = true
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
@@ -94,6 +96,7 @@ fun A3Dialog(
                         A3Button(
                             label = label,
                             variant = if (danger) ButtonVariant.DANGER else ButtonVariant.PRIMARY,
+                            enabled = confirmEnabled,
                             onClick = onConfirm ?: onDismissRequest
                         )
                     }
