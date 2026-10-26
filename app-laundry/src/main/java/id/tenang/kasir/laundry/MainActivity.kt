@@ -39,7 +39,6 @@ import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
-import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.LaundryTheme
 import id.a3.feature.shift.ShiftViewModelFactory
 import id.a3.feature.shift.presentation.ShiftViewModel
@@ -167,12 +166,12 @@ class MainActivity : ComponentActivity() {
                     val activeShift = shiftUiState.currentShift
                     val isShiftActive = activeShift != null
 
-                    val laundryNavItems = remember {
+                    val laundryNavItems = remember(isShiftActive) {
                         listOf(
                             NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home, enabled = true),
-                            NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle, enabled = true),
+                            NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle, enabled = isShiftActive),
                             NavItem(LaundryDestinations.CUCIAN, "Cucian", Icons.Outlined.Inventory2, enabled = true),
-                            NavItem(LaundryDestinations.KAS_KELUAR, "Kas Keluar", Icons.Outlined.Payments, enabled = true),
+                            NavItem(LaundryDestinations.KAS_KELUAR, "Kas", Icons.Outlined.Payments, enabled = isShiftActive),
                             NavItem(LaundryDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime, enabled = true)
                         )
                     }
@@ -180,6 +179,18 @@ class MainActivity : ComponentActivity() {
                     val defaultStartRoute = if (isShiftActive) LaundryDestinations.BERANDA else LaundryDestinations.SHIFT
                     val currentRoute = navBackStackEntry?.destination?.route ?: defaultStartRoute
                     val isAdminSelected = currentRoute == LaundryDestinations.ADMIN
+
+                    // Auto-redirect jika shift belum dibuka atau sudah ditutup saat berada di rute kasir
+                    LaunchedEffect(isShiftActive) {
+                        if (!isShiftActive && (currentRoute == LaundryDestinations.ORDER || currentRoute == LaundryDestinations.KAS_KELUAR)) {
+                            navController.navigate(LaundryDestinations.SHIFT) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    inclusive = false
+                                }
+                                launchSingleTop = true
+                            }
+                        }
+                    }
 
                     val selectedIndex = remember(currentRoute, laundryNavItems) {
                         laundryNavItems.indexOfFirst { it.id == currentRoute }
@@ -193,7 +204,7 @@ class MainActivity : ComponentActivity() {
                         businessName = "ATHIA LAUNDRY HOUSE",
                         monogramText = "AL",
                         cashierName = activeShift?.cashierName ?: "Siti Rahma",
-                        shiftInfo = activeShift?.let { "Shift Aktif · Kas ${formatRupiah(it.openingCash)}" } ?: "Belum Buka Shift",
+                        shiftInfo = if (activeShift != null) null else "Belum Buka Shift",
                         syncStatus = SyncStatus.SYNCED,
                         pendingSyncCount = 0,
                         isPrinterConnected = printerStatus is PrinterStatus.Connected,
@@ -215,7 +226,7 @@ class MainActivity : ComponentActivity() {
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
                             val item = laundryNavItems[index]
-                            if (item.enabled) {
+                            if (item.enabled && (isShiftActive || item.id == LaundryDestinations.SHIFT || item.id == LaundryDestinations.BERANDA || item.id == LaundryDestinations.CUCIAN)) {
                                 if (currentRoute == LaundryDestinations.ADMIN) {
                                     navController.popBackStack(LaundryDestinations.ADMIN, inclusive = true)
                                 }

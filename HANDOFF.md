@@ -1,78 +1,85 @@
-# HANDOFF: Dialog Peringatan & Persetujuan Kunci Hitungan Kas (Tutup Shift)
+# HANDOFF: Paritas POS Laundry dengan Cafe (TopBar Kas, Gerbang Shift, & Refund)
 
 ## 1. Ringkasan Perubahan yang Selesai Dikerjakan
 
-Sesi ini mengimplementasikan gerbang pengaman berupa dialog peringatan (*warning*) dan persetujuan eksplisit (*agreement checkbox*) sebelum kasir berpindah dari **Tahap 1 (Hitung Kas Buta)** ke **Tahap 2 (Selisih & QRIS)** pada menu Tutup Shift Kasir (`CloseShiftScreen.kt` & `CloseShiftViewModel.kt`) di aplikasi Cafe (dan Laundry) sesuai aturan bisnis `TUP-03` dan standar desain *antislop-ui*:
+Sesi ini menyelesaikan penyelarasan menyeluruh aplikasi **Laundry (Athia Laundry House)** dengan seluruh perbaikan yang telah diterapkan pada aplikasi **Cafe (AA Coffeeshop)** pada tanggal 25 Oktober 2026, dengan tetap mematuhi aturan operasional khusus laundry (*AGENTS.md Aturan 10*):
 
 ### A. Latar Belakang & Masalah
-- **Aturan Bisnis TUP-03:** Setelah melangkah ke Tahap 2, angka penjualan sistem akan terbuka dan nominal kas fisik yang telah diinput kasir langsung **DIKUNCI**. Kasir tidak dapat kembali atau mengubah hitungan kas tanpa otorisasi PIN Manager (4444).
-- **Celah Sebelumnya:** Kasir yang menekan tombol *"Lanjut ke Evaluasi Selisih"* langsung berpindah ke Tahap 2 seketika tanpa peringatan awal. Jika kasir salah ketik/salah hitung karena terburu-buru, kasir langsung terkunci dan membutuhkan campur tangan Manager untuk hitung ulang.
+1. **Kebocoran Saldo Kas di TopBar Laundry (Pelanggaran TUP-02):**
+   TopBar Laundry sebelumnya masih menampilkan nominal uang modal (`"Shift Aktif · Kas Rp 200.000"`). Hal ini membocorkan informasi kas yang bertentangan dengan prinsip *Hitung Kas Buta* (*blind cash count*) dan menyisakan karakter dot pemisah (`·`) yang sudah dihapus di Cafe.
+2. **Inkonsistensi Nama Menu di Navigation Rail:**
+   Menu pencatatan kas di Cafe telah diselaraskan menjadi satu kata (`"Kas"`), sementara di Laundry masih menggunakan `"Kas Keluar"`.
+3. **Absennya Penguncian Shift pada Rail Navigasi Laundry:**
+   Seluruh item navigasi di Laundry sebelumnya selalu `enabled = true` tanpa mempedulikan status shift. Kasir dapat membuka *Order Baru* dan *Kas Keluar* meski shift kasir belum dibuka.
+4. **Ketiadaan Auto-Redirect Saat Shift Tutup:**
+   Aplikasi Laundry tidak memiliki pengarah rute reaktif ke layar Shift saat shift ditutup/selesai.
+5. **Tombol Refund Tunai di Layar Cucian:**
+   Logika bisnis refund pada `LaundryOrdersViewModel` sudah siap, namun tombol pemicu refund belum tersedia pada panel detail pesanan cucian.
+
+---
 
 ### B. Solusi yang Diimplementasikan
-1. **Ekstensi Komponen Dialog (`core:ui` / `A3Dialog.kt`):**
-   - Menambahkan parameter `confirmEnabled: Boolean = true` pada komponen dialog bersama `A3Dialog`.
-   - Tombol aksi utama dialog (`confirmLabel`) kini dapat dinonaktifkan secara deklaratif berdasarkan kondisi (misalnya checkbox persetujuan belum dicentang).
-   - Perubahan ini non-breaking dan kompatibel penuh dengan seluruh penggunaan `A3Dialog` di modul lain.
 
-2. **State & Alur ViewModel (`feature:shift` / `CloseShiftViewModel.kt`):**
-   - Menambahkan field state `isStep1ConfirmationDialogOpen: Boolean = false` pada `CloseShiftUiState`.
-   - Menambahkan method `openStep1ConfirmationDialog()` yang hanya membuka dialog jika `countedCash > 0L`.
-   - Menambahkan method `closeStep1ConfirmationDialog()` untuk membatalkan/menutup dialog tanpa berpindah step.
-   - Mengintegrasikan pembersihan flag dialog pada `proceedToStep2()`, `initializeWithShift()`, dan `resetState()`.
+1. **Penyelarasan TopBar Laundry (`app-laundry/MainActivity.kt`):**
+   - Mengubah `shiftInfo` menjadi `if (activeShift != null) null else "Belum Buka Shift"`.
+   - Menghapus import `formatRupiah` yang tidak lagi digunakan.
+   - Format TopBar Laundry kini bersih: hanya menampilkan identitas kasir bertugas (`[Icon] Siti Rahma`) saat shift aktif, dan `"Belum Buka Shift"` saat shift nonaktif, bebas dot dan bebas bocoran saldo kas.
 
-3. **Dialog Peringatan & Persetujuan (`feature:shift` / `CloseShiftScreen.kt`):**
-   - Tombol *"Lanjut ke Evaluasi Selisih"* pada Step 1 kini memicu `openStep1ConfirmationDialog()`.
-   - Dialog konfirmasi menampilkan:
-     - **Judul:** `"Konfirmasi Hitungan Kas Fisik"`
-     - **Ringkasan Kas:** Kartu kanvas berteks tebal dan besar (28 sp) menampilkan total uang fisik yang diinput (`formatRupiah(uiState.countedCash)`).
-     - **Banner Peringatan (Warning):** Menggunakan warna status peringatan (`colors.status.warning`), menginformasikan bahwa nominal kas akan dikunci dan tidak bisa diubah tanpa otorisasi PIN Manager.
-     - **Checkbox Persetujuan:** Touch target nyaman $\ge$ 48 dp dengan seluruh baris dapat diklik (*clickable row*), berisi teks pernyataan teliti kasir:
-       > *"Saya menyatakan telah menghitung seluruh fisik uang tunai di laci kasir dengan teliti dan yakin nominalnya sudah sesuai."*
-     - **Tombol Aksi:**
-       - *"Periksa Ulang"* (Ghost): Menutup dialog agar kasir dapat memeriksa ulang lembaran uang.
-       - *"Kunci & Lanjut ke Selisih"* (Primary): Hanya aktif jika checkbox persetujuan telah dicentang (`confirmEnabled = isAgreementChecked`). Saat ditekan, memanggil `proceedToStep2()`.
+2. **Standarisasi Nama Menu Rail & Gerbang Shift Cerdas (`app-laundry/MainActivity.kt`):**
+   - Nama menu di Left Rail diselaraskan menjadi **`"Kas"`** (seragam dengan *Beranda*, *Order Baru*, *Cucian*, *Shift*).
+   - Mematuhi *AGENTS.md Aturan 10* (*"Event laundry.* tidak terikat shift; sesi staf laundry tidak menutup shift"*) & *Gerbang Shift Cerdas (Opsi 1)*:
+     - **`BERANDA`:** `enabled = true` (staf cuci bebas melihat metriks & antrean siap).
+     - **`CUCIAN`:** `enabled = true` (staf cuci bebas melihat pesanan & memajukan status fisik: Mulai Cuci, Siap, Ambil).
+     - **`SHIFT`:** `enabled = true` (kasir bebas membuka/mengelola shift).
+     - **`ORDER` (Order Baru):** `enabled = isShiftActive` (terkunci redup 30% dan unclickable jika shift belum dibuka).
+     - **`KAS_KELUAR` (Kas):** `enabled = isShiftActive` (terkunci redup 30% dan unclickable jika shift belum dibuka).
+   - Menambahkan pengaman ganda pada `onNavItemSelected` dan `LaunchedEffect(isShiftActive)` auto-redirect ke `SHIFT` jika kasir berada di `ORDER` atau `KAS_KELUAR` saat shift menjadi nonaktif.
+
+3. **Integrasi Tombol Aksi Refund Tunai (`feature/laundry/presentation/LaundryOrdersScreen.kt`):**
+   - Menambahkan tombol aksi **"Refund Tunai [Rp XX.XXX] (PIN Manager)"** pada `OrderDetailPanel` jika `order.paidAmount > 0` dan `order.status != "refunded"`.
+   - Dilindungi pengecekan shift kasir aktif: jika belum buka shift, kasir diminta membuka shift terlebih dahulu karena refund tunai memotong kas laci (*COR-04 / KAS-01*).
+   - Terintegrasi langsung dengan dialog otorisasi PIN Manager terenkripsi (*COR-07*) dan menambahkan status chip bahaya `"Di-Refund"` (`StatusToken.DANGER`).
 
 ---
 
 ## 2. File yang Dimodifikasi
 
-1. **`core/ui/src/main/kotlin/id/a3/core/ui/component/A3Dialog.kt`**
-   - Menambahkan parameter `confirmEnabled: Boolean = true` dan meneruskannya ke `A3Button`.
-2. **`feature/shift/src/main/kotlin/id/a3/feature/shift/presentation/CloseShiftViewModel.kt`**
-   - Menambahkan state `isStep1ConfirmationDialogOpen`, `openStep1ConfirmationDialog()`, dan `closeStep1ConfirmationDialog()`.
-3. **`feature/shift/src/main/kotlin/id/a3/feature/shift/presentation/CloseShiftScreen.kt`**
-   - Mengubah aksi tombol lanjut Step 1 ke pembukaan dialog konfirmasi dan merender modal `A3Dialog` persetujuan.
-4. **`feature/shift/src/test/kotlin/id/a3/feature/shift/presentation/CloseShiftViewModelTest.kt`**
-   - Menambahkan skenario pengujian unit untuk pembukaan, penutupan, dan validasi dialog konfirmasi Step 1.
-5. **`progress.md`**
-   - Menambahkan entri progres tanggal 2026-10-26.
-6. **`HANDOFF.md`**
+1. **`app-laundry/src/main/java/id/tenang/kasir/laundry/MainActivity.kt`**
+   - Sanitasi TopBar (hapus bocoran kas & dot), standarisasi nama menu `"Kas"`, gerbang shift cerdas `laundryNavItems`, auto-redirect shift, dan pengaman navigasi.
+2. **`feature/laundry/src/main/kotlin/id/a3/feature/laundry/presentation/LaundryOrdersScreen.kt`**
+   - Penambahan status badge `"Di-Refund"` dan tombol aksi *Refund Tunai* berotorisasi PIN Manager.
+3. **`progress.md`**
+   - Mencatat penuntasan paritas penuh fitur POS Laundry dengan Cafe.
+4. **`HANDOFF.md`**
    - Memperbarui dokumentasi handoff untuk sesi baru.
 
 ---
 
 ## 3. Status Pengujian & Kualitas Kode
 
-- **Unit Test Feature Shift & Core UI:**
-  `./gradlew :feature:shift:testDebugUnitTest :core:ui:testDebugUnitTest` $\rightarrow$ **BUILD SUCCESSFUL** (100% lulus tanpa kegagalan).
-- **Compile APK Debug Cafe:**
-  `./gradlew :app-cafe:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL** (100% lulus).
-- **Git Status:** Bersih, semua perubahan telah diuji dan siap di-commit.
+- **Unit Test Modul Terkait:**
+  `./gradlew :feature:laundry:testDebugUnitTest :feature:shift:testDebugUnitTest :core:ui:testDebugUnitTest` $\rightarrow$ **BUILD SUCCESSFUL** (100% lulus tanpa kegagalan).
+- **Compile APK Debug Kedua Aplikasi:**
+  `./gradlew :app-cafe:assembleDebug :app-laundry:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL** (100% lulus dalam 13 detik).
+- **Status Git:** Bersih, seluruh file termodifikasi telah teruji dan siap di-commit.
 
 ---
 
-## 4. Panduan Pengujian Visual di Tablet (Redmi Pad 2) untuk Sesi Baru
+## 4. Panduan Pengujian di Tablet (Redmi Pad 2) untuk Sesi Baru
 
-1. Jalankan aplikasi Cafe pada tablet Redmi Pad 2 dengan shift aktif.
-2. Buka menu **Shift** $\rightarrow$ tekan **Tutup Shift**.
-3. **Tahap 1 (Hitung Kas Fisik):**
-   - Masukkan lembaran uang kas di laci kasir (misal: 5 lembar Rp 100.000).
-   - Tekan tombol **"Lanjut ke Evaluasi Selisih"**.
-4. **Verifikasi Dialog Konfirmasi:**
-   - Muncul dialog `"Konfirmasi Hitungan Kas Fisik"`.
-   - Nominal total kas `Rp 500.000` tertulis jelas di bagian atas dialog.
-   - Muncul banner peringatan audit berwarna oranye/peringatan: hitungan akan dikunci dan membutuhkan PIN Manager untuk kembali.
-   - Tombol **"Kunci & Lanjut ke Selisih"** dalam kondisi nonaktif (disabled/abu-abu).
-   - Centang checkbox persetujuan atau ketuk baris teks persetujuan: tombol **"Kunci & Lanjut ke Selisih"** langsung aktif.
-   - Tekan **"Periksa Ulang"**: dialog tertutup dan kasir kembali ke layar hitung pecahan uang.
-   - Buka kembali dialog, centang persetujuan, dan tekan **"Kunci & Lanjut ke Selisih"**: aplikasi berhasil masuk ke Tahap 2 (Selisih & QRIS).
+1. **Uji Penguncian Menu Shift Belum Buka (Laundry):**
+   - Buka aplikasi Laundry saat belum ada shift aktif.
+   - Amati Left Navigation Rail: Menu **Order Baru** dan **Kas** tampil redup (alpha 30%) dan tidak dapat diklik.
+   - Menu **Beranda**, **Cucian**, dan **Shift** tetap menyala dan dapat dibuka oleh staf.
+   - TopBar menampilkan: `[Icon Person] Siti Rahma   Belum Buka Shift` (tanpa dot `·` dan tanpa angka saldo kas).
+2. **Uji Buka Shift:**
+   - Masuk ke tab **Shift** $\rightarrow$ buka shift kasir dengan kas awal.
+   - Menu **Order Baru** dan **Kas** otomatis menyala terang (100% aktif).
+   - TopBar menampilkan: `[Icon Person] Siti Rahma` secara minimalis dan rapi.
+3. **Uji Refund Tunai:**
+   - Buka menu **Cucian** $\rightarrow$ pilih pesanan yang sudah memiliki pembayaran (`paidAmount > 0`).
+   - Tekan tombol **"Refund Tunai [Rp XX.XXX] (PIN Manager)"** di bagian bawah panel detail.
+   - Masukkan PIN Manager `4444`: uang tunai dikembalikan, mutasi outbox tercatat, dan status pesanan berubah menjadi `Di-Refund`.
+4. **Uji Tutup Shift & Auto-Redirect:**
+   - Tutup shift kasir dari menu **Shift**.
+   - Buka pesanan atau kas keluar $\rightarrow$ tutup paksa shift: aplikasi seketika mengunci kembali menu kasir dan mengarahkan tampilan ke rute **Shift**.

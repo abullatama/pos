@@ -516,6 +516,7 @@ private fun OrderDetailPanel(
         "processing" -> "Diproses" to StatusToken.WARNING
         "ready" -> "Siap Diambil" to StatusToken.SUCCESS
         "picked_up" -> "Sudah Diambil" to StatusToken.NEUTRAL
+        "refunded" -> "Di-Refund" to StatusToken.DANGER
         else -> order.status.uppercase() to StatusToken.INFO
     }
 
@@ -786,6 +787,22 @@ private fun OrderDetailPanel(
                         )
                     }
                 }
+            }
+
+            // Tombol Refund Tunai (F35: Otorisasi PIN Manager & Potong Kas Laci Shift Aktif)
+            if (order.paidAmount > 0L && order.status.lowercase() != "refunded") {
+                A3Button(
+                    label = "Refund Tunai ${formatRupiah(order.paidAmount)} (PIN Manager)",
+                    variant = ButtonVariant.GHOST,
+                    onClick = {
+                        if (!hasActiveShift) {
+                            onRequireShift()
+                        } else {
+                            viewModel.openRefundDialog()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
