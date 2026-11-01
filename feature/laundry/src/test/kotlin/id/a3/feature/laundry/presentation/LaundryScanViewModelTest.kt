@@ -144,6 +144,10 @@ class FakeLaundryScanRepository : LaundryOrderRepository {
     override fun observeReadyOrdersCount(): Flow<Int> = flowOf(0)
     override fun observeUnpaidOrdersCount(): Flow<Int> = flowOf(0)
     override fun observeReadyOrders(limit: Int): Flow<List<OrderWithLines>> = flowOf(emptyList())
+
+    override suspend fun getNotificationStatus(orderId: String): Result<id.a3.core.sync.model.OrderNotificationStatusResponse> {
+        return Result.success(id.a3.core.sync.model.OrderNotificationStatusResponse(status = "none"))
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)

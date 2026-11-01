@@ -53,10 +53,21 @@ data class BundleResultDto(
 
 @Serializable
 data class OrderNotificationStatusResponse(
+    val status: String? = null, // "none", "queued", "sent", "failed"
+    @SerialName("last_error")
+    val lastError: String? = null,
+    @SerialName("sent_at")
+    val sentAt: String? = null,
     val notifications: List<OrderNotificationItemDto> = emptyList(),
     @SerialName("server_time")
     val serverTime: String? = null
-)
+) {
+    val effectiveStatus: String
+        get() = status ?: notifications.firstOrNull()?.status ?: "none"
+
+    val effectiveError: String?
+        get() = lastError
+}
 
 @Serializable
 data class OrderNotificationItemDto(

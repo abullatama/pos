@@ -162,6 +162,12 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
     override fun observeReadyOrdersCount(): Flow<Int> = flowOf(0)
     override fun observeUnpaidOrdersCount(): Flow<Int> = flowOf(0)
     override fun observeReadyOrders(limit: Int): Flow<List<OrderWithLines>> = flowOf(emptyList())
+
+    var notificationStatusToReturn = id.a3.core.sync.model.OrderNotificationStatusResponse(status = "sent")
+
+    override suspend fun getNotificationStatus(orderId: String): Result<id.a3.core.sync.model.OrderNotificationStatusResponse> {
+        return Result.success(notificationStatusToReturn)
+    }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -374,5 +380,66 @@ class LaundryOrdersViewModelTest {
         assertEquals("ord-2", viewModel.uiState.value.selectedOrder?.order?.id)
 
         collectJob.cancel()
+    }
+
+    @Test
+    fun `fetchNotificationStatus updates state with server response`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        fakeRepository.notificationStatusToReturn = id.a3.core.sync.model.OrderNotificationStatusResponse(
+            status = "sent",
+            sentAt = "2026-10-26T10:00:00Z"
+        )
+
+        viewModel.fetchNotificationStatus("ord-1")
+        assertEquals("sent", viewModel.uiState.value.notificationStatus)
+        assertFalse(viewModel.uiState.value.isCheckingNotification)
+
+        // Ubah ke queued
+        fakeRepository.notificationStatusToReturn = id.a3.core.sync.model.OrderNotificationStatusResponse(
+            status = "queued"
+        )
+        viewModel.fetchNotificationStatus("ord-1")
+        assertEquals("queued", viewModel.uiState.value.notificationStatus)
+
+        // Ubah ke failed
+        fakeRepository.notificationStatusToReturn = id.a3.core.sync.model.OrderNotificationStatusResponse(
+            status = "failed",
+            lastError = "Fonnte API timeout"
+        )
+        viewModel.fetchNotificationStatus("ord-1")
+        assertEquals("failed", viewModel.uiState.value.notificationStatus)
+        assertEquals("Fonnte API timeout", viewModel.uiState.value.notificationError)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `buildWhatsAppMessage produces valid formatted text without emoji`() {
+        val order = OrderWithLines(
+            order = paidOrder.copy(status = "ready"),
+            lines = listOf(line1)
+        )
+        val msg = viewModel.buildWhatsAppMessage(order, customer1)
+
+        assertTrue(msg.contains("Budi Santoso"))
+        assertTrue(msg.contains("L1-0001"))
+        assertTrue(msg.contains("SIAP DIAMBIL"))
+        assertTrue(msg.contains("Lunas"))
+        assertFalse(msg.contains("🚀"))
+        assertFalse(msg.contains("✅"))
+    }
+
+    @Test
+    fun `buildWhatsAppUrl normalizes Indonesian phone number and encodes url`() {
+        val order = OrderWithLines(
+            order = paidOrder,
+            lines = listOf(line1)
+        )
+        val url = viewModel.buildWhatsAppUrl(order, customer1)
+
+        assertNotNull(url)
+        assertTrue(url!!.startsWith("https://api.whatsapp.com/send?phone=6281234567890"))
+        assertTrue(url.contains("&text="))
     }
 }

@@ -11,6 +11,7 @@ import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.LaundryTagData
 import id.a3.core.printer.format.LaundryTagFormatter
 import id.a3.core.printer.format.LaundryTagLine
+import id.a3.core.ui.component.formatRupiah
 import id.a3.feature.laundry.repository.LaundryOrderRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -58,7 +59,10 @@ data class LaundryOrdersUiState(
     val pinErrorMessage: String? = null,
     val isActionLoading: Boolean = false,
     val successMessage: String? = null,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val notificationStatus: String = "none",
+    val notificationError: String? = null,
+    val isCheckingNotification: Boolean = false
 ) {
     val remainingBalance: Long
         get() = ((selectedOrder?.order?.total ?: 0L) - (selectedOrder?.order?.paidAmount ?: 0L)).coerceAtLeast(0L)
@@ -89,6 +93,9 @@ class LaundryOrdersViewModel(
     private val _isActionLoading = MutableStateFlow(false)
     private val _successMessage = MutableStateFlow<String?>(null)
     private val _errorMessage = MutableStateFlow<String?>(null)
+    private val _notificationStatus = MutableStateFlow("none")
+    private val _notificationError = MutableStateFlow<String?>(null)
+    private val _isCheckingNotification = MutableStateFlow(false)
 
     // Pelacak PIN salah (COR-07: 3x salah terkunci 5 menit)
     private var failedPinAttempts = 0
@@ -167,9 +174,20 @@ class LaundryOrdersViewModel(
         _pinErrorMessage,
         _isActionLoading,
         _successMessage,
-        _errorMessage
-    ) { pinErr, loading, succ, err ->
-        StatusMessageState(pinErr, loading, succ, err)
+        _errorMessage,
+        _notificationStatus,
+        _notificationError,
+        _isCheckingNotification
+    ) { args: Array<Any?> ->
+        StatusMessageState(
+            pinErrorMessage = args[0] as String?,
+            isActionLoading = args[1] as Boolean,
+            successMessage = args[2] as String?,
+            errorMessage = args[3] as String?,
+            notificationStatus = args[4] as String,
+            notificationError = args[5] as String?,
+            isCheckingNotification = args[6] as Boolean
+        )
     }
 
     val uiState: StateFlow<LaundryOrdersUiState> = combine(
@@ -193,7 +211,10 @@ class LaundryOrdersViewModel(
             pinErrorMessage = statusMsg.pinErrorMessage,
             isActionLoading = statusMsg.isActionLoading,
             successMessage = statusMsg.successMessage,
-            errorMessage = statusMsg.errorMessage
+            errorMessage = statusMsg.errorMessage,
+            notificationStatus = statusMsg.notificationStatus,
+            notificationError = statusMsg.notificationError,
+            isCheckingNotification = statusMsg.isCheckingNotification
         )
     }.stateIn(
         scope = viewModelScope,
@@ -213,7 +234,10 @@ class LaundryOrdersViewModel(
         val pinErrorMessage: String?,
         val isActionLoading: Boolean,
         val successMessage: String?,
-        val errorMessage: String?
+        val errorMessage: String?,
+        val notificationStatus: String,
+        val notificationError: String?,
+        val isCheckingNotification: Boolean
     )
 
     fun setFilterStatus(filter: LaundryFilterStatus) {
@@ -291,6 +315,61 @@ class LaundryOrdersViewModel(
 
     fun selectOrder(order: OrderWithLines) {
         _selectedOrderId.value = order.order.id
+        fetchNotificationStatus(order.order.id)
+    }
+
+    fun refreshNotificationStatus() {
+        val current = _selectedOrderId.value ?: return
+        fetchNotificationStatus(current)
+    }
+
+    fun fetchNotificationStatus(orderId: String) {
+        viewModelScope.launch(ioDispatcher) {
+            _isCheckingNotification.value = true
+            val result = repository.getNotificationStatus(orderId)
+            result.onSuccess { response ->
+                _notificationStatus.value = response.effectiveStatus
+                _notificationError.value = response.effectiveError
+            }.onFailure { err ->
+                _notificationStatus.value = "none"
+                _notificationError.value = err.message
+            }
+            _isCheckingNotification.value = false
+        }
+    }
+
+    fun buildWhatsAppMessage(orderWithLines: OrderWithLines, customer: CustomerEntity?): String {
+        val customerName = customer?.name ?: "Pelanggan"
+        val displayNumber = orderWithLines.order.displayNumber
+        val totalFormatted = formatRupiah(orderWithLines.order.total)
+        val paid = orderWithLines.order.paidAmount
+        val remaining = (orderWithLines.order.total - paid).coerceAtLeast(0L)
+        val statusText = if (remaining == 0L) "Lunas" else "Sisa Tagihan: ${formatRupiah(remaining)}"
+
+        return when (orderWithLines.order.status.lowercase()) {
+            "ready" -> {
+                "Halo *$customerName*,\n\nCucian Anda dengan nomor nota *$displayNumber* sudah *SIAP DIAMBIL* di Athia Laundry House.\n\nStatus Pembayaran: *$statusText*.\n\nMohon membawa nota fisik atau menunjukkan pesan ini saat mengambil cucian. Terima kasih telah mempercayakan cucian Anda kepada kami!"
+            }
+            "picked_up" -> {
+                "Halo *$customerName*,\n\nPesanan cucian nomor nota *$displayNumber* telah berhasil *DIAMBIL* di Athia Laundry House.\n\nTerima kasih atas kunjungan Anda dan sampai jumpa kembali!"
+            }
+            else -> {
+                "Halo *$customerName*,\n\nTerima kasih telah mencuci di Athia Laundry House.\nNomor Nota: *$displayNumber*\nTotal: *$totalFormatted*\nStatus: *$statusText*\n\nKami akan mengabari Anda kembali segera setelah cucian selesai dan siap diambil. Terima kasih!"
+            }
+        }
+    }
+
+    fun buildWhatsAppUrl(orderWithLines: OrderWithLines, customer: CustomerEntity?): String? {
+        val rawPhone = customer?.phone?.takeIf { it.isNotBlank() } ?: return null
+        val cleanDigits = rawPhone.filter { it.isDigit() }
+        val normalizedPhone = when {
+            cleanDigits.startsWith("62") -> cleanDigits
+            cleanDigits.startsWith("08") -> "62" + cleanDigits.substring(1)
+            else -> cleanDigits
+        }
+        val text = buildWhatsAppMessage(orderWithLines, customer)
+        val encodedText = java.net.URLEncoder.encode(text, "UTF-8")
+        return "https://api.whatsapp.com/send?phone=$normalizedPhone&text=$encodedText"
     }
 
     fun openPickupDialog() {

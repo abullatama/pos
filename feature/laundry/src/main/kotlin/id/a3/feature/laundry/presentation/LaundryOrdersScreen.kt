@@ -1,5 +1,8 @@
 package id.a3.feature.laundry.presentation
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -9,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -26,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -36,8 +41,15 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import id.a3.core.ui.component.A3TextField
 import androidx.compose.material3.HorizontalDivider
@@ -510,6 +522,8 @@ private fun OrderDetailPanel(
     val shapes = A3Theme.shapes
     val order = orderWithLines.order
     val customer = uiState.customer
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
 
     val (statusLabel, statusToken) = when (order.status.lowercase()) {
         "open", "received" -> "Diterima" to StatusToken.INFO
@@ -598,15 +612,35 @@ private fun OrderDetailPanel(
                         fontWeight = FontWeight.Bold,
                         color = colors.ink
                     )
-                    customer?.phone?.let { phone ->
-                        Text(
-                            text = PhoneNumberUtil.formatDisplay(phone),
-                            style = A3Theme.typography.body,
-                            color = colors.inkMuted
-                        )
+                        customer?.phone?.let { phone ->
+                            Text(
+                                text = PhoneNumberUtil.formatDisplay(phone),
+                                style = A3Theme.typography.body,
+                                color = colors.inkMuted
+                            )
+                        }
                     }
                 }
-            }
+
+            // 2b. Status Notifikasi WhatsApp & Tombol Kirim Manual (F42 & DESIGN-laundry.md)
+            WhatsAppNotificationCard(
+                uiState = uiState,
+                customer = customer,
+                onRefreshNotification = viewModel::refreshNotificationStatus,
+                onSendWhatsAppManual = {
+                    val waUrl = viewModel.buildWhatsAppUrl(orderWithLines, customer)
+                    val waMsg = viewModel.buildWhatsAppMessage(orderWithLines, customer)
+                    if (waUrl != null) {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(waUrl))
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            clipboardManager.setText(AnnotatedString(waMsg))
+                            Toast.makeText(context, "Pesan WA disalin ke clipboard", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            )
 
             // 3. Ringkasan Keuangan
             Box(
@@ -1217,6 +1251,111 @@ private fun ManagerPinAuthDialog(
                     onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WhatsAppNotificationCard(
+    uiState: LaundryOrdersUiState,
+    customer: id.a3.core.data.local.entity.CustomerEntity?,
+    onRefreshNotification: () -> Unit,
+    onSendWhatsAppManual: () -> Unit
+) {
+    val colors = A3Theme.colors
+    val shapes = A3Theme.shapes
+    val hasPhone = !customer?.phone.isNullOrBlank()
+
+    val (chipLabel, chipToken) = when (uiState.notificationStatus.lowercase()) {
+        "sent" -> "WA Terkirim" to StatusToken.SUCCESS
+        "queued" -> "WA Antrean" to StatusToken.WARNING
+        "failed" -> "WA Gagal" to StatusToken.DANGER
+        else -> "Belum Dikirim" to StatusToken.NEUTRAL
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shapes.cardShape)
+            .background(colors.surfaceAlt)
+            .border(0.5.dp, colors.border, shapes.cardShape)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                A3StatusChip(
+                    label = chipLabel,
+                    token = chipToken
+                )
+
+                if (uiState.isCheckingNotification) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = colors.accent
+                    )
+                } else {
+                    IconButton(
+                        onClick = onRefreshNotification,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Refresh,
+                            contentDescription = "Cek Status WA",
+                            tint = colors.inkMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                if (uiState.notificationStatus.lowercase() == "failed" && !uiState.notificationError.isNullOrBlank()) {
+                    Text(
+                        text = uiState.notificationError,
+                        style = A3Theme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = colors.status.danger.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            if (hasPhone) {
+                // Tombol "Kirim via WA" Manual sesuai DESIGN-laundry.md:
+                // Warna Emerald WhatsApp #25D366, teks wajib colors.ink (kontras 7.38:1, dilarang teks putih)
+                Button(
+                    onClick = onSendWhatsAppManual,
+                    modifier = Modifier.height(38.dp),
+                    shape = shapes.buttonShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF25D366),
+                        contentColor = colors.ink
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.Send,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = colors.ink
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Kirim via WA",
+                        style = A3Theme.typography.button,
+                        color = colors.ink,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }

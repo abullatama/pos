@@ -13,6 +13,8 @@ import id.a3.core.data.local.entity.OutboxEntity
 import id.a3.core.data.local.entity.OutboxStatus
 import id.a3.core.data.repository.LaundryPickupItem
 import id.a3.core.data.repository.OrderTransactionManager
+import id.a3.core.sync.api.SyncApiService
+import id.a3.core.sync.model.OrderNotificationStatusResponse
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onStart
@@ -87,13 +89,17 @@ interface LaundryOrderRepository {
     fun observeReadyOrdersCount(): Flow<Int>
     fun observeUnpaidOrdersCount(): Flow<Int>
     fun observeReadyOrders(limit: Int = 10): Flow<List<OrderWithLines>>
+
+    // Status Notifikasi WhatsApp (F42)
+    suspend fun getNotificationStatus(orderId: String): Result<OrderNotificationStatusResponse>
 }
 
 class DefaultLaundryOrderRepository(
     private val masterDataDao: MasterDataDao,
     private val orderDao: OrderDao,
     private val transactionManager: OrderTransactionManager,
-    private val customerDao: CustomerDao = transactionManager.customerDao
+    private val customerDao: CustomerDao = transactionManager.customerDao,
+    private val syncApiService: SyncApiService? = null
 ) : LaundryOrderRepository {
 
     companion object {
@@ -403,5 +409,19 @@ class DefaultLaundryOrderRepository(
 
     override fun observeReadyOrders(limit: Int): Flow<List<OrderWithLines>> {
         return orderDao.observeReadyLaundryOrders(limit)
+    }
+
+    override suspend fun getNotificationStatus(orderId: String): Result<OrderNotificationStatusResponse> {
+        val api = syncApiService ?: return Result.failure(IllegalStateException("SyncApiService tidak terkonfigurasi"))
+        return try {
+            val response = api.getOrderNotificationStatus(orderId)
+            if (response.isSuccessful && response.body() != null) {
+                Result.success(response.body()!!)
+            } else {
+                Result.failure(Exception("HTTP ${response.code()}: ${response.message()}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }

@@ -46,6 +46,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.printer.PrinterService
+import id.a3.core.sync.api.SyncApiServiceFactory
 import id.a3.core.ui.component.A3Button
 import id.a3.core.ui.component.A3EmptyState
 import id.a3.core.ui.component.ButtonVariant
@@ -75,6 +76,7 @@ import id.a3.feature.shift.presentation.ForceCloseShiftDialog
 import id.a3.feature.shift.presentation.OpenShiftScreen
 import id.a3.feature.shift.presentation.ShiftViewModel
 import id.a3.feature.shift.repository.ActiveShift
+import id.tenang.kasir.laundry.LaundryAppConfig
 
 object LaundryDestinations {
     const val BERANDA = "beranda"
@@ -105,17 +107,26 @@ fun LaundryNavHost(
 ) {
     val context = LocalContext.current
 
+    val syncApiService = remember {
+        SyncApiServiceFactory.create(
+            appConfig = LaundryAppConfig
+        )
+    }
+    val laundryViewModelFactory = remember(context, printerService) {
+        LaundryViewModelFactory(context, printerService, syncApiService)
+    }
+
     val laundryViewModel: LaundryOrderViewModel = viewModel(
-        factory = LaundryViewModelFactory(context, printerService)
+        factory = laundryViewModelFactory
     )
     val homeViewModel: LaundryHomeViewModel = viewModel(
-        factory = LaundryViewModelFactory(context, printerService)
+        factory = laundryViewModelFactory
     )
     val scanViewModel: LaundryScanViewModel = viewModel(
-        factory = LaundryViewModelFactory(context, printerService)
+        factory = laundryViewModelFactory
     )
     val ordersViewModel: LaundryOrdersViewModel = viewModel(
-        factory = LaundryViewModelFactory(context, printerService)
+        factory = laundryViewModelFactory
     )
     val paymentViewModel: PaymentViewModel = viewModel(
         factory = PaymentViewModelFactory(context, printerService)

@@ -417,9 +417,9 @@
       "app": "laundry",
       "description": "Tombol Kirim via WA manual dan status notifikasi",
       "acceptance": "Status none, queued, sent, atau failed tampil dari server",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Pengecekan status notifikasi WhatsApp server (GET /v1/orders/{id}/notification-status) dan tombol manual 'Kirim via WA' selesai dibangun di :feature:laundry dan :core:sync: (1) OrderNotificationStatusResponse mendukung format OpenAPI (status, last_error, sent_at) dan format DTO array notifikasi; (2) SyncApiServiceFactory menyediakan klien Retrofit terkonfigurasi; (3) LaundryOrdersViewModel mengelola state notifikasi (none, queued, sent, failed) dan generator URL WhatsApp (format nomor 62, sanitasi, dan URL encoding); (4) LaundryOrdersScreen menampilkan WhatsAppNotificationCard dengan status chip (SUCCESS, WARNING, DANGER, NEUTRAL), tombol refresh, dan tombol 'Kirim via WA' bertema Emerald WhatsApp #25D366 dengan teks ink-body kontras 7.38:1 sesuai DESIGN-laundry.md; (5) Teruji 100% pada LaundryOrdersViewModelTest dan kedua APK debug berhasil dibangun."
     },
     {
       "id": "F43",

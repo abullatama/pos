@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.data.repository.OrderTransactionManager
 import id.a3.core.printer.PrinterService
+import id.a3.core.sync.api.SyncApiService
 import id.a3.feature.laundry.presentation.LaundryOrderViewModel
 import id.a3.feature.laundry.presentation.LaundryOrdersViewModel
 import id.a3.feature.laundry.presentation.LaundryScanViewModel
@@ -13,7 +14,8 @@ import id.a3.feature.laundry.repository.DefaultLaundryOrderRepository
 
 class LaundryViewModelFactory(
     private val context: Context,
-    private val printerService: PrinterService? = null
+    private val printerService: PrinterService? = null,
+    private val syncApiService: SyncApiService? = null
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
@@ -24,7 +26,8 @@ class LaundryViewModelFactory(
             masterDataDao = database.masterDataDao(),
             orderDao = database.orderDao(),
             transactionManager = transactionManager,
-            customerDao = database.customerDao()
+            customerDao = database.customerDao(),
+            syncApiService = syncApiService
         )
 
         return when {
