@@ -2,6 +2,7 @@ package id.a3.core.auth
 
 import id.a3.core.auth.api.DeviceApiService
 import id.a3.core.auth.datastore.EncryptedAuthDataStore
+import id.a3.core.auth.model.DeviceHeartbeatRequest
 import id.a3.core.auth.model.DeviceRegisterRequest
 import id.a3.core.domain.device.DeviceStatus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,13 @@ sealed class DeviceRegisterResult {
 sealed class DeviceCheckResult {
     data class StatusUpdated(val status: DeviceStatus) : DeviceCheckResult()
     data class Error(val code: String, val message: String) : DeviceCheckResult()
+}
+
+sealed class DeviceHeartbeatResult {
+    data object Success : DeviceHeartbeatResult()
+    data object SkippedNotActive : DeviceHeartbeatResult()
+    data object DeviceRevoked : DeviceHeartbeatResult()
+    data class Error(val code: String, val message: String) : DeviceHeartbeatResult()
 }
 
 /**
@@ -157,6 +165,57 @@ class DeviceManager(
             DeviceCheckResult.StatusUpdated(DeviceStatus.REVOKED)
         } else {
             DeviceCheckResult.Error("HTTP_$code", "Gagal memeriksa status (kode $code): ${response.message()}")
+        }
+    }
+
+    /**
+     * Mengirim detak jantung perangkat (Heartbeat) ke server backend:
+     * - Hanya dieksekusi jika status perangkat sudah ACTIVE.
+     * - Menyertakan statistik outbox, baterai, sinkron terakhir, dan status printer.
+     * - Jika server membalas 401/403 (DEVICE_REVOKED), seketika mengunci tablet dan mencabut kredensial.
+     */
+    suspend fun sendHeartbeat(
+        outboxPending: Int = 0,
+        outboxProblem: Int = 0,
+        batteryPercent: Int? = null,
+        lastSyncAt: String? = null,
+        printerStatus: String = "unknown"
+    ): DeviceHeartbeatResult {
+        val currentStatus = encryptedDataStore.getDeviceStatus()
+        if (currentStatus != DeviceStatus.ACTIVE) {
+            return DeviceHeartbeatResult.SkippedNotActive
+        }
+
+        val credential = encryptedDataStore.getDeviceCredential()
+        val request = DeviceHeartbeatRequest(
+            appVersion = appVersion,
+            outboxPending = outboxPending,
+            outboxProblem = outboxProblem,
+            batteryPercent = batteryPercent,
+            lastSyncAt = lastSyncAt,
+            printerStatus = printerStatus
+        )
+
+        val response = try {
+            apiService.sendHeartbeat(
+                request = request,
+                deviceCredential = credential,
+                appId = appId,
+                appVersion = appVersion
+            )
+        } catch (e: Exception) {
+            return DeviceHeartbeatResult.Error("NETWORK_ERROR", e.message ?: "Koneksi ke server gagal")
+        }
+
+        val code = response.code()
+        return if (response.isSuccessful || code == 204) {
+            DeviceHeartbeatResult.Success
+        } else if (code == 401 || code == 403) {
+            encryptedDataStore.markDeviceRevoked()
+            _deviceStatus.value = DeviceStatus.REVOKED
+            DeviceHeartbeatResult.DeviceRevoked
+        } else {
+            DeviceHeartbeatResult.Error("HTTP_$code", "Gagal mengirim heartbeat (kode $code): ${response.message()}")
         }
     }
 

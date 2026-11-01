@@ -50,6 +50,12 @@ interface OutboxDao {
     @Query("SELECT COUNT(*) FROM outbox WHERE status = 'PENDING'")
     fun observePendingCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM outbox WHERE status = 'PENDING'")
+    suspend fun getPendingCount(): Int
+
+    @Query("SELECT COUNT(*) FROM outbox WHERE status = 'FAILED'")
+    suspend fun getFailedCount(): Int
+
     @Query("SELECT COUNT(*) FROM outbox WHERE status != 'SENT'")
     suspend fun getUnsyncedCount(): Int
 

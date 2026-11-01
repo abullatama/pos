@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.LockClock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Print
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.TabletAndroid
@@ -133,7 +134,8 @@ fun AdminMenuScreen(
                 onOpenWifi = { viewModel.openWifi(context) },
                 onTestPrinter = viewModel::testPrinter,
                 onCheckUpdate = viewModel::checkUpdateEligibility,
-                onSelectApkFile = { apkPickerLauncher.launch("application/vnd.android.package-archive") }
+                onSelectApkFile = { apkPickerLauncher.launch("application/vnd.android.package-archive") },
+                onTriggerHeartbeat = { viewModel.triggerHeartbeat() }
             )
         }
 
@@ -557,7 +559,8 @@ private fun AdminDashboard(
     onOpenWifi: () -> Unit,
     onTestPrinter: () -> Unit,
     onCheckUpdate: () -> Unit,
-    onSelectApkFile: () -> Unit
+    onSelectApkFile: () -> Unit,
+    onTriggerHeartbeat: () -> Unit = {}
 ) {
     val colors = A3Theme.colors
 
@@ -746,6 +749,43 @@ private fun AdminDashboard(
                             A3StatusChip(
                                 label = if (uiState.unsyncedOutboxCount == 0) "Sinkron" else "${uiState.unsyncedOutboxCount} Pending",
                                 token = if (uiState.unsyncedOutboxCount == 0) StatusToken.SUCCESS else StatusToken.WARNING
+                            )
+                        }
+
+                        // Detak Jantung / Heartbeat Perangkat (F41 & OPS-01)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Sensors,
+                                    contentDescription = "Heartbeat",
+                                    tint = colors.ink,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Column {
+                                    Text(
+                                        text = "Detak Jantung (Heartbeat)",
+                                        style = A3Theme.typography.label,
+                                        color = colors.ink
+                                    )
+                                    Text(
+                                        text = uiState.lastHeartbeatStatus ?: "Kirim telemetri berkala (15m)",
+                                        style = A3Theme.typography.bodySmall,
+                                        color = colors.inkMuted
+                                    )
+                                }
+                            }
+                            A3Button(
+                                label = if (uiState.isSendingHeartbeat) "Mengirim..." else "Kirim",
+                                onClick = onTriggerHeartbeat,
+                                variant = ButtonVariant.SECONDARY,
+                                enabled = !uiState.isSendingHeartbeat
                             )
                         }
                     }

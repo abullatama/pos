@@ -42,6 +42,8 @@ class UpdatePreconditionValidatorTest {
         override suspend fun retryAllFailed(updatedAt: Long) {}
         override suspend fun deleteSentOlderThan(olderThan: Long): Int = 0
         override fun observePendingCount(): Flow<Int> = emptyFlow()
+        override suspend fun getPendingCount(): Int = unsyncedCount
+        override suspend fun getFailedCount(): Int = 0
         override suspend fun getUnsyncedCount(): Int = unsyncedCount
         override fun observeUnsyncedCount(): Flow<Int> = emptyFlow()
     }

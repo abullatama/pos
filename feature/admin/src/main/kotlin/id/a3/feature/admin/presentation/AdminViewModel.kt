@@ -44,7 +44,9 @@ data class AdminUiState(
     val appVersionCode: Long = 1L,
     val deviceId: String = "DEV-TABLET-01",
     val businessUnitId: String = "BU-01",
-    val statusMessage: String? = null
+    val statusMessage: String? = null,
+    val isSendingHeartbeat: Boolean = false,
+    val lastHeartbeatStatus: String? = null
 )
 
 class AdminViewModel(
@@ -326,5 +328,39 @@ class AdminViewModel(
 
     fun clearStatusMessage() {
         _uiState.update { it.copy(statusMessage = null) }
+    }
+
+    fun triggerHeartbeat(onComplete: ((Boolean, String) -> Unit)? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSendingHeartbeat = true) }
+            val manager = id.a3.core.sync.DeviceHeartbeatWorker.heartbeatManager
+            if (manager == null) {
+                _uiState.update {
+                    it.copy(
+                        isSendingHeartbeat = false,
+                        lastHeartbeatStatus = "Belum terkonfigurasi",
+                        statusMessage = "Layanan heartbeat belum diinisialisasi."
+                    )
+                }
+                onComplete?.invoke(false, "Layanan heartbeat belum diinisialisasi.")
+                return@launch
+            }
+
+            val result = manager.executeHeartbeat()
+            val msg = when (result) {
+                is id.a3.core.auth.DeviceHeartbeatResult.Success -> "Detak jantung berhasil terkirim."
+                is id.a3.core.auth.DeviceHeartbeatResult.SkippedNotActive -> "Detak jantung dilewati (perangkat belum aktif)."
+                is id.a3.core.auth.DeviceHeartbeatResult.DeviceRevoked -> "Akses tablet dicabut (REVOKED) oleh server."
+                is id.a3.core.auth.DeviceHeartbeatResult.Error -> "Gagal mengirim detak jantung: [${result.code}] ${result.message}"
+            }
+            _uiState.update {
+                it.copy(
+                    isSendingHeartbeat = false,
+                    lastHeartbeatStatus = msg,
+                    statusMessage = msg
+                )
+            }
+            onComplete?.invoke(result is id.a3.core.auth.DeviceHeartbeatResult.Success, msg)
+        }
     }
 }

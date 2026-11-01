@@ -53,6 +53,8 @@ class AdminViewModelTest {
         override suspend fun retryAllFailed(updatedAt: Long) {}
         override suspend fun deleteSentOlderThan(olderThan: Long): Int = 0
         override fun observePendingCount(): Flow<Int> = emptyFlow()
+        override suspend fun getPendingCount(): Int = 0
+        override suspend fun getFailedCount(): Int = 0
         override suspend fun getUnsyncedCount(): Int = 0
         override fun observeUnsyncedCount(): Flow<Int> = emptyFlow()
     }
@@ -214,5 +216,22 @@ class AdminViewModelTest {
         viewModel.lockAdmin()
         assertFalse(viewModel.uiState.value.isOwnerUnlocked)
         assertEquals("", viewModel.uiState.value.enteredPin)
+    }
+
+    @Test
+    fun `triggerHeartbeat handles unconfigured manager gracefully`() {
+        id.a3.core.sync.DeviceHeartbeatWorker.heartbeatManager = null
+        var completed = false
+        var successResult = true
+        viewModel.triggerHeartbeat { success, _ ->
+            completed = true
+            successResult = success
+        }
+
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(completed)
+        assertFalse(successResult)
+        assertEquals("Belum terkonfigurasi", viewModel.uiState.value.lastHeartbeatStatus)
     }
 }

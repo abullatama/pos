@@ -179,6 +179,8 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        fun getInstance(context: Context): AppDatabase = build(context)
+
         fun buildInMemory(context: Context): AppDatabase {
             return Room.inMemoryDatabaseBuilder(
                 context.applicationContext,

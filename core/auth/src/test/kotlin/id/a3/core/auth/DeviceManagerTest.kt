@@ -290,4 +290,50 @@ class DeviceManagerTest {
         assertTrue(body.contains("\"battery_percent\":85"))
         assertTrue(body.contains("\"printer_status\":\"ok\""))
     }
+
+    @Test
+    fun `deviceManager sendHeartbeat skips when device is not ACTIVE`() = runBlocking {
+        deviceManager.initialize()
+        assertEquals(DeviceStatus.UNREGISTERED, deviceManager.deviceStatus.value)
+
+        val result = deviceManager.sendHeartbeat(
+            outboxPending = 1,
+            batteryPercent = 90
+        )
+
+        assertEquals(DeviceHeartbeatResult.SkippedNotActive, result)
+        assertEquals(0, mockWebServer.requestCount)
+    }
+
+    @Test
+    fun `deviceManager sendHeartbeat succeeds when device is ACTIVE and server returns 204`() = runBlocking {
+        deviceManager.activateForDebug("Tablet Kasir Bar")
+        mockWebServer.enqueue(MockResponse().setResponseCode(204))
+
+        val result = deviceManager.sendHeartbeat(
+            outboxPending = 3,
+            outboxProblem = 1,
+            batteryPercent = 78,
+            lastSyncAt = "2026-10-26T12:00:00Z",
+            printerStatus = "ok"
+        )
+
+        assertEquals(DeviceHeartbeatResult.Success, result)
+        val recorded = mockWebServer.takeRequest()
+        assertEquals("/v1/devices/heartbeat", recorded.path)
+        assertEquals("demo-device-credential-local", recorded.getHeader("X-Device-Credential"))
+        assertEquals("cafe", recorded.getHeader("X-AppId"))
+    }
+
+    @Test
+    fun `deviceManager sendHeartbeat handles 403 by revoking device and locking status`() = runBlocking {
+        deviceManager.activateForDebug("Tablet Kasir")
+        mockWebServer.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"DEVICE_REVOKED"}"""))
+
+        val result = deviceManager.sendHeartbeat(batteryPercent = 50)
+
+        assertEquals(DeviceHeartbeatResult.DeviceRevoked, result)
+        assertEquals(DeviceStatus.REVOKED, deviceManager.deviceStatus.value)
+        assertNull(deviceManager.getDeviceCredential())
+    }
 }

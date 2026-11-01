@@ -32,8 +32,11 @@ import id.a3.core.auth.DeviceManagerFactory
 import id.a3.core.auth.DeviceRegisterResult
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.domain.device.DeviceStatus
+import id.a3.core.domain.monitoring.AppCrashManager
 import id.a3.core.printer.PrinterStatus
 import id.a3.core.printer.connection.DefaultPrinterService
+import id.a3.core.sync.DeviceHeartbeatManager
+import id.a3.core.sync.DeviceHeartbeatWorker
 import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
@@ -55,16 +58,39 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // 1. Inisialisasi pengawas crash terpusat dengan sanitasi data sensitif (OPS-01)
+        AppCrashManager.installUncaughtExceptionHandler()
+
         printerService = DefaultPrinterService(this)
 
         deviceManager = DeviceManagerFactory.getOrCreate(
             context = this,
             appConfig = CafeAppConfig
         )
+
+        // 2. Inisialisasi manajer detak jantung perangkat & jadwalkan worker periodik (F41)
+        val heartbeatManager = DeviceHeartbeatManager.create(
+            context = this,
+            deviceManager = deviceManager,
+            printerStatusProvider = {
+                when (printerService.status.value) {
+                    is PrinterStatus.Connected -> "ok"
+                    is PrinterStatus.Disconnected -> "offline"
+                    is PrinterStatus.Error -> "error"
+                    is PrinterStatus.Connecting -> "unknown"
+                }
+            }
+        )
+        DeviceHeartbeatWorker.heartbeatManager = heartbeatManager
+        DeviceHeartbeatWorker.schedulePeriodic(this, intervalMinutes = 15)
+
         lifecycleScope.launch {
             deviceManager.initialize()
             if (deviceManager.deviceStatus.value == DeviceStatus.ACTIVE || deviceManager.deviceStatus.value == DeviceStatus.PENDING) {
                 deviceManager.checkStatus()
+                if (deviceManager.deviceStatus.value == DeviceStatus.ACTIVE) {
+                    DeviceHeartbeatWorker.enqueueImmediate(this@MainActivity)
+                }
             }
         }
 

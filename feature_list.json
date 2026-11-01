@@ -407,9 +407,9 @@
       "app": "both",
       "description": "Heartbeat dan Crashlytics",
       "acceptance": "Status perangkat tampil di web dan galat terlapor",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Layanan detak jantung (DeviceHeartbeatManager, DeviceHeartbeatWorker WorkManager 15m) selesai dibangun di :core:sync dan :core:auth (endpoint POST /v1/devices/heartbeat membawa outbox_pending, outbox_problem, battery_percent, last_sync_at, printer_status). Respon 401/403 seketika mencabut kredensial dan mengunci tablet (REVOKED). Sistem pelaporan galat SanitizedCrashReporter & AppCrashManager di :core:domain mengamankan crash report dengan menyaring data pribadi (nomor HP pelanggan, PIN, password, bearer token) sesuai OPS-01 & Aturan 14 AGENTS.md. Terintegrasi ke menu Admin tablet (S15) dengan tombol Kirim Heartbeat manual. Seluruh 282 unit test lulus 100%."
     },
     {
       "id": "F42",
