@@ -391,4 +391,36 @@ class SyncSenderIdempotencyTest {
         assertNotNull(preservedPending)
         assertEquals(OutboxStatus.PENDING, preservedPending!!.status)
     }
+
+    @Test
+    fun `getOrderNotificationStatus retrieves WhatsApp status successfully`() = runBlocking {
+        val jsonResponse = """
+            {
+                "notifications": [
+                    {
+                        "kind": "siap",
+                        "status": "sent",
+                        "attempts": 1,
+                        "last_attempt_at": "2026-10-20T10:15:00Z"
+                    }
+                ],
+                "server_time": "2026-10-20T10:20:00Z"
+            }
+        """.trimIndent()
+
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(jsonResponse))
+
+        val response = apiService.getOrderNotificationStatus("ord-uuid-123", appId = "laundry", appVersion = "1.0.0")
+        org.junit.Assert.assertTrue(response.isSuccessful)
+        val body = response.body()
+        assertNotNull(body)
+        assertEquals(1, body!!.notifications.size)
+        assertEquals("siap", body.notifications[0].kind)
+        assertEquals("sent", body.notifications[0].status)
+        assertEquals(1, body.notifications[0].attempts)
+
+        val recorded = mockWebServer.takeRequest()
+        assertEquals("/v1/orders/ord-uuid-123/notification-status", recorded.path)
+        assertEquals("GET", recorded.method)
+    }
 }

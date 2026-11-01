@@ -50,3 +50,19 @@ data class BundleResultDto(
     @SerialName("server_received_at")
     val serverReceivedAt: String? = null
 )
+
+@Serializable
+data class OrderNotificationStatusResponse(
+    val notifications: List<OrderNotificationItemDto> = emptyList(),
+    @SerialName("server_time")
+    val serverTime: String? = null
+)
+
+@Serializable
+data class OrderNotificationItemDto(
+    val kind: String,
+    val status: String, // "none", "queued", "sent", "failed"
+    val attempts: Int = 0,
+    @SerialName("last_attempt_at")
+    val lastAttemptAt: String? = null
+)

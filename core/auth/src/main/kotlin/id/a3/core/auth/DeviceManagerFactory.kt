@@ -33,14 +33,14 @@ object DeviceManagerFactory {
             android.os.Build.HARDWARE.contains("ranchu")
     }
 
-    fun getDefaultBaseUrl(): String {
-        return if (isEmulator()) "http://10.0.2.2:8080" else "http://127.0.0.1:8080"
+    fun getDefaultBaseUrl(appConfig: AppConfig? = null): String {
+        return appConfig?.apiBaseUrl ?: "https://a3-api.sidik.cloud/v1/"
     }
 
     fun getOrCreate(
         context: Context,
         appConfig: AppConfig,
-        baseUrl: String = getDefaultBaseUrl()
+        baseUrl: String = getDefaultBaseUrl(appConfig)
     ): DeviceManager {
         return instance ?: synchronized(this) {
             instance ?: create(context, appConfig, baseUrl).also { instance = it }
@@ -50,7 +50,7 @@ object DeviceManagerFactory {
     fun create(
         context: Context,
         appConfig: AppConfig,
-        baseUrl: String = getDefaultBaseUrl()
+        baseUrl: String = getDefaultBaseUrl(appConfig)
     ): DeviceManager {
         val appContext = context.applicationContext
         val cryptoManager = TinkCryptoManager.create(appContext)

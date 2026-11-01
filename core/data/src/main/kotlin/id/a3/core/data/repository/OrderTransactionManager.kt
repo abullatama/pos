@@ -220,10 +220,11 @@ class OrderTransactionManager(
                     add(
                         buildJsonObject {
                             put("line_id", line.id)
-                            put("item_ref_id", line.itemRefId)
+                            put("item_ref_id", line.itemRefId.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(line.itemRefId))
                             put("name", line.nameSnapshot)
                             put("quantity", line.quantity)
                             put("unit_price", line.unitPriceSnapshot)
+                            put("options", buildJsonArray {})
                             line.note?.let { put("note", it) }
                         }
                     )
@@ -320,10 +321,11 @@ class OrderTransactionManager(
                     add(
                         buildJsonObject {
                             put("line_id", line.id)
-                            put("item_ref_id", line.itemRefId)
+                            put("item_ref_id", line.itemRefId.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(line.itemRefId))
                             put("name", line.nameSnapshot)
                             put("quantity", line.quantity)
                             put("unit_price", line.unitPriceSnapshot)
+                            put("options", buildJsonArray {})
                             line.note?.let { put("note", it) }
                         }
                     )
@@ -627,8 +629,21 @@ class OrderTransactionManager(
                         add(
                             buildJsonObject {
                                 put("line_id", line.id)
-                                put("item_ref_id", line.itemRefId)
+                                put("item_ref_id", line.itemRefId.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(line.itemRefId))
                                 put("name", line.nameSnapshot)
+                                val isKg = line.weight != null || line.nameSnapshot.contains("kg", ignoreCase = true)
+                                if (isKg) {
+                                    val grams = line.weight?.let { (it * 1000).toLong() } ?: 1000L
+                                    put("unit", "kg")
+                                    put("weight_grams", grams)
+                                    put("express", line.nameSnapshot.contains("express", ignoreCase = true))
+                                    put("rate", line.unitPriceSnapshot)
+                                    put("line_total", line.unitPriceSnapshot)
+                                } else {
+                                    put("unit", "pcs")
+                                    put("rate", line.unitPriceSnapshot)
+                                    put("line_total", line.quantity.toLong() * line.unitPriceSnapshot)
+                                }
                                 put("quantity", line.quantity)
                                 put("unit_price", line.unitPriceSnapshot)
                                 line.note?.let { put("note", it) }
@@ -642,6 +657,12 @@ class OrderTransactionManager(
                     put("display_number", finalOrder.displayNumber)
                     put("order_type", finalOrder.orderType)
                     finalOrder.customerId?.let { put("customer_id", it) }
+                    if (customer != null) {
+                        put("customer", buildJsonObject {
+                            put("name", customer.name)
+                            put("phone", customer.phone)
+                        })
+                    }
                     put("lines", orderLinesArray)
                     put("subtotal", finalOrder.subtotal)
                     put("discount", finalOrder.discount)

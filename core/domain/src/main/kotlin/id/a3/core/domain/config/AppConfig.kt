@@ -9,4 +9,6 @@ interface AppConfig {
     val appId: AppId
     val appVersion: String
     val appName: String
+    val apiBaseUrl: String
+        get() = "https://a3-api.sidik.cloud/v1/"
 }

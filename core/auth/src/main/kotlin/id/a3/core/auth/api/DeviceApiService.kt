@@ -1,5 +1,6 @@
 package id.a3.core.auth.api
 
+import id.a3.core.auth.model.DeviceHeartbeatRequest
 import id.a3.core.auth.model.DeviceMeResponse
 import id.a3.core.auth.model.DeviceRegisterRequest
 import id.a3.core.auth.model.DeviceRegisterResponse
@@ -21,7 +22,17 @@ interface DeviceApiService {
     @GET("/v1/devices/me")
     suspend fun getDeviceMe(
         @Header("X-Device-Id") deviceId: String,
+        @Header("X-Registration-Code") registrationCode: String? = null,
+        @Header("X-Device-Credential") deviceCredential: String? = null,
         @Header("X-AppId") appId: String? = null,
         @Header("X-AppVersion") appVersion: String? = null
     ): Response<DeviceMeResponse>
+
+    @POST("/v1/devices/heartbeat")
+    suspend fun sendHeartbeat(
+        @Body request: DeviceHeartbeatRequest,
+        @Header("X-Device-Credential") deviceCredential: String? = null,
+        @Header("X-AppId") appId: String? = null,
+        @Header("X-AppVersion") appVersion: String? = null
+    ): Response<Unit>
 }

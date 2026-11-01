@@ -88,7 +88,8 @@ class DeviceManager(
             encryptedDataStore.saveDeviceRegistration(
                 deviceId = deviceId,
                 deviceName = deviceName.trim(),
-                status = DeviceStatus.PENDING
+                status = DeviceStatus.PENDING,
+                registrationCode = registrationCode.trim()
             )
             _deviceStatus.value = DeviceStatus.PENDING
             DeviceRegisterResult.PendingApproval
@@ -110,10 +111,14 @@ class DeviceManager(
      */
     suspend fun checkStatus(): DeviceCheckResult {
         val deviceId = encryptedDataStore.getOrCreateDeviceId()
+        val registrationCode = encryptedDataStore.getRegistrationCode()
+        val credential = encryptedDataStore.getDeviceCredential()
 
         val response = try {
             apiService.getDeviceMe(
                 deviceId = deviceId,
+                registrationCode = registrationCode,
+                deviceCredential = credential,
                 appId = appId,
                 appVersion = appVersion
             )
@@ -136,7 +141,8 @@ class DeviceManager(
                 encryptedDataStore.updateDeviceStatus(
                     status = newStatus,
                     credential = body.deviceCredential,
-                    businessUnitId = body.businessUnitId
+                    businessUnitId = body.businessUnitId,
+                    serverCode = body.code
                 )
             }
 

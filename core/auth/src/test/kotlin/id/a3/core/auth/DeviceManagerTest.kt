@@ -142,6 +142,33 @@ class DeviceManagerTest {
         assertTrue(result is DeviceCheckResult.StatusUpdated)
         assertEquals(DeviceStatus.PENDING, (result as DeviceCheckResult.StatusUpdated).status)
         assertEquals(DeviceStatus.PENDING, deviceManager.deviceStatus.value)
+
+        val recorded = mockWebServer.takeRequest()
+        assertEquals("/v1/devices/me", recorded.path)
+        assertEquals("GET", recorded.method)
+    }
+
+    @Test
+    fun `checkStatus sends X-Registration-Code when device is pending approval`() = runBlocking {
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(202)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"status":"PENDING"}""")
+        )
+        deviceManager.registerDevice("REG-839201", "Tablet Kasir")
+        mockWebServer.takeRequest() // consume register request
+
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"status":"PENDING"}""")
+        )
+
+        deviceManager.checkStatus()
+        val recordedMe = mockWebServer.takeRequest()
+        assertEquals("REG-839201", recordedMe.getHeader("X-Registration-Code"))
     }
 
     @Test
@@ -233,5 +260,34 @@ class DeviceManagerTest {
 
         assertEquals(DeviceStatus.UNREGISTERED, deviceManager.deviceStatus.value)
         assertNull(deviceManager.getDeviceCredential())
+    }
+
+    @Test
+    fun `sendHeartbeat sends telemetry payload to POST v1 devices heartbeat with 204 response`() = runBlocking {
+        mockWebServer.enqueue(MockResponse().setResponseCode(204))
+
+        val response = deviceApiService.sendHeartbeat(
+            request = id.a3.core.auth.model.DeviceHeartbeatRequest(
+                appVersion = "1.2.0",
+                outboxPending = 2,
+                outboxProblem = 0,
+                batteryPercent = 85,
+                lastSyncAt = "2026-10-20T10:00:00Z",
+                printerStatus = "ok"
+            ),
+            deviceCredential = "test_dev_cred"
+        )
+
+        assertTrue(response.isSuccessful)
+        assertEquals(204, response.code())
+
+        val recorded = mockWebServer.takeRequest()
+        assertEquals("/v1/devices/heartbeat", recorded.path)
+        assertEquals("POST", recorded.method)
+        assertEquals("test_dev_cred", recorded.getHeader("X-Device-Credential"))
+        val body = recorded.body.readUtf8()
+        assertTrue(body.contains("\"app_version\":\"1.2.0\""))
+        assertTrue(body.contains("\"battery_percent\":85"))
+        assertTrue(body.contains("\"printer_status\":\"ok\""))
     }
 }

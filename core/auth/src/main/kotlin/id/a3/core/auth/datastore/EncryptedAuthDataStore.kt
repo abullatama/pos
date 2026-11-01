@@ -31,6 +31,8 @@ class EncryptedAuthDataStore(
         val KEY_DEVICE_NAME = stringPreferencesKey("device_name")
         val KEY_DEVICE_STATUS = stringPreferencesKey("device_status")
         val KEY_DEVICE_CREDENTIAL_CIPHER = stringPreferencesKey("device_credential_cipher")
+        val KEY_REGISTRATION_CODE = stringPreferencesKey("registration_code")
+        val KEY_DEVICE_SERVER_CODE = stringPreferencesKey("device_server_code")
     }
 
     /**
@@ -50,7 +52,7 @@ class EncryptedAuthDataStore(
             prefs[KEY_USER_ID] = tokenResponse.user.id
             prefs[KEY_USER_NAME] = tokenResponse.user.name
             prefs[KEY_USER_ROLE] = tokenResponse.user.role
-            prefs[KEY_BUSINESS_UNIT_ID] = tokenResponse.businessUnitId
+            tokenResponse.businessUnitId?.let { prefs[KEY_BUSINESS_UNIT_ID] = it }
         }
     }
 
@@ -143,27 +145,40 @@ class EncryptedAuthDataStore(
         return generated
     }
 
-    suspend fun saveDeviceRegistration(deviceId: String, deviceName: String, status: DeviceStatus) {
+    suspend fun saveDeviceRegistration(
+        deviceId: String,
+        deviceName: String,
+        status: DeviceStatus,
+        registrationCode: String? = null
+    ) {
         dataStore.edit { prefs ->
             prefs[KEY_DEVICE_ID] = deviceId
             prefs[KEY_DEVICE_NAME] = deviceName
             prefs[KEY_DEVICE_STATUS] = status.name
+            if (!registrationCode.isNullOrBlank()) {
+                prefs[KEY_REGISTRATION_CODE] = registrationCode
+            }
         }
     }
 
     suspend fun updateDeviceStatus(
         status: DeviceStatus,
         credential: String? = null,
-        businessUnitId: String? = null
+        businessUnitId: String? = null,
+        serverCode: String? = null
     ) {
         val encryptedCredential = credential?.let { cryptoManager.encrypt(it) }
         dataStore.edit { prefs ->
             prefs[KEY_DEVICE_STATUS] = status.name
             if (encryptedCredential != null) {
                 prefs[KEY_DEVICE_CREDENTIAL_CIPHER] = encryptedCredential
+                prefs.remove(KEY_REGISTRATION_CODE)
             }
             if (businessUnitId != null) {
                 prefs[KEY_BUSINESS_UNIT_ID] = businessUnitId
+            }
+            if (serverCode != null) {
+                prefs[KEY_DEVICE_SERVER_CODE] = serverCode
             }
         }
     }
@@ -193,6 +208,16 @@ class EncryptedAuthDataStore(
         }
     }
 
+    suspend fun getRegistrationCode(): String? {
+        val prefs = dataStore.data.first()
+        return prefs[KEY_REGISTRATION_CODE]
+    }
+
+    suspend fun getDeviceServerCode(): String? {
+        val prefs = dataStore.data.first()
+        return prefs[KEY_DEVICE_SERVER_CODE]
+    }
+
     fun observeDeviceStatus(): Flow<DeviceStatus> {
         return dataStore.data.map { prefs ->
             val raw = prefs[KEY_DEVICE_STATUS] ?: return@map DeviceStatus.UNREGISTERED
@@ -215,6 +240,7 @@ class EncryptedAuthDataStore(
             prefs.remove(KEY_ACCESS_TOKEN_CIPHER)
             prefs.remove(KEY_REFRESH_TOKEN_CIPHER)
             prefs.remove(KEY_PIN_HASH_CIPHER)
+            prefs.remove(KEY_REGISTRATION_CODE)
         }
     }
 
@@ -229,6 +255,8 @@ class EncryptedAuthDataStore(
             prefs.remove(KEY_ACCESS_TOKEN_CIPHER)
             prefs.remove(KEY_REFRESH_TOKEN_CIPHER)
             prefs.remove(KEY_PIN_HASH_CIPHER)
+            prefs.remove(KEY_REGISTRATION_CODE)
+            prefs.remove(KEY_DEVICE_SERVER_CODE)
         }
     }
 }

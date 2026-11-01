@@ -52,6 +52,7 @@ class AppHeaderInterceptorTest {
         assertEquals(200, response.code)
 
         val recordedRequest = mockWebServer.takeRequest()
+        assertEquals("application/json", recordedRequest.getHeader("Accept"))
         assertEquals("cafe", recordedRequest.getHeader("X-AppId"))
         assertEquals("1.2.0", recordedRequest.getHeader("X-AppVersion"))
 
@@ -95,5 +96,36 @@ class AppHeaderInterceptorTest {
         assertNotNull(reqId1)
         assertNotNull(reqId2)
         assertNotEquals("Each request must have unique X-Request-Id", reqId1, reqId2)
+    }
+
+    @Test
+    fun `interceptor attaches credential and bearer token when providers are supplied`() {
+        val cafeConfig = object : AppConfig {
+            override val appId: AppId = AppId.CAFE
+            override val appVersion: String = "1.2.0"
+            override val appName: String = "AA Coffeeshop"
+        }
+
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                AppHeaderInterceptor(
+                    appConfig = cafeConfig,
+                    deviceCredentialProvider = { "secret_device_cred_123" },
+                    authTokenProvider = { "jwt_access_token_456" }
+                )
+            )
+            .build()
+
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+
+        val request = Request.Builder()
+            .url(mockWebServer.url("/v1/bootstrap"))
+            .build()
+
+        client.newCall(request).execute()
+
+        val recorded = mockWebServer.takeRequest()
+        assertEquals("secret_device_cred_123", recorded.getHeader("X-Device-Credential"))
+        assertEquals("Bearer jwt_access_token_456", recorded.getHeader("Authorization"))
     }
 }
