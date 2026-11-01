@@ -10,10 +10,13 @@ import id.a3.core.domain.security.ManagerPinVerifier
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.PrinterStatus
 import id.a3.core.printer.escpos.EscPosBuilder
+import id.a3.core.printer.format.EmergencySopData
+import id.a3.core.printer.format.EmergencySopFormatter
 import id.a3.feature.admin.kiosk.KioskManager
 import id.a3.feature.admin.update.ApkInstallerHelper
 import id.a3.feature.admin.update.UpdateEligibility
 import id.a3.feature.admin.update.UpdatePreconditionValidator
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +26,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class AdminUiState(
     val isOwnerUnlocked: Boolean = false,
@@ -39,6 +45,7 @@ data class AdminUiState(
     val printerStatusText: String = "Memeriksa...",
     val isPrinterConnected: Boolean = false,
     val isTestingPrinter: Boolean = false,
+    val isPrintingEmergencySop: Boolean = false,
     val printerTestSuccess: Boolean? = null,
     val appVersionName: String = "1.0.0",
     val appVersionCode: Long = 1L,
@@ -57,7 +64,8 @@ class AdminViewModel(
     private val deviceId: String = "DEV-TABLET-01",
     private val businessUnitId: String = "BU-01",
     private val appVersion: String = "1.0.0",
-    private val ownerPinHash: String = ManagerPinVerifier.hashPin("9999")
+    private val ownerPinHash: String = ManagerPinVerifier.hashPin("9999"),
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -246,7 +254,7 @@ class AdminViewModel(
 
     fun testPrinter() {
         val service = printerService ?: return
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             _uiState.update { it.copy(isTestingPrinter = true, printerTestSuccess = null) }
             val connected = service.checkConnection()
             if (!connected) {
@@ -282,6 +290,52 @@ class AdminViewModel(
                         "Uji cetak berhasil dikirim ke printer."
                     } else {
                         "Uji cetak gagal: ${printResult.exceptionOrNull()?.message}"
+                    }
+                )
+            }
+        }
+    }
+
+    fun printEmergencySop(
+        storeName: String? = null,
+        emergencyPhone: String = "0823-4778-5986"
+    ) {
+        val service = printerService ?: return
+        viewModelScope.launch(ioDispatcher) {
+            _uiState.update { it.copy(isPrintingEmergencySop = true) }
+            val connected = service.checkConnection()
+            if (!connected) {
+                _uiState.update {
+                    it.copy(
+                        isPrintingEmergencySop = false,
+                        statusMessage = "Cetak SOP Gagal: Printer tidak terhubung."
+                    )
+                }
+                return@launch
+            }
+
+            val finalStoreName = storeName ?: if (businessUnitId.contains("laundry", ignoreCase = true) || deviceId.startsWith("L", ignoreCase = true)) {
+                "Athia Laundry House"
+            } else {
+                "AA Coffeeshop"
+            }
+            val timestamp = SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault()).format(Date())
+            val sopBytes = EmergencySopFormatter.format(
+                EmergencySopData(
+                    storeName = finalStoreName,
+                    emergencyPhone = emergencyPhone,
+                    printedAt = timestamp
+                )
+            )
+
+            val printResult = service.print(sopBytes)
+            _uiState.update {
+                it.copy(
+                    isPrintingEmergencySop = false,
+                    statusMessage = if (printResult.isSuccess) {
+                        "SOP Darurat Kasir 58 mm berhasil dicetak."
+                    } else {
+                        "Cetak SOP gagal: ${printResult.exceptionOrNull()?.message}"
                     }
                 )
             }

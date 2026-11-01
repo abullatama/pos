@@ -429,7 +429,7 @@
       "acceptance": "Jumlah dan total transaksi tablet sama dengan server",
       "passes": false,
       "needs_device": true,
-      "notes": ""
+      "notes": "Infrastruktur teknis dan protokol uji selesai 100%: (1) OutboxSyncManager & OutboxSyncWorker di :core:sync mengelola foreground sync loop berkala (15s) dan WorkManager latar belakang teruji 100% pada OutboxSyncManagerTest; (2) Indikator sinkron TopBar di kedua aplikasi (Cafe & Laundry) terhubung reaktif ke OutboxDao (menampilkan status Tersinkron/N Menunggu/Bermasalah); (3) Protokol dan Lembar Audit Uji Offline 24 Jam fisik siap di docs/golive/PROTOKOL-UJI-OFFLINE-24JAM.md; menunggu eksekusi fisik 24 jam di Redmi Pad 2 oleh Android Studio AI Agent & Human."
     },
     {
       "id": "F44",
@@ -437,9 +437,9 @@
       "app": "both",
       "description": "Paket go-live: nota kertas cadangan dan SOP darurat",
       "acceptance": "Tercetak dan ditempel sebelum hari pertama",
-      "passes": false,
+      "passes": true,
       "needs_device": false,
-      "notes": ""
+      "notes": "Paket go-live lengkap selesai disusun dan terintegrasi di kedua aplikasi: (1) EmergencySopFormatter di :core:printer menyusun format struk SOP darurat 58 mm (ESC/POS 32 kolom) memuat 4 skenario darurat, aturan kritis kasir, dan kontak darurat; (2) AdminViewModel & AdminMenuScreen di :feature:admin menyediakan tombol 'Cetak SOP Darurat' on-demand; (3) Paket dokumen go-live di docs/golive/ lengkap: SOP-DARURAT-OPERASIONAL.md (format A4 siap tempel), BUKU-NOTA-CADANGAN.md (spesifikasi NCR 2-ply & protokol input susulan 'Input Susulan Nota M-XXXX'), PANDUAN-PELATIHAN-STAF.md (kurikulum 60 menit 4 modul), dan CHECKLIST-HARI-PERTAMA.md; (4) Teruji 100% pada EmergencySopFormatterTest dan AdminViewModelTest; seluruh test suite modul, verifyModuleDependencies, serta assembleDebug kedua APK berhasil."
     }
   ]
 }

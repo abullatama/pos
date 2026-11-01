@@ -38,6 +38,10 @@ import id.a3.core.printer.PrinterStatus
 import id.a3.core.printer.connection.DefaultPrinterService
 import id.a3.core.sync.DeviceHeartbeatManager
 import id.a3.core.sync.DeviceHeartbeatWorker
+import id.a3.core.sync.OutboxSyncManager
+import id.a3.core.sync.OutboxSyncWorker
+import id.a3.core.sync.SyncSender
+import id.a3.core.sync.api.SyncApiServiceFactory
 import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
@@ -85,12 +89,43 @@ class MainActivity : ComponentActivity() {
         DeviceHeartbeatWorker.heartbeatManager = heartbeatManager
         DeviceHeartbeatWorker.schedulePeriodic(this, intervalMinutes = 15)
 
+        val database = AppDatabase.getInstance(this)
+
+        // 3. Inisialisasi manajer sinkronisasi outbox & jadwalkan loop (SYN-03, SYN-05, F43)
+        val syncApiService = SyncApiServiceFactory.create(
+            appConfig = LaundryAppConfig,
+            deviceCredentialProvider = { deviceManager.cachedCredential },
+            authTokenProvider = { deviceManager.cachedAuthToken }
+        )
+        val syncSender = SyncSender(
+            outboxDao = database.outboxDao(),
+            apiService = syncApiService,
+            appId = LaundryAppConfig.appId.value,
+            appVersion = LaundryAppConfig.appVersion
+        )
+        val outboxSyncManager = OutboxSyncManager(
+            syncSender = syncSender,
+            outboxDao = database.outboxDao(),
+            scope = lifecycleScope
+        )
+        OutboxSyncWorker.syncManager = outboxSyncManager
+        OutboxSyncWorker.schedulePeriodic(this, intervalMinutes = 15)
+
         lifecycleScope.launch {
             deviceManager.initialize()
-            if (deviceManager.deviceStatus.value == DeviceStatus.ACTIVE || deviceManager.deviceStatus.value == DeviceStatus.PENDING) {
-                deviceManager.checkStatus()
-                if (deviceManager.deviceStatus.value == DeviceStatus.ACTIVE) {
-                    DeviceHeartbeatWorker.enqueueImmediate(this@MainActivity)
+            if (!deviceManager.isDemoMode()) {
+                if (deviceManager.deviceStatus.value == DeviceStatus.ACTIVE || deviceManager.deviceStatus.value == DeviceStatus.PENDING) {
+                    deviceManager.checkStatus()
+                    if (deviceManager.deviceStatus.value == DeviceStatus.ACTIVE) {
+                        DeviceHeartbeatWorker.enqueueImmediate(this@MainActivity)
+                    }
+                }
+            }
+            deviceManager.deviceStatus.collect { status ->
+                if (status == DeviceStatus.ACTIVE && !deviceManager.isDemoMode()) {
+                    outboxSyncManager.startForegroundSyncLoop()
+                } else {
+                    outboxSyncManager.stopForegroundSyncLoop()
                 }
             }
         }
@@ -100,6 +135,14 @@ class MainActivity : ComponentActivity() {
                 val coroutineScope = rememberCoroutineScope()
                 val deviceStatus by deviceManager.deviceStatus.collectAsState()
                 val printerStatus by printerService.status.collectAsState()
+                val pendingSyncCount by database.outboxDao().observePendingCount().collectAsState(initial = 0)
+                val failedSyncCount by database.outboxDao().observeFailedCount().collectAsState(initial = 0)
+
+                val syncStatus = when {
+                    failedSyncCount > 0 -> SyncStatus.ERROR
+                    pendingSyncCount > 0 -> SyncStatus.PENDING
+                    else -> SyncStatus.SYNCED
+                }
 
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -231,8 +274,8 @@ class MainActivity : ComponentActivity() {
                         monogramText = "AL",
                         cashierName = activeShift?.cashierName ?: "Siti Rahma",
                         shiftInfo = if (activeShift != null) null else "Belum Buka Shift",
-                        syncStatus = SyncStatus.SYNCED,
-                        pendingSyncCount = 0,
+                        syncStatus = syncStatus,
+                        pendingSyncCount = pendingSyncCount,
                         isPrinterConnected = printerStatus is PrinterStatus.Connected,
                         isPrinterConnecting = printerStatus is PrinterStatus.Connecting,
                         onPrinterClick = {

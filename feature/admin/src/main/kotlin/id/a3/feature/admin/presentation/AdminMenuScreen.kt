@@ -133,6 +133,7 @@ fun AdminMenuScreen(
                 onDisableKiosk = { if (activity != null) viewModel.disableKiosk(activity) },
                 onOpenWifi = { viewModel.openWifi(context) },
                 onTestPrinter = viewModel::testPrinter,
+                onPrintEmergencySop = { viewModel.printEmergencySop() },
                 onCheckUpdate = viewModel::checkUpdateEligibility,
                 onSelectApkFile = { apkPickerLauncher.launch("application/vnd.android.package-archive") },
                 onTriggerHeartbeat = { viewModel.triggerHeartbeat() }
@@ -558,6 +559,7 @@ private fun AdminDashboard(
     onDisableKiosk: () -> Unit,
     onOpenWifi: () -> Unit,
     onTestPrinter: () -> Unit,
+    onPrintEmergencySop: () -> Unit = {},
     onCheckUpdate: () -> Unit,
     onSelectApkFile: () -> Unit,
     onTriggerHeartbeat: () -> Unit = {}
@@ -709,12 +711,23 @@ private fun AdminDashboard(
                                     )
                                 }
                             }
-                            A3Button(
-                                label = if (uiState.isTestingPrinter) "Mencetak..." else "Uji Cetak",
-                                onClick = onTestPrinter,
-                                variant = ButtonVariant.SECONDARY,
-                                enabled = !uiState.isTestingPrinter
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                A3Button(
+                                    label = if (uiState.isPrintingEmergencySop) "Mencetak SOP..." else "Cetak SOP Darurat",
+                                    onClick = onPrintEmergencySop,
+                                    variant = ButtonVariant.SECONDARY,
+                                    enabled = !uiState.isPrintingEmergencySop && !uiState.isTestingPrinter
+                                )
+                                A3Button(
+                                    label = if (uiState.isTestingPrinter) "Mencetak..." else "Uji Cetak",
+                                    onClick = onTestPrinter,
+                                    variant = ButtonVariant.SECONDARY,
+                                    enabled = !uiState.isTestingPrinter && !uiState.isPrintingEmergencySop
+                                )
+                            }
                         }
 
                         // Sinkronisasi

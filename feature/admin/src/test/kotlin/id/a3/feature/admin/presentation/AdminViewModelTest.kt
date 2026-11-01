@@ -59,6 +59,26 @@ class AdminViewModelTest {
         override fun observeUnsyncedCount(): Flow<Int> = emptyFlow()
     }
 
+    private class FakePrinterService(
+        var connected: Boolean = true,
+        var printSuccess: Boolean = true
+    ) : id.a3.core.printer.PrinterService {
+        override val status: kotlinx.coroutines.flow.StateFlow<id.a3.core.printer.PrinterStatus> =
+            kotlinx.coroutines.flow.MutableStateFlow(
+                if (connected) id.a3.core.printer.PrinterStatus.Connected("iWare C58BT", "00:11:22:33:44:55")
+                else id.a3.core.printer.PrinterStatus.Disconnected
+            )
+        var lastPrintedBytes: ByteArray? = null
+
+        override fun isConnected(): Boolean = connected
+        override suspend fun checkConnection(): Boolean = connected
+        override suspend fun print(bytes: ByteArray): Result<Unit> {
+            lastPrintedBytes = bytes
+            return if (printSuccess) Result.success(Unit) else Result.failure(RuntimeException("Printer paper jam"))
+        }
+        override suspend fun openCashDrawer(): Result<Unit> = Result.success(Unit)
+    }
+
     private lateinit var shiftDao: FakeShiftDao
     private lateinit var outboxDao: FakeOutboxDao
     private lateinit var updateValidator: UpdatePreconditionValidator
@@ -78,7 +98,8 @@ class AdminViewModelTest {
             deviceId = "DEV-TEST-01",
             businessUnitId = "CAFE-01",
             appVersion = "1.0.0",
-            ownerPinHash = ManagerPinVerifier.hashPin("9999")
+            ownerPinHash = ManagerPinVerifier.hashPin("9999"),
+            ioDispatcher = testDispatcher
         )
     }
 
@@ -233,5 +254,51 @@ class AdminViewModelTest {
         assertTrue(completed)
         assertFalse(successResult)
         assertEquals("Belum terkonfigurasi", viewModel.uiState.value.lastHeartbeatStatus)
+    }
+
+    @Test
+    fun `printEmergencySop with connected printer generates and sends emergency sop bytes`() = runTest {
+        val fakePrinter = FakePrinterService(connected = true)
+        val vm = AdminViewModel(
+            shiftDao = shiftDao,
+            outboxDao = outboxDao,
+            updateValidator = updateValidator,
+            printerService = fakePrinter,
+            deviceId = "C1-TABLET",
+            businessUnitId = "CAFE-01",
+            appVersion = "1.0.0",
+            ioDispatcher = testDispatcher
+        )
+
+        vm.printEmergencySop()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNotNull(fakePrinter.lastPrintedBytes)
+        val printedText = String(fakePrinter.lastPrintedBytes!!, Charsets.ISO_8859_1)
+        assertTrue(printedText.contains("SOP DARURAT KASIR"))
+        assertTrue(printedText.contains("AA COFFEESHOP"))
+        assertTrue(printedText.contains("TABLET MATI / RUSAK"))
+        assertEquals("SOP Darurat Kasir 58 mm berhasil dicetak.", vm.uiState.value.statusMessage)
+    }
+
+    @Test
+    fun `printEmergencySop with disconnected printer sets error status message`() = runTest {
+        val fakePrinter = FakePrinterService(connected = false)
+        val vm = AdminViewModel(
+            shiftDao = shiftDao,
+            outboxDao = outboxDao,
+            updateValidator = updateValidator,
+            printerService = fakePrinter,
+            deviceId = "L1-TABLET",
+            businessUnitId = "LAUNDRY-01",
+            appVersion = "1.0.0",
+            ioDispatcher = testDispatcher
+        )
+
+        vm.printEmergencySop()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertNull(fakePrinter.lastPrintedBytes)
+        assertEquals("Cetak SOP Gagal: Printer tidak terhubung.", vm.uiState.value.statusMessage)
     }
 }

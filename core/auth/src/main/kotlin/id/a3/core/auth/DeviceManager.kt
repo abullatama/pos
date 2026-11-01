@@ -43,10 +43,22 @@ class DeviceManager(
     private val _deviceStatus = MutableStateFlow(DeviceStatus.UNREGISTERED)
     val deviceStatus: StateFlow<DeviceStatus> = _deviceStatus.asStateFlow()
 
+    @Volatile
+    var cachedCredential: String? = null
+        private set
+
+    @Volatile
+    var cachedAuthToken: String? = null
+        private set
+
     suspend fun initialize() {
         val current = encryptedDataStore.getDeviceStatus()
         _deviceStatus.value = current
+        cachedCredential = encryptedDataStore.getDeviceCredential()
+        cachedAuthToken = encryptedDataStore.getAccessToken()
     }
+
+    fun isDemoMode(): Boolean = cachedCredential == "demo-device-credential-local"
 
     suspend fun getDeviceId(): String {
         return encryptedDataStore.getOrCreateDeviceId()
@@ -57,7 +69,9 @@ class DeviceManager(
     }
 
     suspend fun getDeviceCredential(): String? {
-        return encryptedDataStore.getDeviceCredential()
+        val cred = encryptedDataStore.getDeviceCredential()
+        cachedCredential = cred
+        return cred
     }
 
     /**
@@ -118,6 +132,11 @@ class DeviceManager(
      * - REVOKED: Akses dicabut; menghapus kredensial dan mengunci perangkat.
      */
     suspend fun checkStatus(): DeviceCheckResult {
+        if (isDemoMode()) {
+            _deviceStatus.value = DeviceStatus.ACTIVE
+            return DeviceCheckResult.StatusUpdated(DeviceStatus.ACTIVE)
+        }
+
         val deviceId = encryptedDataStore.getOrCreateDeviceId()
         val registrationCode = encryptedDataStore.getRegistrationCode()
         val credential = encryptedDataStore.getDeviceCredential()
@@ -237,6 +256,7 @@ class DeviceManager(
             credential = "demo-device-credential-local",
             businessUnitId = if (appId == "laundry") "bu-laundry-01" else "bu-cafe-01"
         )
+        cachedCredential = "demo-device-credential-local"
         _deviceStatus.value = DeviceStatus.ACTIVE
     }
 
@@ -245,6 +265,8 @@ class DeviceManager(
      */
     suspend fun resetDeviceForDebug() {
         encryptedDataStore.resetDeviceRegistration()
+        cachedCredential = null
+        cachedAuthToken = null
         _deviceStatus.value = DeviceStatus.UNREGISTERED
     }
 }
