@@ -673,9 +673,9 @@ class CafeMenuViewModel(
                 val isOld = active != null && (order.shiftId != null && order.shiftId != active.id || order.createdAt < active.openedAt)
 
                 val refundData = RefundReceiptData(
-                    storeName = "AA COFFEESHOP",
-                    storeAddress = "Jl. Kopi Pilihan No. 3",
-                    storePhone = "0812-3456-7890",
+                    storeName = "A3 COFFEESHOP",
+                    storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
+                    storePhone = "0823-4778-5986",
                     orderDisplayNumber = order.displayNumber,
                     tableOrQueueLabel = order.tableLabel,
                     cashierName = active?.cashierName ?: "Kasir",

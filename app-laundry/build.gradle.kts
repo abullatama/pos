@@ -3,10 +3,10 @@ plugins {
 }
 
 android {
-    namespace = "id.tenang.kasir.laundry"
+    namespace = "id.athialoundry"
 
     defaultConfig {
-        applicationId = "id.tenang.kasir.laundry"
+        applicationId = "id.athialoundry"
         versionCode = 1
         versionName = "1.0.0"
     }

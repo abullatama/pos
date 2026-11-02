@@ -49,9 +49,9 @@ data class CloseShiftUiState(
     val cashTakenBy: String = "",
 
     // Cetak Laporan Z (TUP-05)
-    val storeName: String = "AA COFFEESHOP",
-    val storeAddress: String = "Jl. Kopi Pilihan No. 3",
-    val storePhone: String = "0812-3456-7890",
+    val storeName: String = "A3 COFFEESHOP",
+    val storeAddress: String = "Jl. Trans Sulawesi Kelurahan Bintauna",
+    val storePhone: String = "0823-4778-5986",
     val printStatusMessage: String? = null,
 
     // Proteksi Hitung Ulang Kasir (TUP-03: Kunci Hitungan Buta & Wajib PIN Manager)
@@ -100,9 +100,9 @@ class CloseShiftViewModel(
 
     fun initializeWithShift(
         shiftId: String,
-        storeName: String = "AA COFFEESHOP",
-        storeAddress: String = "Jl. Kopi Pilihan No. 3",
-        storePhone: String = "0812-3456-7890"
+        storeName: String = "A3 COFFEESHOP",
+        storeAddress: String = "Jl. Trans Sulawesi Kelurahan Bintauna",
+        storePhone: String = "0823-4778-5986"
     ) {
         failedRecountPinAttempts = 0
         recountLockedUntilMs = 0L

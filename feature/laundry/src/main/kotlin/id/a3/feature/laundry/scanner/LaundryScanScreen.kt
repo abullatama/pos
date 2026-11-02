@@ -155,7 +155,7 @@ fun LaundryScanScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Aplikasi membutuhkan izin kamera untuk memindai kode QR pada nota tag pakaian pelanggan Athia Laundry House.",
+                            text = "Aplikasi membutuhkan izin kamera untuk memindai kode QR pada nota tag pakaian pelanggan athialoundry.",
                             color = colors.inkMuted,
                             style = A3Theme.typography.body,
                             textAlign = TextAlign.Center

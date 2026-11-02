@@ -3,10 +3,10 @@ plugins {
 }
 
 android {
-    namespace = "id.tenang.kasir.cafe"
+    namespace = "id.a3coffeeshop"
 
     defaultConfig {
-        applicationId = "id.tenang.kasir.cafe"
+        applicationId = "id.a3coffeeshop"
         versionCode = 1
         versionName = "1.0.0"
     }

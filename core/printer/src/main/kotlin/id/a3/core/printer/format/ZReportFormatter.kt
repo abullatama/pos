@@ -1,14 +1,17 @@
 package id.a3.core.printer.format
 
+import android.graphics.Bitmap
 import id.a3.core.printer.escpos.EscPosBuilder
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Locale
 
 data class ZReportData(
-    val storeName: String,
-    val storeAddress: String,
-    val storePhone: String,
+    val storeName: String = "A3 COFFEESHOP",
+    val ownerName: String? = "DEVENTRI SILAMATITI BULUT",
+    val storeAddress: String = "Jl. Trans Sulawesi Kelurahan Bintauna",
+    val storePhone: String = "0823-4778-5986",
+    val logoBitmap: Bitmap? = null,
     val shiftId: String,
     val cashierName: String,
     val openedAt: String,
@@ -76,12 +79,21 @@ object ZReportFormatter {
 
         // 2. Header Toko & Judul Laporan
         builder.alignCenter()
-            .boldOn()
+
+        if (data.logoBitmap != null) {
+            builder.rasterCenteredBitmap(data.logoBitmap)
+            builder.feed(1)
+        }
+
+        builder.boldOn()
             .textSize(widthMultiplier = 2, heightMultiplier = 2)
             .textLine(data.storeName)
             .textSize(widthMultiplier = 1, heightMultiplier = 1)
             .boldOff()
-            .textLine(data.storeAddress)
+        if (!data.ownerName.isNullOrBlank()) {
+            builder.textLine("Owner: ${data.ownerName}")
+        }
+        builder.textLine(data.storeAddress)
             .textLine("Telp: ${data.storePhone}")
             .divider('=')
             .boldOn()

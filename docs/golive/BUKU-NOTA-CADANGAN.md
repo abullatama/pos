@@ -1,5 +1,5 @@
 # SPESIFIKASI BUKU NOTA KERTAS CADANGAN & PROTOKOL INPUT SUSULAN
-**AA Coffeeshop & Athia Laundry House**
+**a3coffeeshop & athialoundry**
 *(Lampiran Wajib Paket Go-Live F44)*
 
 ---
@@ -29,8 +29,8 @@ Dengan tersedianya buku nota manual bernomor urut tercetak, operasional penjuala
 
 ```
 +-----------------------------------------------------------------------+
-|  AA COFFEESHOP / ATHIA LAUNDRY HOUSE               No: M-CAF-0001     |
-|  Jl. Trans Sulawesi, Bintauna | WA: 0823-4778-5986                    |
+|  A3 COFFEESHOP / ATHIA LOUNDRY                     No: M-CAF-0001     |
+|  Jl. Trans Sulawesi Kelurahan Bintauna | WA: 0823-4778-5986           |
 |-----------------------------------------------------------------------|
 |  Tanggal : ___________________       Meja / Tamu : _________________  |
 |  Jam     : ___________________       Kasir       : _________________  |

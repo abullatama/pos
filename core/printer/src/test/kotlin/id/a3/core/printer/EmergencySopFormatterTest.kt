@@ -11,7 +11,7 @@ class EmergencySopFormatterTest {
     fun `emergency sop slip contains all 4 emergency scenarios`() {
         val bytes = EmergencySopFormatter.format(
             EmergencySopData(
-                storeName = "AA Coffeeshop",
+                storeName = "A3 Coffeeshop",
                 emergencyPhone = "0823-4778-5986",
                 printedAt = "2026-11-01 10:00"
             )
@@ -21,7 +21,7 @@ class EmergencySopFormatterTest {
 
         // Verifikasi Header
         assertTrue(output.contains("SOP DARURAT KASIR"))
-        assertTrue(output.contains("AA COFFEESHOP"))
+        assertTrue(output.contains("A3 COFFEESHOP"))
 
         // Verifikasi 4 Skenario Darurat (spek 06)
         assertTrue(output.contains("1. TABLET MATI / RUSAK"))
@@ -43,7 +43,7 @@ class EmergencySopFormatterTest {
     fun `emergency sop slip contains critical cashier rules and contact`() {
         val bytes = EmergencySopFormatter.format(
             EmergencySopData(
-                storeName = "Athia Laundry House",
+                storeName = "Athia Loundry",
                 emergencyPhone = "0823-4778-5986"
             )
         )
@@ -51,6 +51,7 @@ class EmergencySopFormatterTest {
         val output = String(bytes, Charsets.ISO_8859_1)
 
         // Verifikasi Aturan Kritis
+        assertTrue(output.contains("ATHIA LOUNDRY"))
         assertTrue(output.contains("ATURAN KRITIS KASIR"))
         assertTrue(output.contains("Refund SELALU TUNAI"))
         assertTrue(output.contains("QRIS: Cek Soundbox/mutasi"))

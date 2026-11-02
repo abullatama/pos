@@ -96,9 +96,9 @@ const val CASH_OUT_SCREEN_TAG = "cash_out_screen_tag"
 fun CashOutScreen(
     viewModel: CashOutViewModel,
     onBack: () -> Unit,
-    storeName: String = "AA COFFEESHOP",
-    storeAddress: String = "Jl. Kopi Pilihan No. 3",
-    storePhone: String = "0812-3456-7890",
+    storeName: String = "A3 COFFEESHOP",
+    storeAddress: String = "Jl. Trans Sulawesi Kelurahan Bintauna",
+    storePhone: String = "0823-4778-5986",
     modifier: Modifier = Modifier
 ) {
     LaunchedEffect(storeName, storeAddress, storePhone) {
@@ -1132,7 +1132,7 @@ private fun CashOutHistoryItemCard(
                                 modifier = Modifier.size(12.dp)
                             )
                             Text(
-                                text = "PIN: ${item.approvedBy}",
+                                text = "Disetujui: ${item.approvedBy}",
                                 color = colors.status.warning.text,
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold

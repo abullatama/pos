@@ -1,5 +1,6 @@
 package id.a3.core.printer.format
 
+import android.graphics.Bitmap
 import id.a3.core.printer.escpos.EscPosBuilder
 
 data class LaundryTagLine(
@@ -19,7 +20,9 @@ data class LaundryTagData(
     val isExpress: Boolean = false,
     val lines: List<LaundryTagLine>,
     val cashierOrStaffName: String? = null,
-    val storeName: String = "ATHIA LAUNDRY HOUSE",
+    val storeName: String = "ATHIA LOUNDRY",
+    val ownerName: String? = "DEVENTRI SILAMATITI BULUT",
+    val logoBitmap: Bitmap? = null,
     val isCopy: Boolean = false,
     val reprintInfo: String? = null
 )
@@ -57,13 +60,22 @@ object LaundryTagFormatter {
         }
 
         builder.alignCenter()
-            .boldOn()
+
+        if (data.logoBitmap != null) {
+            builder.rasterCenteredBitmap(data.logoBitmap)
+            builder.feed(1)
+        }
+
+        builder.boldOn()
             .textLine(data.storeName)
             .textSize(widthMultiplier = 1, heightMultiplier = 2)
             .textLine("TAG CUCIAN")
             .textSize(widthMultiplier = 1, heightMultiplier = 1)
             .boldOff()
-            .divider('=')
+        if (!data.ownerName.isNullOrBlank()) {
+            builder.textLine("Owner: ${data.ownerName}")
+        }
+        builder.divider('=')
 
         // 2. Nomor Order Ukuran Ganda (Besar & Jelas)
         builder.alignCenter()

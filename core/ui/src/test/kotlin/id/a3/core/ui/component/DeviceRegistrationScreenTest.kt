@@ -80,13 +80,13 @@ class DeviceRegistrationScreenTest {
                     onRegistrationCodeChange = {},
                     onRegisterClick = {},
                     onCheckStatusClick = {},
-                    businessUnitName = "AA Coffeeshop Pusat"
+                    businessUnitName = "a3coffeeshop Pusat"
                 )
             }
         }
 
         composeTestRule.onNodeWithText("Perangkat Aktif").assertIsDisplayed()
-        composeTestRule.onNodeWithText("AA Coffeeshop Pusat").assertIsDisplayed()
+        composeTestRule.onNodeWithText("a3coffeeshop Pusat").assertIsDisplayed()
     }
 
     @Test

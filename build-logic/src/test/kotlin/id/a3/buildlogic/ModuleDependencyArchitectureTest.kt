@@ -118,7 +118,7 @@ class ModuleDependencyArchitectureTest {
     @Test
     fun `detects violation when app shell contains business logic`() {
         val badCode = """
-            package id.tenang.kasir.cafe
+            package id.a3coffeeshop
             class OrderRepository {
                 fun getOrders() = emptyList<String>()
             }
@@ -132,7 +132,7 @@ class ModuleDependencyArchitectureTest {
     @Test
     fun `clean app shell passes business logic check`() {
         val cleanCode = """
-            package id.tenang.kasir.cafe
+            package id.a3coffeeshop
             import android.os.Bundle
             import androidx.activity.ComponentActivity
             class MainActivity : ComponentActivity()

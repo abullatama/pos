@@ -1,5 +1,5 @@
 # KURIKULUM & PANDUAN PELATIHAN STAF KASIR (60 MENIT)
-**AA Coffeeshop & Athia Laundry House**
+**a3coffeeshop & athialoundry**
 *(Persiapan Go-Live Hari Pertama — Spek 18)*
 
 Dokumen ini adalah silabus pelatihan praktis 1 jam bagi seluruh kasir dan staf operasional sebelum hari pertama penggunaan sistem A3 POS.

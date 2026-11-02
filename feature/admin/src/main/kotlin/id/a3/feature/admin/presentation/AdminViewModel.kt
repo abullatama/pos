@@ -274,7 +274,7 @@ class AdminViewModel(
                 .boldOn()
                 .textLine("=== UJI PRINTER A3 ===")
                 .boldOff()
-                .textLine("AA Coffeeshop / Athia Laundry")
+                .textLine("a3coffeeshop / athialoundry")
                 .textLine("Printer iWare C58BT Siap")
                 .textLine("Status: OK (ESC/POS 58mm)")
                 .feed(3)
@@ -315,9 +315,9 @@ class AdminViewModel(
             }
 
             val finalStoreName = storeName ?: if (businessUnitId.contains("laundry", ignoreCase = true) || deviceId.startsWith("L", ignoreCase = true)) {
-                "Athia Laundry House"
+                "athialoundry"
             } else {
-                "AA Coffeeshop"
+                "a3coffeeshop"
             }
             val timestamp = SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault()).format(Date())
             val sopBytes = EmergencySopFormatter.format(

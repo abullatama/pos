@@ -1,4 +1,4 @@
-package id.tenang.kasir.cafe.navigation
+package id.athialoundry.navigation
 
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -31,7 +31,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +46,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.printer.PrinterService
+import id.a3.core.sync.api.SyncApiServiceFactory
 import id.a3.core.ui.component.A3Button
 import id.a3.core.ui.component.A3EmptyState
 import id.a3.core.ui.component.ButtonVariant
@@ -55,11 +55,15 @@ import id.a3.core.ui.theme.A3Theme
 import id.a3.feature.admin.presentation.AdminMenuScreen
 import id.a3.feature.admin.presentation.AdminViewModel
 import id.a3.feature.admin.presentation.AdminViewModelFactory
-import id.a3.feature.cafe.CafeMenuViewModelFactory
-import id.a3.feature.cafe.presentation.CafeMenuViewModel
-import id.a3.feature.cafe.presentation.screen.CafeOpenOrdersScreen
-import id.a3.feature.cafe.presentation.screen.CafePosScreen
-import id.a3.feature.cafe.presentation.screen.CafeSoldOutScreen
+import id.a3.feature.laundry.LaundryViewModelFactory
+import id.a3.feature.laundry.presentation.LaundryHomeScreen
+import id.a3.feature.laundry.presentation.LaundryHomeViewModel
+import id.a3.feature.laundry.presentation.LaundryOrderScreen
+import id.a3.feature.laundry.presentation.LaundryOrderViewModel
+import id.a3.feature.laundry.presentation.LaundryOrdersScreen
+import id.a3.feature.laundry.presentation.LaundryOrdersViewModel
+import id.a3.feature.laundry.presentation.LaundryScanViewModel
+import id.a3.feature.laundry.scanner.LaundryScanScreen
 import id.a3.feature.payment.PaymentViewModelFactory
 import id.a3.feature.payment.presentation.PaymentScreen
 import id.a3.feature.payment.presentation.PaymentViewModel
@@ -72,20 +76,22 @@ import id.a3.feature.shift.presentation.ForceCloseShiftDialog
 import id.a3.feature.shift.presentation.OpenShiftScreen
 import id.a3.feature.shift.presentation.ShiftViewModel
 import id.a3.feature.shift.repository.ActiveShift
-import kotlinx.coroutines.launch
+import id.athialoundry.LaundryAppConfig
 
-object CafeDestinations {
-    const val KASIR = "kasir"
-    const val PESANAN = "pesanan"
-    const val HABIS = "habis"
+object LaundryDestinations {
+    const val BERANDA = "beranda"
+    const val ORDER = "order"
+    const val CUCIAN = "cucian"
     const val KAS_KELUAR = "kas_keluar"
+    const val SCAN = "scan"
     const val SHIFT = "shift"
+    const val LAINNYA = "shift"
     const val ADMIN = "admin"
     const val PEMBAYARAN = "pembayaran"
 }
 
 @Composable
-fun CafeNavHost(
+fun LaundryNavHost(
     navController: NavHostController,
     paddingValues: PaddingValues,
     modifier: Modifier = Modifier,
@@ -93,17 +99,34 @@ fun CafeNavHost(
     shiftViewModel: ShiftViewModel = viewModel(
         factory = ShiftViewModelFactory(LocalContext.current, printerService)
     ),
-    startDestination: String = CafeDestinations.KASIR,
-    deviceId: String = "dev-cafe-1",
-    businessUnitId: String = "bu-cafe-01",
-    cashierName: String = "Kasir Cafe",
-    cashierId: String = "u-cashier-1"
+    startDestination: String = LaundryDestinations.BERANDA,
+    deviceId: String = "dev-laundry-1",
+    businessUnitId: String = "bu-laundry-01",
+    cashierName: String = "Kasir Laundry",
+    cashierId: String = "u-cashier-2"
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
-    val menuViewModel: CafeMenuViewModel = viewModel(
-        factory = CafeMenuViewModelFactory(context, printerService)
+    val syncApiService = remember {
+        SyncApiServiceFactory.create(
+            appConfig = LaundryAppConfig
+        )
+    }
+    val laundryViewModelFactory = remember(context, printerService) {
+        LaundryViewModelFactory(context, printerService, syncApiService)
+    }
+
+    val laundryViewModel: LaundryOrderViewModel = viewModel(
+        factory = laundryViewModelFactory
+    )
+    val homeViewModel: LaundryHomeViewModel = viewModel(
+        factory = laundryViewModelFactory
+    )
+    val scanViewModel: LaundryScanViewModel = viewModel(
+        factory = laundryViewModelFactory
+    )
+    val ordersViewModel: LaundryOrdersViewModel = viewModel(
+        factory = laundryViewModelFactory
     )
     val paymentViewModel: PaymentViewModel = viewModel(
         factory = PaymentViewModelFactory(context, printerService)
@@ -121,32 +144,34 @@ fun CafeNavHost(
         )
     )
 
+    val uiState by laundryViewModel.uiState.collectAsState()
+
     NavHost(
         navController = navController,
         startDestination = startDestination,
         enterTransition = {
-            if (targetState.destination.route == CafeDestinations.PEMBAYARAN) {
+            if (targetState.destination.route == LaundryDestinations.PEMBAYARAN) {
                 slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(220)) + fadeIn(animationSpec = tween(220))
             } else {
                 fadeIn(animationSpec = tween(100))
             }
         },
         exitTransition = {
-            if (targetState.destination.route == CafeDestinations.PEMBAYARAN) {
+            if (targetState.destination.route == LaundryDestinations.PEMBAYARAN) {
                 slideOutHorizontally(targetOffsetX = { -it / 4 }, animationSpec = tween(220)) + fadeOut(animationSpec = tween(150))
             } else {
                 fadeOut(animationSpec = tween(80))
             }
         },
         popEnterTransition = {
-            if (initialState.destination.route == CafeDestinations.PEMBAYARAN) {
+            if (initialState.destination.route == LaundryDestinations.PEMBAYARAN) {
                 slideInHorizontally(initialOffsetX = { -it / 4 }, animationSpec = tween(220)) + fadeIn(animationSpec = tween(150))
             } else {
                 fadeIn(animationSpec = tween(100))
             }
         },
         popExitTransition = {
-            if (initialState.destination.route == CafeDestinations.PEMBAYARAN) {
+            if (initialState.destination.route == LaundryDestinations.PEMBAYARAN) {
                 slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(220)) + fadeOut(animationSpec = tween(220))
             } else {
                 fadeOut(animationSpec = tween(80))
@@ -156,223 +181,140 @@ fun CafeNavHost(
             .fillMaxSize()
             .padding(paddingValues)
     ) {
-        composable(CafeDestinations.KASIR) {
+        composable(LaundryDestinations.BERANDA) {
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
 
-            if (activeShift == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(A3Theme.colors.canvas)
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(520.dp)
-                            .clip(A3Theme.shapes.cardShape)
-                            .background(A3Theme.colors.surface)
-                            .border(1.dp, A3Theme.colors.border, A3Theme.shapes.cardShape)
-                            .padding(32.dp)
-                    ) {
-                        A3EmptyState(
-                            title = "Shift Kasir Belum Dibuka",
-                            description = "Silakan buka shift kasir terlebih dahulu dengan memasukkan kas awal laci sebelum melayani pesanan cafe.",
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.AccessTime,
-                                    contentDescription = null,
-                                    tint = A3Theme.colors.accent,
-                                    modifier = Modifier.size(56.dp)
-                                )
-                            },
-                            action = {
-                                A3Button(
-                                    label = "Buka Shift Kasir Sekarang",
-                                    variant = ButtonVariant.PRIMARY,
-                                    onClick = {
-                                        navController.navigate(CafeDestinations.SHIFT) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        )
+            LaundryHomeScreen(
+                viewModel = homeViewModel,
+                onNavigateToOrder = {
+                    val target = if (activeShift != null) LaundryDestinations.ORDER else LaundryDestinations.SHIFT
+                    navController.navigate(target) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onNavigateToScan = {
+                    navController.navigate(LaundryDestinations.SCAN) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onNavigateToCucian = {
+                    navController.navigate(LaundryDestinations.CUCIAN) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
                     }
                 }
-            } else {
-                CafePosScreen(
-                    viewModel = menuViewModel,
-                    onCheckoutClick = { calculation ->
-                        if (menuViewModel.isCheckingOut.value) return@CafePosScreen
-                        menuViewModel.setCheckingOut(true)
-                        coroutineScope.launch {
-                            try {
-                                val header = menuViewModel.uiState.value.orderHeader
-                                val saveResult = menuViewModel.directCheckout(calculation)
-                                val targetOrderId = saveResult.getOrNull() ?: header.orderId
-
-                                paymentViewModel.initializeWithOrder(
-                                    orderId = targetOrderId,
-                                    totalAmount = calculation.total,
-                                    displayNumber = header.receiptId,
-                                    tableOrQueueLabel = header.tableOrQueueLabel,
-                                    cashierName = activeShift.cashierName,
-                                    shiftId = activeShift.shiftId
-                                )
-                                navController.navigate(CafeDestinations.PEMBAYARAN)
-                            } finally {
-                                menuViewModel.setCheckingOut(false)
-                            }
-                        }
-                    },
-                    onSendToKitchenClick = {
-                        navController.navigate(CafeDestinations.PESANAN) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                )
-            }
+            )
         }
-        composable(CafeDestinations.PESANAN) {
+
+        composable(LaundryDestinations.ORDER) {
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
 
-            if (activeShift == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(A3Theme.colors.canvas)
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(520.dp)
-                            .clip(A3Theme.shapes.cardShape)
-                            .background(A3Theme.colors.surface)
-                            .border(1.dp, A3Theme.colors.border, A3Theme.shapes.cardShape)
-                            .padding(32.dp)
-                    ) {
-                        A3EmptyState(
-                            title = "Shift Belum Dibuka",
-                            description = "Daftar pesanan aktif dan riwayat transaksi memerlukan shift kasir aktif.",
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.AccessTime,
-                                    contentDescription = null,
-                                    tint = A3Theme.colors.accent,
-                                    modifier = Modifier.size(56.dp)
-                                )
-                            },
-                            action = {
-                                A3Button(
-                                    label = "Buka Shift Kasir Sekarang",
-                                    variant = ButtonVariant.PRIMARY,
-                                    onClick = {
-                                        navController.navigate(CafeDestinations.SHIFT) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        )
+            LaundryOrderScreen(
+                uiState = uiState,
+                viewModel = laundryViewModel,
+                hasActiveShift = activeShift != null,
+                deviceId = deviceId,
+                shiftId = activeShift?.shiftId,
+                cashierId = activeShift?.cashierId ?: cashierId,
+                cashierName = activeShift?.cashierName ?: cashierName,
+                storeName = "ATHIA LOUNDRY",
+                onNavigateToShift = {
+                    navController.navigate(LaundryDestinations.SHIFT) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onProceedToPayment = { orderId, amountToPay, displayNumber, isDp ->
+                    paymentViewModel.initializeWithOrder(
+                        orderId = orderId,
+                        totalAmount = amountToPay,
+                        displayNumber = displayNumber,
+                        tableOrQueueLabel = if (isDp) "athialoundry (DP)" else "athialoundry",
+                        cashierName = activeShift?.cashierName ?: "Kasir Laundry",
+                        storeName = "ATHIA LOUNDRY",
+                        storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
+                        storePhone = "0823-4778-5986",
+                        isDp = isDp,
+                        shiftId = activeShift?.shiftId
+                    )
+                    navController.navigate(LaundryDestinations.PEMBAYARAN)
+                },
+                onOrderSavedSuccessfully = {
+                    navController.navigate(LaundryDestinations.CUCIAN) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
                     }
                 }
-            } else {
-                CafeOpenOrdersScreen(
-                    viewModel = menuViewModel,
-                    onNavigateToPos = {
-                        navController.navigate(CafeDestinations.KASIR) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    onProceedToPayment = { orderId, total ->
-                        paymentViewModel.initializeWithOrder(
-                            orderId = orderId,
-                            totalAmount = total,
-                            cashierName = activeShift.cashierName,
-                            shiftId = activeShift.shiftId
-                        )
-                        navController.navigate(CafeDestinations.PEMBAYARAN)
-                    }
-                )
-            }
+            )
         }
-        composable(CafeDestinations.HABIS) {
+
+        composable(LaundryDestinations.CUCIAN) {
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
 
-            if (activeShift == null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(A3Theme.colors.canvas)
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(520.dp)
-                            .clip(A3Theme.shapes.cardShape)
-                            .background(A3Theme.colors.surface)
-                            .border(1.dp, A3Theme.colors.border, A3Theme.shapes.cardShape)
-                            .padding(32.dp)
-                    ) {
-                        A3EmptyState(
-                            title = "Shift Belum Dibuka",
-                            description = "Pengaturan menu habis memerlukan shift kasir aktif untuk memperbarui ketersediaan menu.",
-                            icon = {
-                                Icon(
-                                    imageVector = Icons.Outlined.AccessTime,
-                                    contentDescription = null,
-                                    tint = A3Theme.colors.accent,
-                                    modifier = Modifier.size(56.dp)
-                                )
-                            },
-                            action = {
-                                A3Button(
-                                    label = "Buka Shift Kasir Sekarang",
-                                    variant = ButtonVariant.PRIMARY,
-                                    onClick = {
-                                        navController.navigate(CafeDestinations.SHIFT) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
-                                            }
-                                            launchSingleTop = true
-                                            restoreState = true
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        )
+            LaundryOrdersScreen(
+                viewModel = ordersViewModel,
+                hasActiveShift = activeShift != null,
+                onNavigateToShift = {
+                    navController.navigate(LaundryDestinations.SHIFT) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
                     }
+                },
+                onOpenScanner = {
+                    navController.navigate(LaundryDestinations.SCAN) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                onProceedToSettlement = { orderId, remaining, displayNumber ->
+                    paymentViewModel.initializeWithOrder(
+                        orderId = orderId,
+                        totalAmount = remaining,
+                        displayNumber = displayNumber,
+                        tableOrQueueLabel = "athialoundry (Pelunasan)",
+                        cashierName = activeShift?.cashierName ?: "Kasir Laundry",
+                        storeName = "ATHIA LOUNDRY",
+                        storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
+                        storePhone = "0823-4778-5986",
+                        isDp = false,
+                        shiftId = activeShift?.shiftId
+                    )
+                    navController.navigate(LaundryDestinations.PEMBAYARAN)
                 }
-            } else {
-                CafeSoldOutScreen(viewModel = menuViewModel)
-            }
+            )
         }
-        composable(CafeDestinations.KAS_KELUAR) {
+
+        composable(LaundryDestinations.SCAN) {
+            LaundryScanScreen(viewModel = scanViewModel)
+        }
+
+        composable(LaundryDestinations.KAS_KELUAR) {
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
 
@@ -408,7 +350,7 @@ fun CafeNavHost(
                                     label = "Buka Shift Kasir Sekarang",
                                     variant = ButtonVariant.PRIMARY,
                                     onClick = {
-                                        navController.navigate(CafeDestinations.SHIFT) {
+                                        navController.navigate(LaundryDestinations.SHIFT) {
                                             popUpTo(navController.graph.findStartDestination().id) {
                                                 saveState = true
                                             }
@@ -426,18 +368,19 @@ fun CafeNavHost(
                 CashOutScreen(
                     viewModel = cashOutViewModel,
                     onBack = {
-                        navController.navigate(CafeDestinations.KASIR) {
-                            popUpTo(CafeDestinations.KASIR) { inclusive = false }
+                        navController.navigate(LaundryDestinations.BERANDA) {
+                            popUpTo(LaundryDestinations.BERANDA) { inclusive = false }
                             launchSingleTop = true
                         }
                     },
-                    storeName = "AA COFFEESHOP",
-                    storeAddress = "Jl. Kopi Pilihan No. 3",
-                    storePhone = "0812-3456-7890"
+                    storeName = "ATHIA LOUNDRY",
+                    storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
+                    storePhone = "0823-4778-5986"
                 )
             }
         }
-        composable(CafeDestinations.SHIFT) {
+
+        composable(LaundryDestinations.SHIFT) {
             val shiftUiState by shiftViewModel.uiState.collectAsState()
             val activeShift = shiftUiState.currentShift
             var isClosingShift by remember { mutableStateOf(false) }
@@ -450,9 +393,9 @@ fun CafeNavHost(
                 CloseShiftScreen(
                     viewModel = closeShiftViewModel,
                     shiftId = activeShift.shiftId,
-                    storeName = "AA COFFEESHOP",
-                    storeAddress = "Jl. Kopi Pilihan No. 3",
-                    storePhone = "0812-3456-7890",
+                    storeName = "ATHIA LOUNDRY",
+                    storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
+                    storePhone = "0823-4778-5986",
                     onCloseCompleted = {
                         closeShiftViewModel.resetState()
                         isClosingShift = false
@@ -470,7 +413,7 @@ fun CafeNavHost(
                     businessUnitId = businessUnitId,
                     deviceId = deviceId,
                     onShiftOpened = {
-                        navController.navigate(CafeDestinations.KASIR) {
+                        navController.navigate(LaundryDestinations.BERANDA) {
                             popUpTo(navController.graph.findStartDestination().id) {
                                 saveState = true
                             }
@@ -510,15 +453,16 @@ fun CafeNavHost(
                 )
             }
         }
-        composable(CafeDestinations.ADMIN) {
+
+        composable(LaundryDestinations.ADMIN) {
             AdminMenuScreen(
                 viewModel = adminViewModel,
                 onBackClick = {
                     if (!navController.popBackStack()) {
                         val fallback = if (shiftViewModel.uiState.value.currentShift != null) {
-                            CafeDestinations.KASIR
+                            LaundryDestinations.BERANDA
                         } else {
-                            CafeDestinations.SHIFT
+                            LaundryDestinations.SHIFT
                         }
                         navController.navigate(fallback) {
                             popUpTo(navController.graph.findStartDestination().id) {
@@ -530,16 +474,21 @@ fun CafeNavHost(
                 }
             )
         }
-        composable(CafeDestinations.PEMBAYARAN) {
+
+        composable(LaundryDestinations.PEMBAYARAN) {
             PaymentScreen(
                 viewModel = paymentViewModel,
                 onBackClick = {
                     navController.popBackStack()
                 },
                 onFinishAndNewOrder = {
-                    menuViewModel.clearCart()
-                    navController.navigate(CafeDestinations.KASIR) {
-                        popUpTo(CafeDestinations.KASIR) { inclusive = true }
+                    laundryViewModel.clearOrder()
+                    navController.navigate(LaundryDestinations.ORDER) {
+                        popUpTo(navController.graph.findStartDestination().id) {
+                            saveState = true
+                        }
+                        launchSingleTop = true
+                        restoreState = true
                     }
                 }
             )
@@ -589,14 +538,14 @@ private fun ActiveShiftCard(
             }
 
             Text(
-                text = "Shift Sedang Aktif",
+                text = "Shift Kasir Aktif",
                 style = A3Theme.typography.title,
                 fontWeight = FontWeight.Bold,
                 color = colors.ink
             )
 
             Text(
-                text = "Kasir dapat melayani pesanan cafe, menerima pembayaran tunai & QRIS, serta menutup shift saat jam kerja berakhir.",
+                text = "Kasir dapat melayani pesanan laundry, menerima pembayaran tunai & QRIS, serta menutup shift saat jam kerja berakhir.",
                 style = A3Theme.typography.body,
                 color = colors.inkMuted,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -652,7 +601,7 @@ private fun ActiveShiftCard(
 }
 
 @Composable
-private fun CafePlaceholderView(title: String) {
+private fun LaundryPlaceholderView(title: String) {
     Box(
         modifier = Modifier
             .fillMaxSize()

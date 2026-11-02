@@ -1,5 +1,5 @@
 # STANDAR OPERASIONAL PROSEDUR (SOP) DARURAT KASIR
-**AA Coffeeshop & Athia Laundry House**
+**a3coffeeshop & athialoundry**
 *(Wajib Dicetak Ukuran A4 dan Ditempel di Samping / Atas Meja Kasir)*
 
 Dokumen ini adalah instruksi kerja wajib bagi seluruh kasir dan staf saat menghadapi gangguan perangkat keras, jaringan, atau sistem selama jam operasional.
@@ -81,7 +81,7 @@ Dokumen ini adalah instruksi kerja wajib bagi seluruh kasir dan staf saat mengha
 
 | Peran | Nama | Nomor WhatsApp / Telepon |
 |---|---|---|
-| **Owner / Pemilik** | Pak Owner | `0823-4778-5986` |
+| **Owner / Pemilik** | DEVENTRI SILAMATITI BULUT | `0823-4778-5986` |
 | **Manager Operasional** | Manager On Duty | Sesuai Shift Berjalan |
 | **Dukungan Teknis IT** | Tim Support A3 | `0812-3456-7890` |
 

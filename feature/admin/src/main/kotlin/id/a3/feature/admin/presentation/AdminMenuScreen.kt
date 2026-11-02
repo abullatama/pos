@@ -476,7 +476,7 @@ private fun OwnerPinGate(
                             }
                             else -> {
                                 Text(
-                                    text = "PIN default bawaan: 9999",
+                                    text = "Masukkan 4 digit PIN otorisasi",
                                     style = A3Theme.typography.bodySmall,
                                     color = colors.inkMuted
                                 )

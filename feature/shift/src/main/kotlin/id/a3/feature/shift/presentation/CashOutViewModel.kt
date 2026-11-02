@@ -52,9 +52,9 @@ data class CashOutUiState(
     val lockoutRemainingSeconds: Int = 0,
     val activeShiftId: String? = null,
     val cashierName: String = "Kasir",
-    val storeName: String = "AA COFFEESHOP",
-    val storeAddress: String = "Jl. Kopi Pilihan No. 3",
-    val storePhone: String = "0812-3456-7890",
+    val storeName: String = "A3 COFFEESHOP",
+    val storeAddress: String = "Jl. Trans Sulawesi Kelurahan Bintauna",
+    val storePhone: String = "0823-4778-5986",
     val printStatusMessage: String? = null,
     val cashOutHistory: List<CashOutEntity> = emptyList(),
     val totalCashOutAmount: Long = 0L

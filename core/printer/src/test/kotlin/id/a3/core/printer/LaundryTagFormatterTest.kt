@@ -40,7 +40,8 @@ class LaundryTagFormatterTest {
         val output = String(bytes, Charsets.ISO_8859_1)
 
         // Verifikasi Header & Nomor Order
-        assertTrue(output.contains("ATHIA LAUNDRY HOUSE"))
+        assertTrue(output.contains("ATHIA LOUNDRY"))
+        assertTrue(output.contains("Owner: DEVENTRI SILAMATITI BULUT"))
         assertTrue(output.contains("TAG CUCIAN"))
         assertTrue(output.contains("L1-0012"))
         assertTrue(output.contains(">>> LAYANAN EXPRESS <<<"))

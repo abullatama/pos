@@ -3,7 +3,7 @@ package id.a3.core.printer.format
 import id.a3.core.printer.escpos.EscPosBuilder
 
 data class EmergencySopData(
-    val storeName: String = "AA COFFEESHOP / ATHIA LAUNDRY",
+    val storeName: String = "A3 COFFEESHOP / ATHIA LOUNDRY",
     val emergencyPhone: String = "0823-4778-5986",
     val printedAt: String? = null
 )

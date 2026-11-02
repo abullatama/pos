@@ -1,5 +1,5 @@
 # CHECKLIST PERSIAPAN HARI PERTAMA GO-LIVE
-**AA Coffeeshop & Athia Laundry House**
+**a3coffeeshop & athialoundry**
 *(Lampiran Pelaksanaan Milestone M4 — Spek 18)*
 
 Gunakan checklist ini pada **H-1** (sehari sebelum pembukaan) dan **Hari-H Pagi** (sebelum kasir membuka shift pertama) untuk memastikan seluruh fasilitas fisik dan sistem siap 100%.
@@ -36,7 +36,7 @@ Gunakan checklist ini pada **H-1** (sehari sebelum pembukaan) dan **Hari-H Pagi*
 ## 3. CHECKLIST OPERASIONAL HARI-H (PAGI HARI SEBELUM BUKA)
 
 - [ ] Nyalakan tablet dan printer thermal iWare C58BT.
-- [ ] Buka aplikasi POS (AA Coffeeshop / Athia Laundry House).
+- [ ] Buka aplikasi POS (a3coffeeshop / athialoundry).
 - [ ] Tekan tombol menu **Shift** -> Masuk ke layar **Buka Shift (S04)**.
 - [ ] Masukkan nominal hitungan kas awal fisik Rp 200.000 per pecahan.
 - [ ] Konfirmasi pembukaan shift; pastikan nama kasir muncul di bilah atas (TopBar).

@@ -9,9 +9,9 @@ import org.junit.Test
 class ZReportFormatterTest {
 
     private val sampleZReport = ZReportData(
-        storeName = "AA COFFEESHOP",
-        storeAddress = "Jl. Kopi Pilihan No. 3",
-        storePhone = "0812-3456-7890",
+        storeName = "A3 COFFEESHOP",
+        storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
+        storePhone = "0823-4778-5986",
         shiftId = "00000000-0000-4000-8000-000000000001",
         cashierName = "Budi Santoso",
         openedAt = "19-10-2026 08:00",
@@ -41,7 +41,10 @@ class ZReportFormatterTest {
         val bytes = ZReportFormatter.format(sampleZReport)
         val text = String(bytes, Charsets.ISO_8859_1)
 
-        assertTrue(text.contains("AA COFFEESHOP"))
+        assertTrue(text.contains("A3 COFFEESHOP"))
+        assertTrue(text.contains("Owner: DEVENTRI SILAMATITI BULUT"))
+        assertTrue(text.contains("Jl. Trans Sulawesi Kelurahan Bintauna"))
+        assertTrue(text.contains("0823-4778-5986"))
         assertTrue(text.contains("LAPORAN Z (TUTUP SHIFT)"))
         assertTrue(text.contains("Budi Santoso"))
         assertTrue(text.contains("RINGKASAN PENJUALAN:"))

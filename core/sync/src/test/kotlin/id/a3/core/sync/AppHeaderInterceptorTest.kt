@@ -35,7 +35,7 @@ class AppHeaderInterceptorTest {
         val cafeConfig = object : AppConfig {
             override val appId: AppId = AppId.CAFE
             override val appVersion: String = "1.2.0"
-            override val appName: String = "AA Coffeeshop"
+            override val appName: String = "a3coffeeshop"
         }
 
         val client = OkHttpClient.Builder()
@@ -68,7 +68,7 @@ class AppHeaderInterceptorTest {
         val laundryConfig = object : AppConfig {
             override val appId: AppId = AppId.LAUNDRY
             override val appVersion: String = "1.0.5"
-            override val appName: String = "Athia Laundry House"
+            override val appName: String = "athialoundry"
         }
 
         val client = OkHttpClient.Builder()
@@ -103,7 +103,7 @@ class AppHeaderInterceptorTest {
         val cafeConfig = object : AppConfig {
             override val appId: AppId = AppId.CAFE
             override val appVersion: String = "1.2.0"
-            override val appName: String = "AA Coffeeshop"
+            override val appName: String = "a3coffeeshop"
         }
 
         val client = OkHttpClient.Builder()

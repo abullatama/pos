@@ -51,6 +51,9 @@ class CustomerReceiptFormatterTest {
 
         // Verifikasi Header & Transaksi
         assertTrue(text.contains("A3 COFFEESHOP"))
+        assertTrue(text.contains("Owner: DEVENTRI SILAMATITI BULUT"))
+        assertTrue(text.contains("Jl. Trans Sulawesi Kelurahan Bintauna"))
+        assertTrue(text.contains("0823-4778-5986"))
         assertTrue(text.contains("C1-0007"))
         assertTrue(text.contains("Meja 05"))
         assertTrue(text.contains("Budi"))

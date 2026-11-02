@@ -1,5 +1,5 @@
 # PROTOKOL & LEMBAR AUDIT UJI OFFLINE 24 JAM (F43)
-**AA Coffeeshop & Athia Laundry House**
+**a3coffeeshop & athialoundry**
 *(Verifikasi Hardware Fisik Redmi Pad 2 — Milestone M4)*
 
 > **Dokumen Single Source of Truth (SSOT)** untuk pelaksanaan pengujian fisik offline selama 24 jam penuh pada tablet Redmi Pad 2 sesuai kriteria lulus spek bagian 17 dan aturan kerja `AGENTS_RULES.md`.
@@ -55,7 +55,7 @@
 
 Penguji menjalankan aktivitas operasional normal di kedua aplikasi. Catat setiap transaksi ke **Lembar Kerja Audit** di bagian 4.
 
-#### A. Skenario AA Coffeeshop (`app-cafe`):
+#### A. Skenario a3coffeeshop (`app-cafe`):
 1. **Shift Pagi (Jam 08.00):**
    - Masuk menu **Shift** -> **Buka Shift (S04)**.
    - Masukkan kas awal modal Rp 200.000 per pecahan.
@@ -78,7 +78,7 @@ Penguji menjalankan aktivitas operasional normal di kedua aplikasi. Catat setiap
 6. **Shift Malam (Jam 16.00 – 22.00):**
    - Buka Shift Malam kasir baru, lakukan 5 transaksi penjualan tambahan, lalu Tutup Shift Malam dan cetak Laporan Z.
 
-#### B. Skenario Athia Laundry House (`app-laundry`):
+#### B. Skenario athialoundry (`app-laundry`):
 1. **Manajemen Pelanggan Offline (L02):**
    - Buat 3 pelanggan baru (Ibu Dewi 0812-1111-2222, Bpk Hendra 0813-3333-4444, Kak Rina 0821-5555-6666).
 2. **Order Cucian Baru (L03):**
@@ -116,7 +116,7 @@ Penguji menjalankan aktivitas operasional normal di kedua aplikasi. Catat setiap
 
 Bandingkan angka fisik dari Laporan Z tablet dengan data di Web Dashboard / Server (`https://a3-api.sidik.cloud`):
 
-### A. Rekonsiliasi Usaha Cafe (AA Coffeeshop)
+### A. Rekonsiliasi Usaha Cafe (a3coffeeshop)
 
 | Parameter Rekonsiliasi | Angka Tablet Fisik (Laporan Z) | Angka Server Backend (API) | Status Cocok | Catatan Selisih |
 |---|:---:|:---:|:---:|---|
@@ -130,7 +130,7 @@ Bandingkan angka fisik dari Laporan Z tablet dengan data di Web Dashboard / Serv
 | **Total Kas Keluar (Petty Cash)**| Rp ____________ | Rp ____________ | [ ] YA / [ ] TDK | |
 | **Status Outbox Room** | 0 Pending, 0 Failed | 100% Accepted / Duplicate | [ ] YA / [ ] TDK | |
 
-### B. Rekonsiliasi Usaha Laundry (Athia Laundry House)
+### B. Rekonsiliasi Usaha Laundry (athialoundry)
 
 | Parameter Rekonsiliasi | Angka Tablet Fisik | Angka Server Backend (API) | Status Cocok | Catatan Selisih |
 |---|:---:|:---:|:---:|---|

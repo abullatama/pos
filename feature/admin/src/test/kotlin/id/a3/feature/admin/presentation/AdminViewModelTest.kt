@@ -276,7 +276,7 @@ class AdminViewModelTest {
         assertNotNull(fakePrinter.lastPrintedBytes)
         val printedText = String(fakePrinter.lastPrintedBytes!!, Charsets.ISO_8859_1)
         assertTrue(printedText.contains("SOP DARURAT KASIR"))
-        assertTrue(printedText.contains("AA COFFEESHOP"))
+        assertTrue(printedText.contains("A3COFFEESHOP"))
         assertTrue(printedText.contains("TABLET MATI / RUSAK"))
         assertEquals("SOP Darurat Kasir 58 mm berhasil dicetak.", vm.uiState.value.statusMessage)
     }

@@ -1,4 +1,4 @@
-package id.tenang.kasir.laundry
+package id.a3coffeeshop
 
 import android.Manifest
 import android.os.Build
@@ -9,12 +9,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.AccessTime
-import androidx.compose.material.icons.outlined.AddCircle
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material.icons.outlined.PointOfSale
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,11 +45,11 @@ import id.a3.core.ui.component.AppShell
 import id.a3.core.ui.component.DeviceRegistrationScreen
 import id.a3.core.ui.component.NavItem
 import id.a3.core.ui.component.SyncStatus
-import id.a3.core.ui.theme.LaundryTheme
+import id.a3.core.ui.theme.CafeTheme
 import id.a3.feature.shift.ShiftViewModelFactory
 import id.a3.feature.shift.presentation.ShiftViewModel
-import id.tenang.kasir.laundry.navigation.LaundryDestinations
-import id.tenang.kasir.laundry.navigation.LaundryNavHost
+import id.a3coffeeshop.navigation.CafeDestinations
+import id.a3coffeeshop.navigation.CafeNavHost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -70,7 +69,7 @@ class MainActivity : ComponentActivity() {
 
         deviceManager = DeviceManagerFactory.getOrCreate(
             context = this,
-            appConfig = LaundryAppConfig
+            appConfig = CafeAppConfig
         )
 
         // 2. Inisialisasi manajer detak jantung perangkat & jadwalkan worker periodik (F41)
@@ -93,15 +92,15 @@ class MainActivity : ComponentActivity() {
 
         // 3. Inisialisasi manajer sinkronisasi outbox & jadwalkan loop (SYN-03, SYN-05, F43)
         val syncApiService = SyncApiServiceFactory.create(
-            appConfig = LaundryAppConfig,
+            appConfig = CafeAppConfig,
             deviceCredentialProvider = { deviceManager.cachedCredential },
             authTokenProvider = { deviceManager.cachedAuthToken }
         )
         val syncSender = SyncSender(
             outboxDao = database.outboxDao(),
             apiService = syncApiService,
-            appId = LaundryAppConfig.appId.value,
-            appVersion = LaundryAppConfig.appVersion
+            appId = CafeAppConfig.appId.value,
+            appVersion = CafeAppConfig.appVersion
         )
         val outboxSyncManager = OutboxSyncManager(
             syncSender = syncSender,
@@ -131,7 +130,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            LaundryTheme {
+            CafeTheme {
                 val coroutineScope = rememberCoroutineScope()
                 val deviceStatus by deviceManager.deviceStatus.collectAsState()
                 val printerStatus by printerService.status.collectAsState()
@@ -173,7 +172,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (deviceStatus != DeviceStatus.ACTIVE) {
-                    var deviceNameInput by remember { mutableStateOf(LaundryAppConfig.appName) }
+                    var deviceNameInput by remember { mutableStateOf(CafeAppConfig.appName) }
                     var regCodeInput by remember { mutableStateOf("") }
                     var isActionLoading by remember { mutableStateOf(false) }
                     var actionErrorMessage by remember { mutableStateOf<String?>(null) }
@@ -213,13 +212,13 @@ class MainActivity : ComponentActivity() {
                         },
                         isLoading = isActionLoading,
                         errorMessage = actionErrorMessage,
-                        businessUnitName = LaundryAppConfig.appName,
+                        businessUnitName = CafeAppConfig.appName,
                         onDebugBypassClick = {
                             coroutineScope.launch {
                                 if (deviceStatus == DeviceStatus.REVOKED) {
                                     deviceManager.resetDeviceForDebug()
                                 } else {
-                                    deviceManager.activateForDebug(LaundryAppConfig.appName)
+                                    deviceManager.activateForDebug(CafeAppConfig.appName)
                                 }
                             }
                         }
@@ -235,24 +234,24 @@ class MainActivity : ComponentActivity() {
                     val activeShift = shiftUiState.currentShift
                     val isShiftActive = activeShift != null
 
-                    val laundryNavItems = remember(isShiftActive) {
+                    val cafeNavItems = remember(isShiftActive) {
                         listOf(
-                            NavItem(LaundryDestinations.BERANDA, "Beranda", Icons.Outlined.Home, enabled = true),
-                            NavItem(LaundryDestinations.ORDER, "Order Baru", Icons.Outlined.AddCircle, enabled = isShiftActive),
-                            NavItem(LaundryDestinations.CUCIAN, "Cucian", Icons.Outlined.Inventory2, enabled = true),
-                            NavItem(LaundryDestinations.KAS_KELUAR, "Kas", Icons.Outlined.Payments, enabled = isShiftActive),
-                            NavItem(LaundryDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime, enabled = true)
+                            NavItem(CafeDestinations.KASIR, "Kasir", Icons.Outlined.PointOfSale, enabled = isShiftActive),
+                            NavItem(CafeDestinations.PESANAN, "Pesanan", Icons.AutoMirrored.Outlined.ReceiptLong, enabled = isShiftActive),
+                            NavItem(CafeDestinations.HABIS, "Menu Habis", Icons.Outlined.Block, enabled = isShiftActive),
+                            NavItem(CafeDestinations.KAS_KELUAR, "Kas", Icons.Outlined.Payments, enabled = isShiftActive),
+                            NavItem(CafeDestinations.SHIFT, "Shift", Icons.Outlined.AccessTime, enabled = true)
                         )
                     }
 
-                    val defaultStartRoute = if (isShiftActive) LaundryDestinations.BERANDA else LaundryDestinations.SHIFT
+                    val defaultStartRoute = if (isShiftActive) CafeDestinations.KASIR else CafeDestinations.SHIFT
                     val currentRoute = navBackStackEntry?.destination?.route ?: defaultStartRoute
-                    val isAdminSelected = currentRoute == LaundryDestinations.ADMIN
+                    val isAdminSelected = currentRoute == CafeDestinations.ADMIN
 
-                    // Auto-redirect jika shift belum dibuka atau sudah ditutup saat berada di rute kasir
+                    // Auto-redirect ke layar SHIFT jika shift belum dibuka atau sudah ditutup
                     LaunchedEffect(isShiftActive) {
-                        if (!isShiftActive && (currentRoute == LaundryDestinations.ORDER || currentRoute == LaundryDestinations.KAS_KELUAR)) {
-                            navController.navigate(LaundryDestinations.SHIFT) {
+                        if (!isShiftActive && currentRoute != CafeDestinations.SHIFT && currentRoute != CafeDestinations.ADMIN) {
+                            navController.navigate(CafeDestinations.SHIFT) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     inclusive = false
                                 }
@@ -261,18 +260,18 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val selectedIndex = remember(currentRoute, laundryNavItems) {
-                        laundryNavItems.indexOfFirst { it.id == currentRoute }
+                    val selectedIndex = remember(currentRoute, cafeNavItems) {
+                        cafeNavItems.indexOfFirst { it.id == currentRoute }
                     }
 
                     val isFocusFlowActive = remember(currentRoute) {
-                        currentRoute == LaundryDestinations.PEMBAYARAN
+                        currentRoute == CafeDestinations.PEMBAYARAN
                     }
 
                     AppShell(
-                        businessName = "ATHIA LAUNDRY HOUSE",
-                        monogramText = "AL",
-                        cashierName = activeShift?.cashierName ?: "Siti Rahma",
+                        businessName = "AA COFFEESHOP",
+                        monogramText = "AA",
+                        cashierName = activeShift?.cashierName ?: "Kasir",
                         shiftInfo = if (activeShift != null) null else "Belum Buka Shift",
                         syncStatus = syncStatus,
                         pendingSyncCount = pendingSyncCount,
@@ -284,20 +283,20 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onAdminClick = {
-                            if (currentRoute != LaundryDestinations.ADMIN) {
-                                navController.navigate(LaundryDestinations.ADMIN) {
+                            if (currentRoute != CafeDestinations.ADMIN) {
+                                navController.navigate(CafeDestinations.ADMIN) {
                                     launchSingleTop = true
                                 }
                             }
                         },
                         isAdminSelected = isAdminSelected,
-                        navItems = laundryNavItems,
+                        navItems = cafeNavItems,
                         selectedNavIndex = selectedIndex,
                         onNavItemSelected = { index ->
-                            val item = laundryNavItems[index]
-                            if (item.enabled && (isShiftActive || item.id == LaundryDestinations.SHIFT || item.id == LaundryDestinations.BERANDA || item.id == LaundryDestinations.CUCIAN)) {
-                                if (currentRoute == LaundryDestinations.ADMIN) {
-                                    navController.popBackStack(LaundryDestinations.ADMIN, inclusive = true)
+                            val item = cafeNavItems[index]
+                            if (item.enabled && (isShiftActive || item.id == CafeDestinations.SHIFT)) {
+                                if (currentRoute == CafeDestinations.ADMIN) {
+                                    navController.popBackStack(CafeDestinations.ADMIN, inclusive = true)
                                 }
                                 if (navController.currentDestination?.route != item.id) {
                                     navController.navigate(item.id) {
@@ -312,13 +311,13 @@ class MainActivity : ComponentActivity() {
                         },
                         isFocusFlowActive = isFocusFlowActive
                     ) { paddingValues ->
-                        LaundryNavHost(
+                        CafeNavHost(
                             navController = navController,
                             paddingValues = paddingValues,
                             printerService = printerService,
                             shiftViewModel = shiftViewModel,
                             startDestination = defaultStartRoute,
-                            deviceId = registeredDeviceId.ifBlank { "dev-laundry-1" }
+                            deviceId = registeredDeviceId.ifBlank { "dev-cafe-1" }
                         )
                     }
                 }

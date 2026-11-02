@@ -348,13 +348,13 @@ class LaundryOrdersViewModel(
 
         return when (orderWithLines.order.status.lowercase()) {
             "ready" -> {
-                "Halo *$customerName*,\n\nCucian Anda dengan nomor nota *$displayNumber* sudah *SIAP DIAMBIL* di Athia Laundry House.\n\nStatus Pembayaran: *$statusText*.\n\nMohon membawa nota fisik atau menunjukkan pesan ini saat mengambil cucian. Terima kasih telah mempercayakan cucian Anda kepada kami!"
+                "Halo *$customerName*,\n\nCucian Anda dengan nomor nota *$displayNumber* sudah *SIAP DIAMBIL* di athialoundry.\n\nStatus Pembayaran: *$statusText*.\n\nMohon membawa nota fisik atau menunjukkan pesan ini saat mengambil cucian. Terima kasih telah mempercayakan cucian Anda kepada kami!"
             }
             "picked_up" -> {
-                "Halo *$customerName*,\n\nPesanan cucian nomor nota *$displayNumber* telah berhasil *DIAMBIL* di Athia Laundry House.\n\nTerima kasih atas kunjungan Anda dan sampai jumpa kembali!"
+                "Halo *$customerName*,\n\nPesanan cucian nomor nota *$displayNumber* telah berhasil *DIAMBIL* di athialoundry.\n\nTerima kasih atas kunjungan Anda dan sampai jumpa kembali!"
             }
             else -> {
-                "Halo *$customerName*,\n\nTerima kasih telah mencuci di Athia Laundry House.\nNomor Nota: *$displayNumber*\nTotal: *$totalFormatted*\nStatus: *$statusText*\n\nKami akan mengabari Anda kembali segera setelah cucian selesai dan siap diambil. Terima kasih!"
+                "Halo *$customerName*,\n\nTerima kasih telah mencuci di athialoundry.\nNomor Nota: *$displayNumber*\nTotal: *$totalFormatted*\nStatus: *$statusText*\n\nKami akan mengabari Anda kembali segera setelah cucian selesai dan siap diambil. Terima kasih!"
             }
         }
     }

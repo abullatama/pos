@@ -95,6 +95,7 @@ class EscPosBuilder(
 
     /**
      * Cetak Bitmap menggunakan perintah raster bit image standar GS v 0.
+     * Mendukung penanganan transparansi (alpha) agar area transparan tetap putih.
      */
     fun rasterBitmap(bitmap: Bitmap): EscPosBuilder = apply {
         val width = bitmap.width
@@ -116,17 +117,57 @@ class EscPosBuilder(
                     val x = xByte * 8 + bit
                     if (x < width) {
                         val pixel = bitmap.getPixel(x, y)
-                        val r = (pixel shr 16) and 0xFF
-                        val g = (pixel shr 8) and 0xFF
-                        val b = pixel and 0xFF
-                        val gray = (r * 30 + g * 59 + b * 11) / 100
-                        if (gray < 128) {
-                            byteVal = byteVal or (1 shl (7 - bit))
+                        val a = (pixel shr 24) and 0xFF
+                        if (a >= 128) {
+                            val r = (pixel shr 16) and 0xFF
+                            val g = (pixel shr 8) and 0xFF
+                            val b = pixel and 0xFF
+                            val gray = (r * 30 + g * 59 + b * 11) / 100
+                            if (gray < 160) {
+                                byteVal = byteVal or (1 shl (7 - bit))
+                            }
                         }
                     }
                 }
                 buffer.write(byteVal)
             }
+        }
+    }
+
+    /**
+     * Cetak Bitmap di tengah kertas (58mm = 384 dot width).
+     * Melakukan penskalaan proporsional jika melebihi maxWidth/maxHeight,
+     * menempatkan bitmap di tengah kanvas 384 dot, dan menangani transparansi alpha
+     * sehingga latar belakang transparan tidak berubah menjadi hitam pekat.
+     */
+    fun rasterCenteredBitmap(
+        bitmap: Bitmap,
+        targetPaperDots: Int = 384,
+        maxHeight: Int = 120
+    ): EscPosBuilder = apply {
+        try {
+            val scale = minOf(
+                targetPaperDots.toFloat() / bitmap.width,
+                maxHeight.toFloat() / bitmap.height,
+                1.0f
+            )
+            val scaledWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
+            val scaledHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+            val scaledBitmap = if (scale < 1.0f) {
+                Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+            } else {
+                bitmap
+            }
+
+            val centeredBitmap = Bitmap.createBitmap(targetPaperDots, scaledHeight, Bitmap.Config.RGB_565)
+            val canvas = android.graphics.Canvas(centeredBitmap)
+            canvas.drawColor(Color.WHITE)
+            val leftOffset = (targetPaperDots - scaledWidth) / 2f
+            canvas.drawBitmap(scaledBitmap, leftOffset, 0f, null)
+
+            rasterBitmap(centeredBitmap)
+        } catch (_: Exception) {
+            rasterBitmap(bitmap)
         }
     }
 

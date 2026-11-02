@@ -209,7 +209,9 @@ class PaymentViewModelTest {
         // Verifikasi struk otomatis dicetak ke printer
         assertEquals(1, fakePrinter.printedBytes.size)
         val receiptText = String(fakePrinter.printedBytes.first(), Charsets.ISO_8859_1)
-        assertTrue(receiptText.contains("AA COFFEESHOP"))
+        assertTrue(receiptText.contains("A3 COFFEESHOP"))
+        assertTrue(receiptText.contains("Owner: DEVENTRI SILAMATITI BULUT"))
+        assertTrue(receiptText.contains("Jl. Trans Sulawesi Kelurahan Bintauna"))
         assertTrue(receiptText.contains("C1-0007"))
         assertTrue(receiptText.contains("Bayar (Tunai)"))
         assertTrue(receiptText.contains("Kembalian"))
@@ -234,11 +236,11 @@ class PaymentViewModelTest {
             orderId = "order-ldr-01",
             totalAmount = 20000L,
             displayNumber = "L1-0012",
-            tableOrQueueLabel = "Athia Laundry (DP)",
+            tableOrQueueLabel = "athialoundry (DP)",
             cashierName = "Siti Rahma",
-            storeName = "ATHIA LAUNDRY HOUSE",
-            storeAddress = "Jl. Trans Sulawesi, Bintauna",
-            storePhone = "+62 823-4778-5986",
+            storeName = "ATHIA LOUNDRY",
+            storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
+            storePhone = "0823-4778-5986",
             isDp = true
         )
         testScheduler.advanceUntilIdle()
@@ -257,7 +259,9 @@ class PaymentViewModelTest {
 
         assertEquals(1, fakePrinter.printedBytes.size)
         val receiptText = String(fakePrinter.printedBytes.first(), Charsets.ISO_8859_1)
-        assertTrue(receiptText.contains("ATHIA LAUNDRY HOUSE"))
+        assertTrue(receiptText.contains("ATHIA LOUNDRY"))
+        assertTrue(receiptText.contains("Owner: DEVENTRI SILAMATITI BULUT"))
+        assertTrue(receiptText.contains("Jl. Trans Sulawesi Kelurahan Bintauna"))
         assertTrue(receiptText.contains("L1-0012"))
         assertTrue(receiptText.contains("(DP)"))
     }

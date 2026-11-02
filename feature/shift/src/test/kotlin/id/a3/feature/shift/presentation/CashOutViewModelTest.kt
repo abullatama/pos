@@ -38,7 +38,7 @@ class CashOutViewModelTest {
         )
         fakePrinter = FakePrinterForShift()
         viewModel = CashOutViewModel(fakeRepository, fakePrinter, testDispatcher)
-        viewModel.initializeStore("AA COFFEESHOP", "Jl. Kopi Pilihan No. 3", "0812-3456-7890")
+        viewModel.initializeStore("A3 COFFEESHOP", "Jl. Trans Sulawesi Kelurahan Bintauna", "0823-4778-5986")
     }
 
     @After
