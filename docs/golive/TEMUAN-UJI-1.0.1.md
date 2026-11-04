@@ -37,3 +37,6 @@ Semua temuan di bawah bukan blocker. Jangan mengubah rumus uang atau perilaku si
 - UI-2: selesai. Dialog diskon manual dan dialog void/refund memakai `ApprovalResult.failureMessage()`: PIN salah (dengan sisa percobaan), terkunci (dengan menit), akun manager belum tersinkron. Aturan kunci 5 menit tidak diubah.
 - UI-3: selesai untuk cafe. Kartu riwayat selesai menampilkan Tunai, QRIS, atau Tunai + QRIS dari tabel `payments` (query baca saja, tanpa migrasi). Laundry belum dicek.
 - AUTH-1: belum disentuh, menunggu pola waktu dari pengguna.
+
+## Hasil uji tablet perbaikan (5 Nov 2026)
+UI-1, UI-2, dan UI-3 (cafe) diuji di Redmi Pad 2 dengan APK rilis bertanda tangan, dipasang sebagai update tanpa uninstall. Hasil: sesuai harapan. UI-3 laundry dan AUTH-1 masih terbuka.
