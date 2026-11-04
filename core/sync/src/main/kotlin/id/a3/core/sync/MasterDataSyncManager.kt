@@ -2,11 +2,13 @@ package id.a3.core.sync
 
 import id.a3.core.data.local.dao.MasterDataDao
 import id.a3.core.data.local.dao.SyncStateDao
+import id.a3.core.data.local.dao.UserDao
 import id.a3.core.data.local.entity.DiscountPresetEntity
 import id.a3.core.data.local.entity.LaundryServiceEntity
 import id.a3.core.data.local.entity.MenuItemEntity
 import id.a3.core.data.local.entity.MenuOptionEntity
 import id.a3.core.data.local.entity.SyncStateEntity
+import id.a3.core.data.local.entity.UserEntity
 import id.a3.core.sync.api.SyncMasterApiService
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -42,7 +44,8 @@ class MasterDataSyncManager(
     private val masterDataDao: MasterDataDao,
     private val apiService: SyncMasterApiService,
     private val appId: String = "cafe",
-    private val appVersion: String = "1.0.0"
+    private val appVersion: String = "1.0.0",
+    private val userDao: UserDao? = null
 ) {
 
     companion object {
@@ -112,8 +115,8 @@ class MasterDataSyncManager(
     }
 
     private fun extractElementContent(elem: JsonElement?): String? = when (elem) {
+        null, JsonNull -> null // JsonNull juga JsonPrimitive: harus diperiksa lebih dulu
         is JsonPrimitive -> elem.content
-        null, JsonNull -> null
         else -> elem.toString()
     }
 
@@ -214,6 +217,23 @@ class MasterDataSyncManager(
         if (presets.isNotEmpty()) masterDataDao.upsertDiscountPresets(presets)
     }
 
+    /** Akun staf beserta verifier PIN khusus perangkat (spek 3.3.D). PIN mentah tidak pernah ada. */
+    private fun parseUser(obj: JsonObject): UserEntity? {
+        val id = extractElementContent(obj["id"])?.toLongOrNull() ?: return null
+        val name = extractElementContent(obj["name"]) ?: return null
+        val role = extractElementContent(obj["role"])?.lowercase() ?: return null
+        val activeRaw = extractElementContent(obj["active"])?.lowercase()
+        return UserEntity(
+            id = id,
+            name = name,
+            role = role,
+            active = activeRaw == null || activeRaw == "true" || activeRaw == "1",
+            pinKdfSalt = extractElementContent(obj["pin_kdf_salt"]),
+            pinKdfIterations = extractElementContent(obj["pin_kdf_iterations"])?.toIntOrNull(),
+            pinVerifier = extractElementContent(obj["pin_verifier"])
+        )
+    }
+
     private fun scopeOf(obj: JsonObject): SettingScope {
         val unit = obj["business_unit_id"]
         return if (unit == null || unit is JsonNull) SettingScope.GLOBAL else SettingScope.UNIT
@@ -230,6 +250,7 @@ class MasterDataSyncManager(
         var hasClearedLaundryServices = false
         var hasClearedMenuOptions = false
         var hasClearedDiscountPresets = false
+        var hasClearedUsers = false
 
         while (true) {
             val response = try {
@@ -413,6 +434,18 @@ class MasterDataSyncManager(
                         )
                     }
                     masterDataDao.upsertDiscountPresets(presets)
+                }
+                sectionNorm == "users" -> {
+                    val dao = userDao
+                    if (dao != null) {
+                        if (!hasClearedUsers) {
+                            dao.clear()
+                            hasClearedUsers = true
+                        }
+                        for (record in body.records) {
+                            parseUser(record.jsonObject)?.let { dao.upsert(it) }
+                        }
+                    }
                 }
                 sectionNorm == "settings" -> {
                     // Urutkan: pengaturan global lebih dulu, lalu khusus usaha (menang).
@@ -625,6 +658,17 @@ class MasterDataSyncManager(
                                 active = active
                             )
                             masterDataDao.upsertDiscountPreset(entity)
+                        }
+                    }
+                    tableNorm == "users" -> {
+                        val dao = userDao
+                        if (dao != null) {
+                            val obj = change.record.jsonObject
+                            if (change.op == "delete") {
+                                (obj["id"]?.jsonPrimitive?.content?.toLongOrNull())?.let { dao.deleteById(it) }
+                            } else {
+                                parseUser(obj)?.let { dao.upsert(it) }
+                            }
                         }
                     }
                     tableNorm == "settings" -> {

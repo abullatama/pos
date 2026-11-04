@@ -253,10 +253,20 @@ class RoomMigrationTest {
                 AppDatabase.MIGRATION_4_5,
                 AppDatabase.MIGRATION_5_6,
                 AppDatabase.MIGRATION_6_7,
-                AppDatabase.MIGRATION_7_8
+                AppDatabase.MIGRATION_7_8,
+                AppDatabase.MIGRATION_8_9
             )
             .fallbackToDestructiveMigration(false)
             .build()
+
+        // Tabel users (v9) tersedia setelah migrasi berantai dari data lama.
+        appDb.userDao().upsert(
+            id.a3.core.data.local.entity.UserEntity(
+                id = 2L, name = "Siti Aminah", role = "manager", active = true,
+                pinKdfSalt = "c2FsdA==", pinKdfIterations = 120_000, pinVerifier = "dmVyaWZpZXI="
+            )
+        )
+        assertEquals(listOf(2L), appDb.userDao().getActiveApprovers(listOf("manager")).map { it.id })
 
         // 4. Verifikasi bahwa data legacy outbox tetap utuh 100% dan kolom baru v2 bernilai null
         val legacyOutbox = appDb.outboxDao().getByBundleId(legacyBundleId)

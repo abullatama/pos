@@ -16,6 +16,7 @@ import id.a3.core.data.local.dao.OutboxDao
 import id.a3.core.data.local.dao.PaymentDao
 import id.a3.core.data.local.dao.ShiftDao
 import id.a3.core.data.local.dao.SyncStateDao
+import id.a3.core.data.local.dao.UserDao
 import id.a3.core.data.local.entity.CashOutEntity
 import id.a3.core.data.local.entity.CorrectionEntity
 import id.a3.core.data.local.entity.CustomerEntity
@@ -30,6 +31,7 @@ import id.a3.core.data.local.entity.OutboxEntity
 import id.a3.core.data.local.entity.PaymentEntity
 import id.a3.core.data.local.entity.ShiftEntity
 import id.a3.core.data.local.entity.SyncStateEntity
+import id.a3.core.data.local.entity.UserEntity
 
 @Database(
     entities = [
@@ -46,9 +48,10 @@ import id.a3.core.data.local.entity.SyncStateEntity
         PaymentEntity::class,
         CorrectionEntity::class,
         CashOutEntity::class,
-        DiscountPresetEntity::class
+        DiscountPresetEntity::class,
+        UserEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -63,6 +66,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun paymentDao(): PaymentDao
     abstract fun correctionDao(): CorrectionDao
     abstract fun cashOutDao(): CashOutDao
+    abstract fun userDao(): UserDao
 
     companion object {
         const val DATABASE_NAME = "a3_pos.db"
@@ -201,6 +205,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `users` (
+                        `id` INTEGER NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `active` INTEGER NOT NULL,
+                        `pinKdfSalt` TEXT,
+                        `pinKdfIterations` INTEGER,
+                        `pinVerifier` TEXT,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -210,7 +232,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     DATABASE_NAME
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .fallbackToDestructiveMigration(false)
                     .build().also { INSTANCE = it }
             }
