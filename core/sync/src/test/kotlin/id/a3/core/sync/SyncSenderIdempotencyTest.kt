@@ -18,6 +18,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -698,7 +699,7 @@ class SyncSenderIdempotencyTest {
     }
 
     @Test
-    fun `SyncSender auto-injects discount_rule and options when missing on discounted orders`() = runBlocking {
+    fun `SyncSender never invents a discount_rule preset but still normalizes order type and options`() = runBlocking {
         val bundleId = UUID.randomUUID().toString()
         val orderId = UUID.randomUUID().toString()
 
@@ -768,349 +769,87 @@ class SyncSenderIdempotencyTest {
         assertEquals(1, summary.sent)
 
         val sentBody = recordedRequest.get()
-        org.junit.Assert.assertTrue("Payload must contain discount_rule with preset", sentBody.contains("\"preset\":\"Diskon 10%\""))
+        org.junit.Assert.assertFalse("Preset tidak boleh dikarang", sentBody.contains("\"preset\""))
+        org.junit.Assert.assertTrue("Diskon tidak diubah", sentBody.contains("\"discount\":5000") && sentBody.contains("\"total\":45000"))
         org.junit.Assert.assertTrue("Payload lines must contain options array", sentBody.contains("\"options\":[]"))
         org.junit.Assert.assertTrue("Payload order_type must be normalized to takeaway", sentBody.contains("\"order_type\":\"takeaway\""))
     }
 
+    private fun cafeDiscountOrderBundle(bundleId: String, orderId: String, preset: String, discount: Long, total: Long, lastError: String?) = OutboxEntity(
+        bundleId = bundleId,
+        deviceId = "dev-cafe-1",
+        shiftId = "shift-001",
+        eventsJson = """
+            [{"event_id":"${UUID.randomUUID()}","type":"order.created","occurred_at":"2026-10-18T10:00:00Z",
+              "payload":{"order_id":"$orderId","display_number":"C8-0001","order_type":"dine_in","table_label":"Meja 1",
+                "discount_rule":{"preset":"$preset"},
+                "lines":[{"line_id":"l1","item_ref_id":1,"name":"Item","quantity":1,"unit_price":50000,"options":[]}],
+                "subtotal":50000,"discount":$discount,"service_charge":0,"tax":0,"rounding":0,"total":$total}}]
+        """.trimIndent(),
+        status = OutboxStatus.PENDING,
+        attempts = if (lastError != null) 1 else 0,
+        lastError = lastError
+    )
+
     @Test
-    fun `SyncSender strips discount and recalculates total when rejected with unknown preset error`() = runBlocking {
+    fun `server TOTAL_MISMATCH rejection never rewrites tax or total and the bundle stays visible as FAILED`() = runBlocking {
         val bundleId = UUID.randomUUID().toString()
-        val orderId = UUID.randomUUID().toString()
-
-        val orderEntity = id.a3.core.data.local.entity.OrderEntity(
-            id = orderId,
-            displayNumber = "C8-0002",
-            businessUnitId = "bu-cafe-01",
-            shiftId = "shift-001",
-            deviceId = "dev-cafe-1",
-            cashierId = "cashier-1",
-            orderType = "dine_in",
-            status = "open",
-            subtotal = 60000L,
-            discount = 3000L,
-            total = 57000L
-        )
-        database.orderDao().insertOrder(orderEntity)
-
-        val eventsJson = """
-            [
-                {
-                    "event_id": "${UUID.randomUUID()}",
-                    "type": "order.created",
-                    "occurred_at": "2026-10-18T10:00:00Z",
-                    "payload": {
-                        "order_id": "$orderId",
-                        "display_number": "C8-0002",
-                        "order_type": "dine_in",
-                        "discount_rule": {
-                            "preset": "Diskon 5%"
-                        },
-                        "lines": [
-                            {
-                                "line_id": "line-2",
-                                "item_ref_id": "menu-2",
-                                "name": "Item 2",
-                                "quantity": 1,
-                                "unit_price": 60000,
-                                "options": []
-                            }
-                        ],
-                        "subtotal": 60000,
-                        "discount": 3000,
-                        "service_charge": 0,
-                        "tax": 0,
-                        "rounding": 0,
-                        "total": 57000
-                    }
-                }
-            ]
-        """.trimIndent()
-
-        val customSender = SyncSender(
-            outboxDao = database.outboxDao(),
-            apiService = apiService,
-            json = json,
-            currentShiftIdProvider = { "shift-001" },
-            orderDao = database.orderDao()
+        database.outboxDao().insert(
+            cafeDiscountOrderBundle(bundleId, UUID.randomUUID().toString(), "Promo 10%", 5000, 45000,
+                lastError = "Total hitung ulang 49500, diterima 45000")
         )
 
-        val outbox = OutboxEntity(
-            bundleId = bundleId,
-            deviceId = "dev-cafe-1",
-            shiftId = "shift-001",
-            eventsJson = eventsJson,
-            status = OutboxStatus.PENDING,
-            attempts = 1,
-            lastError = null // Teruji meski lastError telah di-reset NULL oleh retryAllFailed
-        )
-        database.outboxDao().insert(outbox)
-
-        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        val bodies = mutableListOf<String>()
         mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
             override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
-                val bodyStr = request.body.readUtf8()
-                recordedRequest.set(bodyStr)
-                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
-                val sentBundleId = jsonBody["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
-                return MockResponse().setResponseCode(200).setBody("""
-                    {
-                        "results": [
-                            {
-                                "bundle_id": "$sentBundleId",
-                                "status": "ACCEPTED"
-                            }
-                        ],
-                        "server_time": "2026-10-18T10:00:05Z"
-                    }
-                """.trimIndent())
+                val body = request.body.readUtf8()
+                bodies += body
+                val id = json.parseToJsonElement(body).jsonObject["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody(
+                    """{"results":[{"bundle_id":"$id","status":"REJECTED","reason_code":"TOTAL_MISMATCH",
+                        "message":"Total hitung ulang 49500, diterima 45000","retryable":false}],"server_time":"2026-10-18T10:00:05Z"}"""
+                )
             }
         }
 
-        val summary = customSender.sendPendingBundles()
-        assertEquals(1, summary.sent)
+        syncSender.sendPendingBundles()
 
-        val sentBody = recordedRequest.get()
-        org.junit.Assert.assertFalse("Payload must remove discount_rule", sentBody.contains("discount_rule"))
-        org.junit.Assert.assertTrue("Payload discount must be zero", sentBody.contains("\"discount\":0"))
-        org.junit.Assert.assertTrue("Payload total must be recalculated to subtotal", sentBody.contains("\"total\":60000"))
+        assertEquals(1, bodies.size)
+        // Angka yang dikirim persis angka tablet: tidak disesuaikan dengan teks pesan error server.
+        assertTrue(bodies[0].contains("\"total\":45000") && bodies[0].contains("\"tax\":0") && bodies[0].contains("\"discount\":5000"))
+        assertEquals(1, database.outboxDao().getFailedOutbox().size)
 
-        val savedOrder = database.orderDao().getOrderById(orderId)
-        assertEquals(0L, savedOrder!!.discount)
-        assertEquals(60000L, savedOrder.total)
+        // Siklus kirim berikutnya tidak mengirim ulang bundel dengan angka yang sudah diubah.
+        syncSender.sendPendingBundles()
+        assertEquals(1, bodies.size)
     }
 
     @Test
-    fun `SyncSender auto-aligns tax and total when rejected with TOTAL_MISMATCH from server`() = runBlocking {
+    fun `unknown preset rejection keeps the discount and preset name and is not silently zeroed`() = runBlocking {
         val bundleId = UUID.randomUUID().toString()
-        val orderId = UUID.randomUUID().toString()
-
-        val orderEntity = id.a3.core.data.local.entity.OrderEntity(
-            id = orderId,
-            displayNumber = "C8-0003",
-            businessUnitId = "bu-cafe-01",
-            shiftId = "shift-001",
-            deviceId = "dev-cafe-1",
-            cashierId = "cashier-1",
-            orderType = "dine_in",
-            status = "open",
-            subtotal = 42000L,
-            discount = 0L,
-            serviceCharge = 0L,
-            tax = 0L,
-            rounding = 0L,
-            total = 42000L
-        )
-        database.orderDao().insertOrder(orderEntity)
-
-        val eventsJson = """
-            [
-                {
-                    "event_id": "${UUID.randomUUID()}",
-                    "type": "order.created",
-                    "occurred_at": "2026-10-18T10:00:00Z",
-                    "payload": {
-                        "order_id": "$orderId",
-                        "display_number": "C8-0003",
-                        "order_type": "dine_in",
-                        "lines": [
-                            {
-                                "line_id": "line-latte",
-                                "item_ref_id": 5,
-                                "name": "Cafe Latte",
-                                "quantity": 1,
-                                "unit_price": 42000,
-                                "options": []
-                            }
-                        ],
-                        "subtotal": 42000,
-                        "discount": 0,
-                        "service_charge": 0,
-                        "tax": 0,
-                        "rounding": 0,
-                        "total": 42000
-                    }
-                }
-            ]
-        """.trimIndent()
-
-        val customSender = SyncSender(
-            outboxDao = database.outboxDao(),
-            apiService = apiService,
-            json = json,
-            currentShiftIdProvider = { "shift-001" },
-            orderDao = database.orderDao(),
-            syncStateDao = database.syncStateDao()
+        database.outboxDao().insert(
+            cafeDiscountOrderBundle(bundleId, UUID.randomUUID().toString(), "Diskon 5%", 2500, 47500, lastError = null)
         )
 
-        val outbox = OutboxEntity(
-            bundleId = bundleId,
-            deviceId = "dev-cafe-1",
-            shiftId = "shift-001",
-            eventsJson = eventsJson,
-            status = OutboxStatus.PENDING,
-            attempts = 1,
-            lastError = "Total hitung ulang 46200, diterima 42000"
-        )
-        database.outboxDao().insert(outbox)
-
-        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        val bodies = mutableListOf<String>()
         mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
             override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
-                val bodyStr = request.body.readUtf8()
-                recordedRequest.set(bodyStr)
-                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
-                val sentBundleId = jsonBody["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
-                return MockResponse().setResponseCode(200).setBody("""
-                    {
-                        "results": [
-                            {
-                                "bundle_id": "$sentBundleId",
-                                "status": "ACCEPTED"
-                            }
-                        ],
-                        "server_time": "2026-10-18T10:00:05Z"
-                    }
-                """.trimIndent())
+                val body = request.body.readUtf8()
+                bodies += body
+                val id = json.parseToJsonElement(body).jsonObject["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody(
+                    """{"results":[{"bundle_id":"$id","status":"REJECTED","reason_code":"VALIDATION_FAILED",
+                        "message":"Preset diskon tidak dikenal: Diskon 5%.","retryable":false}],"server_time":"2026-10-18T10:00:05Z"}"""
+                )
             }
         }
 
-        val summary = customSender.sendPendingBundles()
-        assertEquals(1, summary.sent)
+        syncSender.sendPendingBundles()
+        syncSender.sendPendingBundles()
 
-        val sentBody = recordedRequest.get()
-        org.junit.Assert.assertTrue("Payload tax must be aligned to 4200", sentBody.contains("\"tax\":4200"))
-        org.junit.Assert.assertTrue("Payload total must be aligned to 46200", sentBody.contains("\"total\":46200"))
-
-        val savedOrder = database.orderDao().getOrderById(orderId)
-        assertEquals(4200L, savedOrder!!.tax)
-        assertEquals(46200L, savedOrder.total)
-    }
-
-    @Test
-    fun `SyncSender auto-aligns tax, order total, and payment when server reports 'total hitung 46200, diterima 42000'`() = runBlocking {
-        val bundleId = UUID.randomUUID().toString()
-        val orderId = UUID.randomUUID().toString()
-        val paymentId = UUID.randomUUID().toString()
-
-        val orderEntity = id.a3.core.data.local.entity.OrderEntity(
-            id = orderId,
-            displayNumber = "C8-0005",
-            businessUnitId = "bu-cafe-01",
-            shiftId = "shift-001",
-            deviceId = "dev-cafe-1",
-            cashierId = "cashier-1",
-            orderType = "dine_in",
-            status = "paid",
-            subtotal = 42000L,
-            discount = 0L,
-            serviceCharge = 0L,
-            tax = 0L,
-            rounding = 0L,
-            total = 42000L,
-            paidAmount = 42000L
-        )
-        database.orderDao().insertOrder(orderEntity)
-
-        val eventsJson = """
-            [
-                {
-                    "event_id": "${UUID.randomUUID()}",
-                    "type": "order.created",
-                    "occurred_at": "2026-10-18T10:00:00Z",
-                    "payload": {
-                        "order_id": "$orderId",
-                        "display_number": "C8-0005",
-                        "order_type": "dine_in",
-                        "lines": [
-                            {
-                                "line_id": "line-latte",
-                                "item_ref_id": 5,
-                                "name": "Cafe Latte",
-                                "quantity": 1,
-                                "unit_price": 42000,
-                                "options": []
-                            }
-                        ],
-                        "subtotal": 42000,
-                        "discount": 0,
-                        "service_charge": 0,
-                        "tax": 0,
-                        "rounding": 0,
-                        "total": 42000
-                    }
-                },
-                {
-                    "event_id": "${UUID.randomUUID()}",
-                    "type": "payment.recorded",
-                    "occurred_at": "2026-10-18T10:00:01Z",
-                    "payload": {
-                        "payment_id": "$paymentId",
-                        "order_id": "$orderId",
-                        "method": "cash",
-                        "amount": 42000,
-                        "tendered": 50000,
-                        "idempotency_key": "${UUID.randomUUID()}"
-                    }
-                }
-            ]
-        """.trimIndent()
-
-        val customSender = SyncSender(
-            outboxDao = database.outboxDao(),
-            apiService = apiService,
-            json = json,
-            currentShiftIdProvider = { "shift-001" },
-            orderDao = database.orderDao(),
-            syncStateDao = database.syncStateDao()
-        )
-
-        val outbox = OutboxEntity(
-            bundleId = bundleId,
-            deviceId = "dev-cafe-1",
-            shiftId = "shift-001",
-            eventsJson = eventsJson,
-            status = OutboxStatus.PENDING,
-            attempts = 1,
-            lastError = "total hitung 46200, diterima 42000"
-        )
-        database.outboxDao().insert(outbox)
-
-        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
-        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
-            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
-                val bodyStr = request.body.readUtf8()
-                recordedRequest.set(bodyStr)
-                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
-                val sentBundleId = jsonBody["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
-                return MockResponse().setResponseCode(200).setBody("""
-                    {
-                        "results": [
-                            {
-                                "bundle_id": "$sentBundleId",
-                                "status": "ACCEPTED"
-                            }
-                        ],
-                        "server_time": "2026-10-18T10:00:05Z"
-                    }
-                """.trimIndent())
-            }
-        }
-
-        val summary = customSender.sendPendingBundles()
-        assertEquals(1, summary.sent)
-
-        val sentBody = recordedRequest.get()
-        org.junit.Assert.assertTrue("Payload tax must be aligned to 4200", sentBody.contains("\"tax\":4200"))
-        org.junit.Assert.assertTrue("Payload total must be aligned to 46200", sentBody.contains("\"total\":46200"))
-        org.junit.Assert.assertTrue("Payment payload amount must be aligned to 46200", sentBody.contains("\"amount\":46200"))
-
-        val savedOrder = database.orderDao().getOrderById(orderId)
-        assertEquals(4200L, savedOrder!!.tax)
-        assertEquals(46200L, savedOrder.total)
-        assertEquals(46200L, savedOrder.paidAmount)
-
-        assertEquals("10", database.syncStateDao().get("tax_percent"))
+        assertEquals("Hanya satu kali kirim, tidak ada percobaan dengan diskon dinolkan", 1, bodies.size)
+        assertTrue(bodies[0].contains("\"preset\":\"Diskon 5%\"") && bodies[0].contains("\"discount\":2500") && bodies[0].contains("\"total\":47500"))
+        assertEquals(1, database.outboxDao().getFailedOutbox().size)
     }
 
     @Test

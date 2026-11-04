@@ -367,6 +367,10 @@ class SyncSender(
         val ord = orderWithLines.order
         val lines = orderWithLines.lines
         val isLaundry = ord.orderType.equals("laundry", ignoreCase = true)
+        // Nama preset atau diskon manual asli tidak tersimpan di order lokal. Menebaknya bisa membuat server
+        // menerima diskon yang salah, jadi order cafe berdiskon tidak direkonstruksi: bundelnya tetap terlihat
+        // di antrean bermasalah untuk ditangani, bukan dikirim dengan angka karangan.
+        if (!isLaundry && ord.discount > 0L) return null
         val targetDevCode = currentDeviceCodeProvider?.invoke()?.takeIf { it.isNotBlank() }
         val expectedPrefix = targetDevCode?.let { "$it-" }
 
@@ -498,11 +502,6 @@ class SyncSender(
             if (!isLaundry) {
                 val effectiveTable = (ord.tableLabel?.trim()?.takeIf { it.isNotEmpty() } ?: if (normalizedOrderType == "takeaway") "Bungkus" else "Meja 01").take(64)
                 put("table_label", effectiveTable)
-                if (ord.discount > 0L) {
-                    put("discount_rule", buildJsonObject {
-                        put("preset", "Diskon 10%")
-                    })
-                }
             }
             if (customerObj != null) {
                 put("customer", customerObj)
@@ -676,12 +675,6 @@ class SyncSender(
                     val targetDevCode = extractedCode ?: currentDeviceCodeProvider?.invoke()?.takeIf { it.isNotBlank() }
                     val expectedPrefix = targetDevCode?.let { "$it-" }
 
-                    // 2. Ekstrak kalkulasi total server jika sebelumnya terdapat TOTAL_MISMATCH
-                    val totalMismatchServerTotal = failed.lastError?.let { err ->
-                        Regex("""(?:total\s+hitung(?:\s+ulang)?|subtotal\s+hitung(?:\s+ulang)?|total\s+mismatch)\s*[:=]?\s*(\d+)""", RegexOption.IGNORE_CASE)
-                            .find(err)?.groupValues?.getOrNull(1)?.toLongOrNull()
-                    }
-
                     val custEvent = events.firstOrNull { it.type == "customer.created" }
                     val custPayload = custEvent?.payload as? JsonObject
                     val custName = custPayload?.get("name")?.jsonPrimitive?.content
@@ -786,46 +779,7 @@ class SyncSender(
                             // Penyelarasan total server jika pernah ada penolakan hitung ulang
                             val isLaundryAutoRecover = orderPayloadObj["order_type"]?.jsonPrimitive?.content?.equals("laundry", ignoreCase = true) == true
                             val orderId = orderPayloadObj["order_id"]?.jsonPrimitive?.content
-                            if (totalMismatchServerTotal != null) {
-                                val discountVal = orderPayloadObj["discount"]?.jsonPrimitive?.longOrNull ?: 0L
-                                val serviceVal = orderPayloadObj["service_charge"]?.jsonPrimitive?.longOrNull ?: 0L
-                                val roundingVal = orderPayloadObj["rounding"]?.jsonPrimitive?.longOrNull ?: 0L
-                                val dpp = (subtotalVal - discountVal).coerceAtLeast(0L)
-                                if (isLaundryAutoRecover) {
-                                    newOrderMap["tax"] = JsonPrimitive(0L)
-                                    newOrderMap["service_charge"] = JsonPrimitive(0L)
-                                    newOrderMap["rounding"] = JsonPrimitive(0L)
-                                    newOrderMap["total"] = JsonPrimitive(totalMismatchServerTotal)
-                                    if (!orderId.isNullOrBlank()) {
-                                        orderDao?.updateOrderTotals(
-                                            orderId = orderId,
-                                            subtotal = subtotalVal,
-                                            discount = discountVal,
-                                            serviceCharge = 0L,
-                                            tax = 0L,
-                                            rounding = 0L,
-                                            total = totalMismatchServerTotal
-                                        )
-                                    }
-                                } else {
-                                    val alignedTax = (totalMismatchServerTotal - dpp - serviceVal - roundingVal).coerceAtLeast(0L)
-                                    newOrderMap["tax"] = JsonPrimitive(alignedTax)
-                                    newOrderMap["total"] = JsonPrimitive(totalMismatchServerTotal)
-                                    if (!orderId.isNullOrBlank()) {
-                                        orderDao?.updateOrderTotals(
-                                            orderId = orderId,
-                                            subtotal = subtotalVal,
-                                            discount = discountVal,
-                                            serviceCharge = serviceVal,
-                                            tax = alignedTax,
-                                            rounding = roundingVal,
-                                            total = totalMismatchServerTotal
-                                        )
-                                    }
-                                }
-                                orderChanged = true
-                                wasModified = true
-                            } else if (isLaundryAutoRecover) {
+                            if (isLaundryAutoRecover) {
                                 val curTax = orderPayloadObj["tax"]?.jsonPrimitive?.longOrNull ?: 0L
                                 val curServ = orderPayloadObj["service_charge"]?.jsonPrimitive?.longOrNull ?: 0L
                                 val curRound = orderPayloadObj["rounding"]?.jsonPrimitive?.longOrNull ?: 0L
@@ -1227,24 +1181,6 @@ class SyncSender(
             || result.reasonCode?.contains("TOTAL_MISMATCH", ignoreCase = true) == true
 
         if (isSchemaOrHashMismatch) {
-            val serverTotalFromMsg = result.message?.let { msg ->
-                Regex("""(?:total\s+hitung(?:\s+ulang)?|subtotal\s+hitung(?:\s+ulang)?|total\s+mismatch)\s*[:=]?\s*(\d+)""", RegexOption.IGNORE_CASE)
-                    .find(msg)?.groupValues?.getOrNull(1)?.toLongOrNull()
-            }
-            val receivedTotalFromMsg = result.message?.let { msg ->
-                Regex("""diterima\s+(\d+)""", RegexOption.IGNORE_CASE)
-                    .find(msg)?.groupValues?.getOrNull(1)?.toLongOrNull()
-            }
-            if (serverTotalFromMsg != null && receivedTotalFromMsg != null && receivedTotalFromMsg > 0L && serverTotalFromMsg > receivedTotalFromMsg) {
-                val isLaundryBundle = outbox.eventsJson.contains(""""order_type":"laundry"""", ignoreCase = true)
-                if (!isLaundryBundle) {
-                    val inferredTax = serverTotalFromMsg - receivedTotalFromMsg
-                    val inferredPercent = ((inferredTax * 100L) / receivedTotalFromMsg).toInt()
-                    if (inferredPercent in 1..99) {
-                        syncStateDao?.set(SyncStateEntity(key = "tax_percent", value = inferredPercent.toString()))
-                    }
-                }
-            }
 
             // Server menolak karena skema atau hash berbeda.
             // Ganti bundle_id ke UUID baru agar kiriman berikutnya setelah sanitasi tidak bentrok hash.
@@ -1426,18 +1362,6 @@ class SyncSender(
                         }
                     }
 
-                    // 3. Aturan Diskon (payload.discount_rule.preset wajib bila ada diskon):
-                    // Jika transaksi sebelumnya ditolak server karena preset tidak dikenal ("preset diskon tidak dikenal")
-                    // atau membawa preset 'Diskon 5%' yang ditolak server, maka nol-kan diskon (discount = 0),
-                    // hitung ulang total = subtotal + service + tax + rounding, dan hapus discount_rule agar transaksi langsung lolos validasi server.
-                    val existingDiscountRule = payloadObj["discount_rule"] as? JsonObject
-                    val existingPreset = existingDiscountRule?.get("preset")?.jsonPrimitive?.content
-
-                    val isUnknownPresetError = outbox.lastError?.contains("preset diskon tidak dikenal", ignoreCase = true) == true
-                        || outbox.lastError?.contains("tidak dikenal", ignoreCase = true) == true
-                        || outbox.eventsJson.contains("Diskon 5%", ignoreCase = true)
-                        || existingPreset.equals("Diskon 5%", ignoreCase = true)
-
                     val discountVal = payloadObj["discount"]?.jsonPrimitive?.longOrNull ?: 0L
                     val subtotalVal = payloadObj["subtotal"]?.jsonPrimitive?.longOrNull ?: 0L
                     val serviceVal = payloadObj["service_charge"]?.jsonPrimitive?.longOrNull ?: 0L
@@ -1445,51 +1369,12 @@ class SyncSender(
                     val roundingVal = payloadObj["rounding"]?.jsonPrimitive?.longOrNull ?: 0L
                     val orderId = payloadObj["order_id"]?.jsonPrimitive?.content
 
-                    if (isUnknownPresetError && discountVal > 0L) {
-                        newPayloadMap["discount"] = JsonPrimitive(0L)
-                        val recalculatedTotal = subtotalVal + serviceVal + taxVal + roundingVal
-                        newPayloadMap["total"] = JsonPrimitive(recalculatedTotal)
-                        newPayloadMap.remove("discount_rule")
-                        eventPayloadChanged = true
-                        isEventsModified = true
-
-                        if (!orderId.isNullOrBlank()) {
-                            orderDao?.updateOrderTotals(
-                                orderId = orderId,
-                                subtotal = subtotalVal,
-                                discount = 0L,
-                                serviceCharge = serviceVal,
-                                tax = taxVal,
-                                rounding = roundingVal,
-                                total = recalculatedTotal
-                            )
-                        }
-                    } else if (discountVal > 0L) {
-                        if (existingPreset.isNullOrBlank()) {
-                            val inferredPreset = when {
-                                subtotalVal > 0L && discountVal == (subtotalVal * 10 / 100) -> "Diskon 10%"
-                                subtotalVal > 0L && discountVal == (subtotalVal * 5 / 100) -> "Diskon 5%"
-                                discountVal == 5000L -> "Potongan Rp5.000"
-                                subtotalVal > 0L && kotlin.math.abs(discountVal - (subtotalVal * 0.1).toLong()) <= 100 -> "Diskon 10%"
-                                subtotalVal > 0L && kotlin.math.abs(discountVal - (subtotalVal * 0.05).toLong()) <= 100 -> "Diskon 5%"
-                                else -> "Diskon 10%"
-                            }
-                            val ruleObj = buildJsonObject {
-                                put("preset", inferredPreset)
-                            }
-                            newPayloadMap["discount_rule"] = ruleObj
-                            eventPayloadChanged = true
-                            isEventsModified = true
-                        }
-                    }
 
                     // 4. Penyelarasan Pajak (Tax) & Total
                     val isLaundryOrder = (newPayloadMap["order_type"]?.jsonPrimitive?.content == "laundry"
                         || payloadObj["order_type"]?.jsonPrimitive?.content == "laundry")
 
-                    val currentTax = newPayloadMap["tax"]?.jsonPrimitive?.longOrNull ?: taxVal
                     val currentDiscount = newPayloadMap["discount"]?.jsonPrimitive?.longOrNull ?: discountVal
-                    val dpp = (subtotalVal - currentDiscount).coerceAtLeast(0L)
                     val oldOrderTotal = payloadObj["total"]?.jsonPrimitive?.longOrNull ?: subtotalVal
 
                     if (isLaundryOrder) {
@@ -1521,63 +1406,6 @@ class SyncSender(
                                     tax = 0L,
                                     rounding = 0L,
                                     total = laundryExpectedTotal
-                                )
-                            }
-                        }
-                    } else {
-                        // Jika server menolak dengan TOTAL_MISMATCH ("total hitung 46200, diterima 42000" / "Total hitung ulang 46200, diterima 42000")
-                        // atau jika terdapat pengaturan pajak aktif dari server/dashboard (misal 10%):
-                        val totalMismatchServerTotal = outbox.lastError?.let { err ->
-                            Regex("""(?:total\s+hitung(?:\s+ulang)?|subtotal\s+hitung(?:\s+ulang)?|total\s+mismatch)\s*[:=]?\s*(\d+)""", RegexOption.IGNORE_CASE)
-                                .find(err)?.groupValues?.getOrNull(1)?.toLongOrNull()
-                        }
-                        val configuredTaxPercent = syncStateDao?.get("tax_percent")?.toIntOrNull()
-                            ?: (if (totalMismatchServerTotal != null) 10 else 0)
-
-                        if (totalMismatchServerTotal != null && totalMismatchServerTotal != (newPayloadMap["total"]?.jsonPrimitive?.longOrNull ?: payloadObj["total"]?.jsonPrimitive?.longOrNull)) {
-                            val alignedTax = (totalMismatchServerTotal - dpp - serviceVal - roundingVal).coerceAtLeast(0L)
-                            newPayloadMap["tax"] = JsonPrimitive(alignedTax)
-                            newPayloadMap["total"] = JsonPrimitive(totalMismatchServerTotal)
-                            eventPayloadChanged = true
-                            isEventsModified = true
-
-                            if (!orderId.isNullOrBlank()) {
-                                alignedOrderTotals[orderId] = oldOrderTotal to totalMismatchServerTotal
-                                orderDao?.updateOrderTotals(
-                                    orderId = orderId,
-                                    subtotal = subtotalVal,
-                                    discount = currentDiscount,
-                                    serviceCharge = serviceVal,
-                                    tax = alignedTax,
-                                    rounding = roundingVal,
-                                    total = totalMismatchServerTotal
-                                )
-                            }
-
-                            if (dpp > 0L) {
-                                val inferredTaxPercent = ((alignedTax * 100L) / dpp).toInt()
-                                if (inferredTaxPercent in 1..99) {
-                                    syncStateDao?.set(SyncStateEntity(key = "tax_percent", value = inferredTaxPercent.toString()))
-                                }
-                            }
-                        } else if (currentTax == 0L && configuredTaxPercent > 0 && dpp > 0L) {
-                            val calculatedTax = (dpp * configuredTaxPercent / 100L)
-                            val recalculatedTotal = dpp + serviceVal + calculatedTax + roundingVal
-                            newPayloadMap["tax"] = JsonPrimitive(calculatedTax)
-                            newPayloadMap["total"] = JsonPrimitive(recalculatedTotal)
-                            eventPayloadChanged = true
-                            isEventsModified = true
-
-                            if (!orderId.isNullOrBlank()) {
-                                alignedOrderTotals[orderId] = oldOrderTotal to recalculatedTotal
-                                orderDao?.updateOrderTotals(
-                                    orderId = orderId,
-                                    subtotal = subtotalVal,
-                                    discount = currentDiscount,
-                                    serviceCharge = serviceVal,
-                                    tax = calculatedTax,
-                                    rounding = roundingVal,
-                                    total = recalculatedTotal
                                 )
                             }
                         }
