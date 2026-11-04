@@ -58,7 +58,7 @@ Jangan memuat seluruh spek sekaligus; baca bagian yang relevan saja.
 
 ```
 ./gradlew :app-cafe:assembleDebug :app-laundry:assembleDebug
-./gradlew test lint ktlintCheck detekt
+./gradlew test lint
 ```
 
 Perbarui bagian ini setelah proyek Gradle dibuat di M1.

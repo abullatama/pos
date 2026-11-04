@@ -342,14 +342,18 @@ class MainActivity : ComponentActivity() {
                         isLoading = isActionLoading,
                         errorMessage = actionErrorMessage,
                         businessUnitName = CafeAppConfig.appName,
-                        onDebugBypassClick = {
-                            coroutineScope.launch {
-                                if (deviceStatus == DeviceStatus.REVOKED) {
-                                    deviceManager.resetDeviceForDebug()
-                                } else {
-                                    deviceManager.activateForDebug(CafeAppConfig.appName)
+                        onDebugBypassClick = if (BuildConfig.DEBUG) {
+                            {
+                                coroutineScope.launch {
+                                    if (deviceStatus == DeviceStatus.REVOKED) {
+                                        deviceManager.resetDeviceForDebug()
+                                    } else {
+                                        deviceManager.activateForDebug(CafeAppConfig.appName)
+                                    }
                                 }
                             }
+                        } else {
+                            null
                         },
                         onRegenerateDeviceId = {
                             coroutineScope.launch {

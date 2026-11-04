@@ -7,13 +7,14 @@ android {
 
     defaultConfig {
         applicationId = "id.athialoundry"
-        versionCode = 1
+        versionCode = 10000 // mayor*10000 + minor*100 + patch
         versionName = "1.0.0"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

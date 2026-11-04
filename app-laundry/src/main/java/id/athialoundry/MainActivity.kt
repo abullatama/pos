@@ -340,14 +340,18 @@ class MainActivity : ComponentActivity() {
                         isLoading = isActionLoading,
                         errorMessage = actionErrorMessage,
                         businessUnitName = LaundryAppConfig.appName,
-                        onDebugBypassClick = {
-                            coroutineScope.launch {
-                                if (deviceStatus == DeviceStatus.REVOKED) {
-                                    deviceManager.resetDeviceForDebug()
-                                } else {
-                                    deviceManager.activateForDebug(LaundryAppConfig.appName)
+                        onDebugBypassClick = if (BuildConfig.DEBUG) {
+                            {
+                                coroutineScope.launch {
+                                    if (deviceStatus == DeviceStatus.REVOKED) {
+                                        deviceManager.resetDeviceForDebug()
+                                    } else {
+                                        deviceManager.activateForDebug(LaundryAppConfig.appName)
+                                    }
                                 }
                             }
+                        } else {
+                            null
                         },
                         onRegenerateDeviceId = {
                             coroutineScope.launch {

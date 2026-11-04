@@ -15,3 +15,8 @@ build/
 .cxx
 local.properties
 node_modules/
+
+# Rahasia penandatanganan: jangan pernah di-commit
+keystore.properties
+*.jks
+*.keystore
