@@ -100,6 +100,16 @@ class MasterDataSyncManager(
         }
     }
 
+    /**
+     * Server menyimpan tarif dalam basis poin (1000 = 10%). Tablet memakai persen bulat.
+     * Tarif yang bukan kelipatan 100 bp (mis. 1050) tidak bisa diwakili persen bulat: diabaikan
+     * agar tidak menyimpan angka keliru; owner perlu memakai persen bulat.
+     */
+    internal fun basisPointsToPercent(raw: String): String? {
+        val bp = raw.trim().toLongOrNull() ?: return null
+        return if (bp >= 0 && bp % 100L == 0L) (bp / 100L).toString() else null
+    }
+
     private fun extractElementContent(elem: JsonElement?): String? = when (elem) {
         is JsonPrimitive -> elem.content
         null, JsonNull -> null
@@ -109,6 +119,7 @@ class MasterDataSyncManager(
     suspend fun saveSettingsMap(settings: Map<String, JsonElement>) {
         val taxVal = extractElementContent(settings["tax_percent"])
             ?: extractElementContent(settings["tax_rate"])
+            ?: extractElementContent(settings["tax_bp"])?.let { basisPointsToPercent(it) }
         if (taxVal != null) {
             syncStateDao.set(SyncStateEntity(key = KEY_TAX_PERCENT, value = taxVal))
         }
@@ -120,6 +131,8 @@ class MasterDataSyncManager(
 
         val serviceVal = extractElementContent(settings["service_charge_percent"])
             ?: extractElementContent(settings["service_charge_rate"])
+            ?: (extractElementContent(settings["service_bp"]) ?: extractElementContent(settings["service_charge_bp"]))
+                ?.let { basisPointsToPercent(it) }
         if (serviceVal != null) {
             syncStateDao.set(SyncStateEntity(key = KEY_SERVICE_PERCENT, value = serviceVal))
         }
@@ -333,11 +346,15 @@ class MasterDataSyncManager(
                         val value = extractElementContent(valueElem)
                         if (key != null && value != null) {
                             val mappedKey = when (key) {
-                                "tax_rate" -> KEY_TAX_PERCENT
-                                "service_charge_rate" -> KEY_SERVICE_PERCENT
+                                "tax_rate", "tax_bp" -> KEY_TAX_PERCENT
+                                "service_charge_rate", "service_bp", "service_charge_bp" -> KEY_SERVICE_PERCENT
+                                "rounding_multiple" -> KEY_ROUNDING_STEP
                                 else -> key
                             }
-                            syncStateDao.set(SyncStateEntity(key = mappedKey, value = value))
+                            val mappedValue = if (key.endsWith("_bp")) basisPointsToPercent(value) else value
+                            if (mappedValue != null) {
+                                syncStateDao.set(SyncStateEntity(key = mappedKey, value = mappedValue))
+                            }
                         }
                         if (key == "discount_presets" && valueElem is JsonArray) {
                             val presets = valueElem.mapNotNull { elem ->

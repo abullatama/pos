@@ -2413,6 +2413,18 @@ class SyncSender(
             return SyncSendSummary(sent = 0, duplicates = 0, failed = 0)
         }
 
+        return dispatchBundles(processedItems, isolatePoisonBundles = true)
+    }
+
+    /**
+     * Kirim bundel ke server. Jika server menolak seluruh permintaan dengan 4xx (validasi),
+     * satu bundel cacat tidak boleh menggagalkan bundel valid lain: kirim ulang satu per satu
+     * agar hanya bundel penyebab yang masuk antrean bermasalah.
+     */
+    private suspend fun dispatchBundles(
+        processedItems: List<Pair<OutboxEntity, SyncBundleDto>>,
+        isolatePoisonBundles: Boolean
+    ): SyncSendSummary {
         val request = SyncRequest(bundles = processedItems.map { it.second })
         val response = try {
             apiService.sendBundles(request, appId, appVersion)
@@ -2434,6 +2446,21 @@ class SyncSender(
                 }.getOrNull()
             }?.takeIf { it.isNotBlank() }
             val errorMsg = parsedServerMsg ?: "HTTP error ${response.code()}: ${response.message().ifBlank { "Permintaan ditolak server" }}"
+
+            val isClientRejection = response.code() in 400..499 &&
+                response.code() != 401 && response.code() != 429 && response.code() != 408
+            if (isClientRejection && isolatePoisonBundles && processedItems.size > 1) {
+                var sent = 0
+                var duplicates = 0
+                var failed = 0
+                for (item in processedItems) {
+                    val single = dispatchBundles(listOf(item), isolatePoisonBundles = false)
+                    sent += single.sent
+                    duplicates += single.duplicates
+                    failed += single.failed
+                }
+                return SyncSendSummary(sent = sent, duplicates = duplicates, failed = failed)
+            }
 
             processedItems.forEach { (outbox, _) ->
                 if (response.code() in 400..499 && response.code() != 401 && response.code() != 429 && response.code() != 408) {

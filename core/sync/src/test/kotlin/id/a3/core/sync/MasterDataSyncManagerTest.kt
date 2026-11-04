@@ -349,6 +349,36 @@ class MasterDataSyncManagerTest {
     }
 
     @Test
+    fun `syncConfig converts basis point settings tax_bp and service_bp to whole percent`() = runBlocking {
+        val configResponse = """
+            {
+                "settings": { "tax_bp": 1000, "service_bp": 500 },
+                "feature_flags": {},
+                "min_app_version": "1.0.0",
+                "labels": {}
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(configResponse))
+
+        assertTrue(syncManager.syncConfig())
+
+        assertEquals("10", database.syncStateDao().get("tax_percent"))
+        assertEquals("5", database.syncStateDao().get("service_charge_percent"))
+    }
+
+    @Test
+    fun `syncConfig ignores basis point tax that is not a whole percent`() = runBlocking {
+        val configResponse = """
+            { "settings": { "tax_bp": 1050 }, "feature_flags": {}, "min_app_version": "1.0.0", "labels": {} }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(configResponse))
+
+        assertTrue(syncManager.syncConfig())
+
+        assertEquals(null, database.syncStateDao().get("tax_percent"))
+    }
+
+    @Test
     fun `syncServerTime fetches server time and saves offset to sync_state`() = runBlocking {
         val serverTimeIso = "2026-11-03T10:15:30Z"
         val timeResponse = """
