@@ -1,5 +1,6 @@
 package id.a3.core.auth
 
+import android.util.Log
 import id.a3.core.auth.api.AuthApiService
 import id.a3.core.auth.datastore.EncryptedAuthDataStore
 import id.a3.core.auth.model.PinLoginRequest
@@ -28,13 +29,17 @@ class AuthManager(
     private val appVersion: String = "1.0.0"
 ) {
 
+    /** True setelah [lock]: token tetap ada, tetapi layar hanya terbuka lewat PIN. Tidak diubah oleh initialize atau refresh. */
+    @Volatile
+    private var lockedByIdle = false
+
     private val _isUnlocked = MutableStateFlow(false)
     val isUnlocked: StateFlow<Boolean> = _isUnlocked.asStateFlow()
 
     suspend fun initialize() {
         val token = encryptedDataStore.getAccessToken()
         val user = encryptedDataStore.getUser()
-        _isUnlocked.value = user != null && !token.isNullOrBlank()
+        _isUnlocked.value = !lockedByIdle && user != null && !token.isNullOrBlank()
     }
 
     /**
@@ -81,6 +86,7 @@ class AuthManager(
         if (response.isSuccessful && response.body() != null) {
             val tokenResponse = response.body()!!
             encryptedDataStore.saveAuth(tokenResponse, pin)
+            lockedByIdle = false
             _isUnlocked.value = true
             return AuthResult.Success(tokenResponse.user)
         }
@@ -101,6 +107,7 @@ class AuthManager(
     suspend fun unlockWithPinOffline(pin: String): Boolean {
         val isValid = encryptedDataStore.verifyOfflinePin(pin)
         if (isValid) {
+            lockedByIdle = false
             _isUnlocked.value = true
         }
         return isValid
@@ -110,7 +117,9 @@ class AuthManager(
      * Mengunci layar kasir (misal saat jeda atau selesai transaksi).
      */
     fun lock() {
+        lockedByIdle = true
         _isUnlocked.value = false
+        Log.i(DIAG_TAG, "lock: layar dikunci, token dipertahankan")
     }
 
     /**
@@ -118,7 +127,9 @@ class AuthManager(
      */
     suspend fun logout() {
         encryptedDataStore.clearAuth()
+        lockedByIdle = false
         _isUnlocked.value = false
+        Log.i(DIAG_TAG, "logout: token dihapus")
     }
 
     suspend fun getAccessToken(): String? {
@@ -148,18 +159,26 @@ class AuthManager(
                 deviceCredential = deviceCredential
             )
         } catch (_: Exception) {
+            Log.i(DIAG_TAG, "refresh gagal: gangguan jaringan")
             return false
         }
 
         if (response.isSuccessful && response.body() != null) {
             val body = response.body()!!
             encryptedDataStore.updateTokens(body.accessToken, body.refreshToken)
-            _isUnlocked.value = true
+            // Pembaruan token di latar tidak boleh membuka layar yang dikunci karena idle.
+            if (!lockedByIdle) _isUnlocked.value = true
             return true
         } else if (response.code() == 401 || response.code() == 403) {
+            Log.i(DIAG_TAG, "refresh ditolak server: ${response.code()}")
             // Sesi token server kedaluwarsa; bersihkan token agar request jaringan berikutnya tidak menggunakan token kedaluwarsa
             encryptedDataStore.clearTokens()
+        } else {
+            Log.i(DIAG_TAG, "refresh gagal: kode ${response.code()}")
         }
         return false
     }
 }
+
+/** Tag log diagnostik sesi. Isi log tidak boleh memuat PIN, token, nama, atau nomor HP. */
+internal const val DIAG_TAG = "AuthDiag"

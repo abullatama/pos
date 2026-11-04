@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -90,6 +91,12 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var deviceManager: DeviceManager
     private lateinit var printerService: DefaultPrinterService
+    private lateinit var idleLock: id.a3.core.auth.IdleLockController
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
+        if (::idleLock.isInitialized) idleLock.onUserActivity()
+        return super.dispatchTouchEvent(ev)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -245,6 +252,22 @@ class MainActivity : ComponentActivity() {
                     outboxSyncManager.stopForegroundSyncLoop()
                     masterDataSyncJob?.cancel()
                     masterDataSyncJob = null
+                }
+            }
+        }
+
+        // AUT-05: kunci layar saat idle (tanpa logout). Waktu monoton agar tablet yang sempat mati tetap terkunci.
+        Log.i("AuthDiag", "aplikasi mulai: pulih=${savedInstanceState != null}")
+        val idleAuthManager = AuthManagerFactory.getOrCreate(this, CafeAppConfig)
+        idleLock = id.a3.core.auth.IdleLockController(
+            clock = android.os.SystemClock::elapsedRealtime,
+            onIdle = { idleAuthManager.lock() }
+        )
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+                while (true) {
+                    idleLock.tick(idleAuthManager.isUnlocked.value)
+                    kotlinx.coroutines.delay(1000)
                 }
             }
         }

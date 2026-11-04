@@ -176,6 +176,31 @@ class AuthManagerTest {
     }
 
     @Test
+    fun `lock karena idle tetap terkunci setelah initialize dan token dipertahankan`() = runBlocking {
+        val serverResponse = """
+            {
+                "access_token": "tok-idle",
+                "refresh_token": "ref-idle",
+                "expires_in": 3600,
+                "user": { "id": "u-kasir-2", "name": "Siti", "role": "kasir" },
+                "business_unit_id": "bu-1",
+                "server_time": "2026-10-14T10:00:00Z"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(serverResponse))
+        authManager.loginWithPinOnline(userId = "u-kasir-2", pin = "654321")
+        assertTrue(authManager.isUnlocked.value)
+
+        authManager.lock()
+        authManager.initialize() // efek di layar memanggil ini setiap status berubah
+        assertFalse("initialize tidak boleh membatalkan kunci idle", authManager.isUnlocked.value)
+        assertEquals("tok-idle", authManager.getAccessToken())
+
+        assertTrue(authManager.unlockWithPinOffline("654321"))
+        assertTrue(authManager.isUnlocked.value)
+    }
+
+    @Test
     fun `offline unlock works with correct PIN and fails with wrong PIN without internet`() = runBlocking {
         val plainAccessToken = "secret-token-abc"
         val plainRefreshToken = "secret-refresh-xyz"

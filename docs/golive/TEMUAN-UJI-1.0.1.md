@@ -40,3 +40,11 @@ Semua temuan di bawah bukan blocker. Jangan mengubah rumus uang atau perilaku si
 
 ## Hasil uji tablet perbaikan (5 Nov 2026)
 UI-1, UI-2, dan UI-3 (cafe) diuji di Redmi Pad 2 dengan APK rilis bertanda tangan, dipasang sebagai update tanpa uninstall. Hasil: sesuai harapan. UI-3 laundry dan AUTH-1 masih terbuka.
+
+## AUTH-1: tindakan (5 Nov 2026)
+- Dibangun auto-lock idle sesuai AUT-05: `IdleLockController` di `core:auth`, dipasang di `app-cafe` (2 menit tanpa sentuhan, jam monoton). Aksi hanya `lock()`, tanpa logout; token dan transaksi tidak tersentuh. Laundry belum dipasang.
+- Temuan: `initialize()` dan `refreshToken()` sebelumnya bisa membuka kembali layar yang dikunci. Kini ada penanda kunci idle yang dihormati keduanya; dibuka hanya lewat PIN.
+- Penyebab layar pindah sendiri BELUM terbukti. Hipotesis: sinkron latar menerima 401, `refreshToken()` gagal, lalu `logout()` (MainActivity cafe baris sinkron data master). `refreshToken()` juga mengembalikan false pada gangguan jaringan sesaat. Proses dimatikan sistem kurang mungkin: `initialize()` membuka layar bila token masih ada.
+- Log diagnostik tanpa data sensitif, tag `AuthDiag`: lock, logout, penyebab refresh gagal, dan awal aplikasi. Saat terulang: `adb logcat -d | grep AuthDiag`.
+- Perbaikan `refreshToken` terhadap gangguan jaringan ditunda sampai log membuktikan.
+- Perlu uji tablet: layar terkunci setelah 2 menit, keranjang utuh setelah PIN, buka kunci offline.
