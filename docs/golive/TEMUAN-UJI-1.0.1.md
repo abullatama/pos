@@ -54,3 +54,7 @@ UI-1, UI-2, dan UI-3 (cafe) diuji di Redmi Pad 2 dengan APK rilis bertanda tanga
 - Perbaikan: kunci idle disimpan di DataStore (`locked_by_idle`) dan dipulihkan oleh `initialize()` sekali per proses. Saat masuk latar dicatat `background_at` (jam dinding); bila proses dimulai ulang dan sudah lewat 2 menit (atau jam mundur), layar dikunci. Kembali ke depan pada proses yang sama membersihkan penanda. Logout menghapus keduanya.
 - Belum ditutup: isi layar bisa terlihat sepersekian detik saat kembali, dan pratinjau aplikasi terbaru (perlu keputusan FLAG_SECURE).
 - Perlu uji tablet: login, tekan Home, tunggu lebih dari 2 menit, hentikan paksa aplikasi, buka lagi: harus meminta PIN. Dengan jeda kurang dari 2 menit: langsung masuk.
+
+## Keputusan (5 Nov 2026)
+- AUTH-1: ditutup oleh pemilik. Auto-lock idle 2 menit dianggap cukup. Log diagnostik `AuthDiag` tetap ada untuk bila terulang.
+- Daftar akun saat offline: hanya kasir terakhir yang login (opsi A). Alasan: daftar akun diambil dari server, dan PIN offline hanya dicek terhadap hash kasir terakhir. Tidak ada perubahan kode. Catatan terbuka (tidak dikerjakan): cadangan akun tiruan "Kasir" (id "2") di `MainActivity` bila tidak ada kasir tersimpan.
