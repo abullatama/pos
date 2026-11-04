@@ -240,6 +240,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         val bootResult = masterDataSyncManager.syncBootstrap()
                                         if (bootResult is BootstrapResult.Interrupted && bootResult.error.contains("401")) {
+                                            Log.i("AuthDiag", "sinkron data master menerima 401, mencoba refresh token")
                                             val refreshed = authManager.refreshToken(deviceManager.getDeviceCredential())
                                             if (!refreshed) {
                                                 authManager.logout()
@@ -248,6 +249,7 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         val deltaResult = masterDataSyncManager.syncDelta()
                                         if (deltaResult is DeltaResult.Error && deltaResult.code == 401) {
+                                            Log.i("AuthDiag", "sinkron data master menerima 401, mencoba refresh token")
                                             val refreshed = authManager.refreshToken(deviceManager.getDeviceCredential())
                                             if (!refreshed) {
                                                 authManager.logout()

@@ -51,7 +51,11 @@ class AuthManager(
         restoreIdleState(wallClockMs, idleTimeoutMs)
         val token = encryptedDataStore.getAccessToken()
         val user = encryptedDataStore.getUser()
-        _isUnlocked.value = !lockedByIdle && user != null && !token.isNullOrBlank()
+        val unlocked = !lockedByIdle && user != null && !token.isNullOrBlank()
+        if (!unlocked && !lockedByIdle) {
+            Log.i(DIAG_TAG, "initialize: layar terkunci, user=${user != null}, token=${!token.isNullOrBlank()}")
+        }
+        _isUnlocked.value = unlocked
     }
 
     /**
@@ -211,6 +215,7 @@ class AuthManager(
         if (response.isSuccessful && response.body() != null) {
             val body = response.body()!!
             encryptedDataStore.updateTokens(body.accessToken, body.refreshToken)
+            Log.i(DIAG_TAG, "refresh berhasil")
             // Pembaruan token di latar tidak boleh membuka layar yang dikunci karena idle.
             if (!lockedByIdle) _isUnlocked.value = true
             return true
