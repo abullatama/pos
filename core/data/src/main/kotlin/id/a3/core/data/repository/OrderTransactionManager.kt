@@ -25,11 +25,14 @@ import id.a3.core.data.local.entity.ShiftEntity
 import id.a3.core.data.util.CorrectionReasonMapper
 import id.a3.core.data.util.LaundryStatusMapper
 import id.a3.core.data.util.PhoneNumberUtil
+import id.a3.core.domain.cafe.ManualDiscountSync
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -262,6 +265,102 @@ class OrderTransactionManager(
     }
 
     /**
+     * Bagian total/diskon pada order.created dan order.items_added (cafe).
+     *
+     * - Diskon preset: kirim `discount_rule.preset` dengan nama persis dari server. Tanpa nama preset,
+     *   diskon tidak boleh dikirim (tidak ada lagi nama karangan); pemanggil harus meneruskan nama preset.
+     * - Diskon manual/komplimen ([manual] ada): kirim harga penuh tanpa diskon dan tanpa preset;
+     *   pengurangan tagihan dikirim sebagai koreksi (lihat [manualDiscountCorrection]).
+     */
+    private fun JsonObjectBuilder.putCafeTotals(
+        subtotal: Long,
+        discount: Long,
+        serviceCharge: Long,
+        tax: Long,
+        rounding: Long,
+        total: Long,
+        presetName: String?,
+        manual: ManualDiscountSync?
+    ) {
+        if (manual != null) {
+            put("subtotal", manual.fullSubtotal)
+            put("discount", 0L)
+            put("service_charge", manual.fullServiceCharge)
+            put("tax", manual.fullTax)
+            put("rounding", manual.fullRounding)
+            put("total", manual.fullTotal)
+            return
+        }
+        if (discount > 0L) {
+            val preset = presetName?.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("Diskon Rp$discount tidak membawa nama preset atau persetujuan manager")
+            put("discount_rule", buildJsonObject { put("preset", preset) })
+        }
+        put("subtotal", subtotal)
+        put("discount", discount)
+        put("service_charge", serviceCharge)
+        put("tax", tax)
+        put("rounding", rounding)
+        put("total", total)
+    }
+
+    /**
+     * Event koreksi manual_discount/comp untuk pengurangan tagihan yang belum tercatat di server, atau null
+     * bila tidak ada tambahan. Sekaligus menyimpan catatan koreksi lokal (append-only) dengan identitas manager.
+     * Harus dipanggil di dalam transaksi Room yang sama dengan pembuatan order.
+     */
+    private suspend fun manualDiscountCorrection(
+        orderId: String,
+        discountedTotal: Long,
+        manual: ManualDiscountSync?,
+        shiftId: String?,
+        occurredAt: String
+    ): JsonObject? {
+        if (manual == null) return null
+        val already = correctionDao.getManualAdjustmentTotal(orderId)
+        val delta = manual.adjustmentFor(discountedTotal) - already
+        if (delta <= 0L) return null
+
+        val type = manual.correctionTypeFor(discountedTotal)
+        val reason = manual.reasonCode
+        require(reason in CorrectionReasonMapper.VALID_REASONS) { "Kode alasan '$reason' tidak valid (COR-01)" }
+        val backendReason = CorrectionReasonMapper.toBackend(reason)
+        val note = manual.note?.trim()?.takeIf { it.isNotEmpty() }
+            ?: if (backendReason == "lainnya") "Diskon manual" else null
+        val correctionId = UUID.randomUUID().toString()
+
+        correctionDao.insertCorrection(
+            CorrectionEntity(
+                id = correctionId,
+                orderId = orderId,
+                shiftId = shiftId,
+                type = type,
+                amount = delta,
+                refundMethod = null,
+                reasonCode = reason,
+                note = note,
+                approvedBy = manual.approvedByUserId.toString(),
+                createdAt = Instant.parse(occurredAt).toEpochMilli()
+            )
+        )
+
+        return buildJsonObject {
+            put("event_id", UUID.randomUUID().toString())
+            put("type", "correction.recorded")
+            put("occurred_at", occurredAt)
+            put("payload", buildJsonObject {
+                put("correction_id", correctionId)
+                put("type", type)
+                put("order_id", orderId)
+                put("amount", delta)
+                put("reason_code", backendReason)
+                if (note != null) put("reason_note", note)
+                put("approved_by", manual.approvedByUserId)
+            })
+        }
+    }
+
+    /**
      * Memindahkan meja pesanan dine-in di Room dan mencatat event outbox 'order.table_moved' secara atomik.
      */
     private fun mapCafeItemRefIdToLong(refId: String): Long {
@@ -338,7 +437,8 @@ class OrderTransactionManager(
         lines: List<OrderLineEntity>,
         deviceId: String = "dev-cafe-1",
         shiftId: String? = null,
-        discountPresetName: String? = null
+        discountPresetName: String? = null,
+        manualDiscount: ManualDiscountSync? = null
     ): OutboxEntity {
         return database.withTransaction {
             val activeShift = shiftDao.getActiveShift()
@@ -385,24 +485,12 @@ class OrderTransactionManager(
                 put("order_type", normalizedOrderType)
                 val effectiveTable = (order.tableLabel?.trim()?.takeIf { it.isNotEmpty() } ?: if (normalizedOrderType == "takeaway") "Bungkus" else "Meja 01").take(64)
                 put("table_label", effectiveTable)
-                if (order.discount > 0L) {
-                    val resolvedPreset = discountPresetName?.takeIf { it.isNotBlank() } ?: when {
-                        order.subtotal > 0L && order.discount == (order.subtotal * 10 / 100) -> "Diskon 10%"
-                        order.subtotal > 0L && order.discount == (order.subtotal * 5 / 100) -> "Diskon 5%"
-                        order.discount == 5000L -> "Potongan Rp5.000"
-                        else -> "Diskon 10%"
-                    }
-                    put("discount_rule", buildJsonObject {
-                        put("preset", resolvedPreset)
-                    })
-                }
                 put("lines", orderLinesArray)
-                put("subtotal", order.subtotal)
-                put("discount", order.discount)
-                put("service_charge", order.serviceCharge)
-                put("tax", order.tax)
-                put("rounding", order.rounding)
-                put("total", order.total)
+                putCafeTotals(
+                    subtotal = order.subtotal, discount = order.discount, serviceCharge = order.serviceCharge,
+                    tax = order.tax, rounding = order.rounding, total = order.total,
+                    presetName = discountPresetName, manual = manualDiscount
+                )
             }
 
             val createdEvent = buildJsonObject {
@@ -411,6 +499,13 @@ class OrderTransactionManager(
                 put("occurred_at", occurredAt)
                 put("payload", createdPayload)
             }
+            val correctionEvent = manualDiscountCorrection(
+                orderId = order.id,
+                discountedTotal = order.total,
+                manual = manualDiscount,
+                shiftId = effectiveShiftId,
+                occurredAt = occurredAt
+            )
 
             // 2. Event order.sent_to_kitchen (hanya membawa line_ids item yang baru dikirim)
             val kitchenLineIds = buildJsonArray {
@@ -429,6 +524,7 @@ class OrderTransactionManager(
 
             val eventsArray = buildJsonArray {
                 add(createdEvent)
+                correctionEvent?.let { add(it) }
                 add(kitchenEvent)
             }
 
@@ -457,7 +553,8 @@ class OrderTransactionManager(
         newTotal: Long,
         deviceId: String = "dev-cafe-1",
         shiftId: String? = null,
-        discountPresetName: String? = null
+        discountPresetName: String? = null,
+        manualDiscount: ManualDiscountSync? = null
     ): OutboxEntity {
         return database.withTransaction {
             val currentOrder = orderDao.getOrderById(orderId)
@@ -499,23 +596,11 @@ class OrderTransactionManager(
             val itemsAddedPayload = buildJsonObject {
                 put("order_id", orderId)
                 put("lines", newLinesArray)
-                put("subtotal", newSubtotal)
-                put("discount", newDiscount)
-                if (newDiscount > 0L) {
-                    val resolvedPreset = discountPresetName?.takeIf { it.isNotBlank() } ?: when {
-                        newSubtotal > 0L && newDiscount == (newSubtotal * 10 / 100) -> "Diskon 10%"
-                        newSubtotal > 0L && newDiscount == (newSubtotal * 5 / 100) -> "Diskon 5%"
-                        newDiscount == 5000L -> "Potongan Rp5.000"
-                        else -> "Diskon 10%"
-                    }
-                    put("discount_rule", buildJsonObject {
-                        put("preset", resolvedPreset)
-                    })
-                }
-                put("service_charge", newServiceCharge)
-                put("tax", newTax)
-                put("rounding", newRounding)
-                put("total", newTotal)
+                putCafeTotals(
+                    subtotal = newSubtotal, discount = newDiscount, serviceCharge = newServiceCharge,
+                    tax = newTax, rounding = newRounding, total = newTotal,
+                    presetName = discountPresetName, manual = manualDiscount
+                )
             }
 
             val itemsAddedEvent = buildJsonObject {
@@ -524,6 +609,13 @@ class OrderTransactionManager(
                 put("occurred_at", occurredAt)
                 put("payload", itemsAddedPayload)
             }
+            val correctionEvent = manualDiscountCorrection(
+                orderId = orderId,
+                discountedTotal = newTotal,
+                manual = manualDiscount,
+                shiftId = effectiveShiftId,
+                occurredAt = occurredAt
+            )
 
             // 2. Event order.sent_to_kitchen (hanya membawa line_ids dari newLines!)
             val kitchenLineIds = buildJsonArray {
@@ -542,6 +634,7 @@ class OrderTransactionManager(
 
             val eventsArray = buildJsonArray {
                 add(itemsAddedEvent)
+                correctionEvent?.let { add(it) }
                 add(kitchenEvent)
             }
 
@@ -685,7 +778,8 @@ class OrderTransactionManager(
         idempotencyKey: String = UUID.randomUUID().toString(),
         deviceId: String = "dev-cafe-1",
         shiftId: String? = null,
-        discountPresetName: String? = null
+        discountPresetName: String? = null,
+        manualDiscount: ManualDiscountSync? = null
     ): OutboxEntity {
         return database.withTransaction {
             val activeShift = shiftDao.getActiveShift()
@@ -744,24 +838,12 @@ class OrderTransactionManager(
                 put("order_type", normalizedOrderType)
                 val effectiveTable = (paidOrder.tableLabel?.trim()?.takeIf { it.isNotEmpty() } ?: if (normalizedOrderType == "takeaway") "Bungkus" else "Meja 01").take(64)
                 put("table_label", effectiveTable)
-                if (paidOrder.discount > 0L) {
-                    val resolvedPreset = discountPresetName?.takeIf { it.isNotBlank() } ?: when {
-                        paidOrder.subtotal > 0L && paidOrder.discount == (paidOrder.subtotal * 10 / 100) -> "Diskon 10%"
-                        paidOrder.subtotal > 0L && paidOrder.discount == (paidOrder.subtotal * 5 / 100) -> "Diskon 5%"
-                        paidOrder.discount == 5000L -> "Potongan Rp5.000"
-                        else -> "Diskon 10%"
-                    }
-                    put("discount_rule", buildJsonObject {
-                        put("preset", resolvedPreset)
-                    })
-                }
                 put("lines", orderLinesArray)
-                put("subtotal", paidOrder.subtotal)
-                put("discount", paidOrder.discount)
-                put("service_charge", paidOrder.serviceCharge)
-                put("tax", paidOrder.tax)
-                put("rounding", paidOrder.rounding)
-                put("total", paidOrder.total)
+                putCafeTotals(
+                    subtotal = paidOrder.subtotal, discount = paidOrder.discount, serviceCharge = paidOrder.serviceCharge,
+                    tax = paidOrder.tax, rounding = paidOrder.rounding, total = paidOrder.total,
+                    presetName = discountPresetName, manual = manualDiscount
+                )
             }
 
             val createdEvent = buildJsonObject {
@@ -770,6 +852,13 @@ class OrderTransactionManager(
                 put("occurred_at", occurredAt)
                 put("payload", createdPayload)
             }
+            val correctionEvent = manualDiscountCorrection(
+                orderId = paidOrder.id,
+                discountedTotal = paidOrder.total,
+                manual = manualDiscount,
+                shiftId = effectiveShiftId,
+                occurredAt = occurredAt
+            )
 
             // 2. Event payment.recorded
             val paymentPayload = buildJsonObject {
@@ -792,6 +881,7 @@ class OrderTransactionManager(
 
             val eventsArray = buildJsonArray {
                 add(createdEvent)
+                correctionEvent?.let { add(it) }
                 add(paymentEvent)
             }
 

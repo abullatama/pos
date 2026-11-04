@@ -313,6 +313,107 @@ class RoomOutboxTransactionTest {
         assertTrue(savedOutbox.eventsJson.contains("\"order_type\":\"takeaway\""))
     }
 
+    private fun cafeOrder(id: String, subtotal: Long, discount: Long, total: Long, tax: Long = 0L, rounding: Long = 0L) = OrderEntity(
+        id = id, displayNumber = "C1-0020", businessUnitId = "bu-cafe-01", shiftId = "shift-001",
+        deviceId = "dev-cafe-1", cashierId = "cashier-1", orderType = "dine_in", tableLabel = "Meja 01",
+        status = "open", subtotal = subtotal, discount = discount, tax = tax, rounding = rounding, total = total
+    )
+
+    /** Harga penuh 50.000 + pajak 10% = 55.000. Diskon manual 10.000 -> tablet menagih 49.500 (pajak atas 40.000 = 4.000, total 44.000). */
+    private fun manualDiscount(fullTotal: Long = 55_000L) = id.a3.core.domain.cafe.ManualDiscountSync(
+        fullSubtotal = 50_000L, fullServiceCharge = 0L, fullTax = 5_000L, fullRounding = 0L, fullTotal = fullTotal,
+        reasonCode = "promo", note = null, approvedByUserId = 2L, approvedByName = "Siti Aminah"
+    )
+
+    @Test
+    fun `diskon manual dikirim sebagai order harga penuh lalu koreksi manual_discount dengan approved_by manager`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        // Tablet: subtotal 50.000, diskon 10.000, pajak 4.000, total 44.000.
+        val order = cafeOrder(orderId, subtotal = 50_000L, discount = 10_000L, total = 44_000L, tax = 4_000L)
+
+        val outbox = transactionManager.createOpenOrderWithKitchenTicket(
+            order = order, lines = emptyList(), manualDiscount = manualDiscount()
+        )
+
+        val events = Json.parseToJsonElement(outbox.eventsJson).jsonArray.map { it.jsonObject }
+        assertEquals(listOf("order.created", "correction.recorded", "order.sent_to_kitchen"), events.map { it["type"]!!.jsonPrimitive.content })
+
+        val created = events[0]["payload"]!!.jsonObject
+        assertNull("tanpa preset karangan", created["discount_rule"])
+        assertEquals(0L, created["discount"]!!.jsonPrimitive.content.toLong())
+        assertEquals(50_000L, created["subtotal"]!!.jsonPrimitive.content.toLong())
+        assertEquals(5_000L, created["tax"]!!.jsonPrimitive.content.toLong())
+        assertEquals(55_000L, created["total"]!!.jsonPrimitive.content.toLong())
+
+        val correction = events[1]["payload"]!!.jsonObject
+        assertEquals("manual_discount", correction["type"]!!.jsonPrimitive.content)
+        assertEquals(orderId, correction["order_id"]!!.jsonPrimitive.content)
+        assertEquals(11_000L, correction["amount"]!!.jsonPrimitive.content.toLong())
+        assertEquals("promo", correction["reason_code"]!!.jsonPrimitive.content)
+        assertEquals(2L, correction["approved_by"]!!.jsonPrimitive.content.toLong())
+
+        // Catatan koreksi lokal (append-only) tersimpan dengan identitas manager.
+        val local = database.correctionDao().getCorrectionsForOrder(orderId).single()
+        assertEquals("manual_discount", local.type)
+        assertEquals(11_000L, local.amount)
+        assertEquals("2", local.approvedBy)
+        // Tagihan server = 55.000 - 11.000 = 44.000 = total di tablet.
+        assertEquals(44_000L, 55_000L - local.amount)
+    }
+
+    @Test
+    fun `komplimen sampai nol dikirim sebagai koreksi comp`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = cafeOrder(orderId, subtotal = 50_000L, discount = 50_000L, total = 0L)
+
+        val outbox = transactionManager.createOpenOrderWithKitchenTicket(
+            order = order, lines = emptyList(), manualDiscount = manualDiscount()
+        )
+
+        val correction = Json.parseToJsonElement(outbox.eventsJson).jsonArray.map { it.jsonObject }
+            .first { it["type"]!!.jsonPrimitive.content == "correction.recorded" }["payload"]!!.jsonObject
+        assertEquals("comp", correction["type"]!!.jsonPrimitive.content)
+        assertEquals(55_000L, correction["amount"]!!.jsonPrimitive.content.toLong())
+    }
+
+    @Test
+    fun `tambah item pada order berdiskon manual hanya mengirim selisih koreksi baru`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        transactionManager.createOpenOrderWithKitchenTicket(
+            order = cafeOrder(orderId, 50_000L, 10_000L, 44_000L, tax = 4_000L),
+            lines = emptyList(), manualDiscount = manualDiscount()
+        )
+
+        // Tambah item 20.000: penuh 70.000 + pajak 7.000 = 77.000; setelah diskon 20% tablet = 61.600.
+        val more = id.a3.core.domain.cafe.ManualDiscountSync(
+            fullSubtotal = 70_000L, fullServiceCharge = 0L, fullTax = 7_000L, fullRounding = 0L, fullTotal = 77_000L,
+            reasonCode = "promo", note = null, approvedByUserId = 2L, approvedByName = "Siti Aminah"
+        )
+        val outbox = transactionManager.addItemsToOpenOrder(
+            orderId = orderId, newLines = emptyList(), newSubtotal = 70_000L, newDiscount = 14_000L,
+            newServiceCharge = 0L, newTax = 5_600L, newRounding = 0L, newTotal = 61_600L, manualDiscount = more
+        )
+
+        val events = Json.parseToJsonElement(outbox.eventsJson).jsonArray.map { it.jsonObject }
+        val correction = events.first { it["type"]!!.jsonPrimitive.content == "correction.recorded" }["payload"]!!.jsonObject
+        // Total koreksi yang dibutuhkan 77.000 - 61.600 = 15.400; sudah tercatat 11.000; tambahan 4.400.
+        assertEquals(4_400L, correction["amount"]!!.jsonPrimitive.content.toLong())
+        assertEquals(15_400L, database.correctionDao().getManualAdjustmentTotal(orderId))
+        assertEquals(77_000L, events.first { it["type"]!!.jsonPrimitive.content == "order.items_added" }["payload"]!!.jsonObject["total"]!!.jsonPrimitive.content.toLong())
+    }
+
+    @Test
+    fun `diskon tanpa nama preset dan tanpa persetujuan manager ditolak, tidak ada nama karangan`() = runBlocking {
+        val order = cafeOrder(UUID.randomUUID().toString(), subtotal = 50_000L, discount = 5_000L, total = 45_000L)
+        val result = runCatching {
+            transactionManager.createOpenOrderWithKitchenTicket(order = order, lines = emptyList())
+        }
+        assertTrue(result.exceptionOrNull() is IllegalStateException)
+        // Transaksi dibatalkan: tidak ada order maupun outbox yang tersimpan.
+        assertNull(database.orderDao().getOrderById(order.id))
+        assertEquals(0, database.outboxDao().getUnsyncedCount())
+    }
+
     @Test
     fun `addItemsToOpenOrder inserts new lines, updates totals, and creates order items_added and order sent_to_kitchen events`() = runBlocking {
         val orderId = UUID.randomUUID().toString()

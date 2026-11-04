@@ -25,6 +25,10 @@ interface CorrectionDao {
     @Query("SELECT * FROM corrections WHERE orderId = :orderId ORDER BY createdAt ASC")
     suspend fun getCorrectionsForOrder(orderId: String): List<CorrectionEntity>
 
+    /** Jumlah pengurangan tagihan oleh diskon manual atau komplimen yang sudah dikoreksikan ke server. */
+    @Query("SELECT COALESCE(SUM(amount), 0) FROM corrections WHERE orderId = :orderId AND type IN ('manual_discount', 'comp')")
+    suspend fun getManualAdjustmentTotal(orderId: String): Long
+
     @Query("SELECT * FROM corrections WHERE orderId = :orderId ORDER BY createdAt ASC")
     fun observeCorrectionsForOrder(orderId: String): Flow<List<CorrectionEntity>>
 
