@@ -19,6 +19,7 @@ import id.a3.core.sync.model.OrderNotificationStatusResponse
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import java.util.UUID
 
@@ -26,6 +27,9 @@ interface LaundryOrderRepository {
     fun observeServices(): Flow<List<LaundryServiceEntity>>
     suspend fun seedInitialServicesIfEmpty()
     fun observeOrders(): Flow<List<OrderEntity>>
+
+    /** Pasangan (orderId, metode bayar) untuk label Tunai/QRIS di riwayat. Hanya tampilan. */
+    fun observePaymentMethods(): Flow<List<Pair<String, String>>> = flowOf(emptyList())
     fun observeOrdersByStatus(status: String): Flow<List<OrderEntity>>
     suspend fun getOrderWithLines(orderId: String): OrderWithLines?
     suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity?
@@ -192,6 +196,10 @@ class DefaultLaundryOrderRepository(
             masterDataDao.upsertLaundryServices(INITIAL_LAUNDRY_SERVICES)
         }
     }
+
+    override fun observePaymentMethods(): Flow<List<Pair<String, String>>> =
+        transactionManager?.paymentDao?.observeAllPayments()?.map { list -> list.map { it.orderId to it.method } }
+            ?: flowOf(emptyList())
 
     override fun observeOrders(): Flow<List<OrderEntity>> {
         return orderDao.observeOrdersByStatus("open")

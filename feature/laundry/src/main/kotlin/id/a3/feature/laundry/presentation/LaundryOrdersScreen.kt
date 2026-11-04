@@ -110,6 +110,7 @@ fun LaundryOrdersScreen(
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
     val uiState by viewModel.uiState.collectAsState()
+    val paymentLabels by viewModel.paymentLabels.collectAsState()
     var showShiftRequiredDialog by remember { mutableStateOf(false) }
 
     Box(
@@ -233,6 +234,7 @@ fun LaundryOrdersScreen(
                             LaundryOrderCardItem(
                                 orderWithLines = orderWithLines,
                                 isSelected = isSelected,
+                                paymentMethodLabel = paymentLabels[orderWithLines.order.id],
                                 onClick = { viewModel.selectOrder(orderWithLines) }
                             )
                         }
@@ -428,6 +430,7 @@ private fun FilterStatusTabs(
 private fun LaundryOrderCardItem(
     orderWithLines: OrderWithLines,
     isSelected: Boolean,
+    paymentMethodLabel: String? = null,
     onClick: () -> Unit
 ) {
     val colors = A3Theme.colors
@@ -503,7 +506,10 @@ private fun LaundryOrderCardItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 A3StatusChip(label = statusLabel, token = statusToken)
-                A3StatusChip(label = paymentLabel, token = paymentToken)
+                A3StatusChip(
+                    label = if (paymentMethodLabel != null) "$paymentLabel · $paymentMethodLabel" else paymentLabel,
+                    token = paymentToken
+                )
             }
         }
     }

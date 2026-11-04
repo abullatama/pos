@@ -58,3 +58,7 @@ UI-1, UI-2, dan UI-3 (cafe) diuji di Redmi Pad 2 dengan APK rilis bertanda tanga
 ## Keputusan (5 Nov 2026)
 - AUTH-1: ditutup oleh pemilik. Auto-lock idle 2 menit dianggap cukup. Log diagnostik `AuthDiag` tetap ada untuk bila terulang.
 - Daftar akun saat offline: hanya kasir terakhir yang login (opsi A). Alasan: daftar akun diambil dari server, dan PIN offline hanya dicek terhadap hash kasir terakhir. Tidak ada perubahan kode. Catatan terbuka (tidak dikerjakan): cadangan akun tiruan "Kasir" (id "2") di `MainActivity` bila tidak ada kasir tersimpan.
+
+## Laundry (5 Nov 2026)
+- Auto-lock idle 2 menit dipasang di `app-laundry` dengan kelas `IdleLockController` yang sama (lock tanpa logout, bertahan setelah proses dimatikan sistem). Perlu uji tablet laundry.
+- UI-3 laundry: dicek, kartu daftar pesanan hanya menampilkan Lunas/DP/Belum Lunas tanpa jenis bayar. Kini chip pembayaran menampilkan jenis, mis. "Lunas · Tunai", "DP · QRIS". Sumber sama dengan cafe (tabel payments, tanpa migrasi). Pembantu label dipindah ke `core:domain` (`PaymentLabels.kt`) agar cafe dan laundry tidak saling bergantung.

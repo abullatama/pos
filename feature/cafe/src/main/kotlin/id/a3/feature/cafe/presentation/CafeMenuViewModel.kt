@@ -14,6 +14,7 @@ import id.a3.core.domain.cafe.CafeOrderLine
 import id.a3.core.domain.cafe.OrderDiscount
 import id.a3.core.domain.cafe.TaxMode
 import id.a3.core.domain.cafe.ManualDiscountSync
+import id.a3.core.domain.payment.paymentLabelsByOrder
 import id.a3.core.domain.security.ApprovalResult
 import id.a3.core.domain.security.ManagerApproval
 import id.a3.core.domain.security.ManagerApprover
@@ -926,17 +927,3 @@ class CafeMenuViewModel(
         _taxMode.value = taxMode
     }
 }
-
-/** Gabungkan metode bayar per pesanan menjadi label singkat. Metode tak dikenal diabaikan. */
-internal fun paymentLabelsByOrder(rows: List<Pair<String, String>>): Map<String, String> =
-    rows.groupBy({ it.first }, { it.second })
-        .mapValues { (_, methods) ->
-            methods.distinct().mapNotNull {
-                when (it) {
-                    "cash" -> "Tunai"
-                    "qris_static" -> "QRIS"
-                    else -> null
-                }
-            }.joinToString(" + ")
-        }
-        .filterValues { it.isNotEmpty() }

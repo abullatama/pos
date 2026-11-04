@@ -6,6 +6,7 @@ import id.a3.core.data.local.entity.CustomerEntity
 import id.a3.core.data.local.entity.LaundryPickupEntity
 import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.data.repository.LaundryPickupItem
+import id.a3.core.domain.payment.paymentLabelsByOrder
 import id.a3.core.domain.security.ApprovalResult
 import id.a3.core.domain.security.ManagerApprover
 import id.a3.core.domain.security.failureMessage
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -101,6 +103,15 @@ class LaundryOrdersViewModel(
     private val _isCheckingNotification = MutableStateFlow(false)
 
     // Pelacak PIN salah (COR-07: 3x salah terkunci 5 menit)
+
+    /** Jenis pembayaran per pesanan (orderId ke "Tunai", "QRIS", atau gabungan). */
+    val paymentLabels: StateFlow<Map<String, String>> = repository.observePaymentMethods()
+        .map { paymentLabelsByOrder(it) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
 
     private val _rawOrdersFlow: StateFlow<List<OrderWithLines>> = _filterStatus
         .flatMapLatest { filter ->
