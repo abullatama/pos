@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -220,7 +221,7 @@ fun CafePosScreen(
                 onDismissRequest = { viewModel.dismissDiscountDialog() },
                 onApplyDiscount = { viewModel.applyAppliedDiscount(it) },
                 onRemoveDiscount = { viewModel.removeDiscount() },
-                onVerifyManagerPin = { pin -> viewModel.verifyManagerApproval(pin) }
+                onVerifyManagerPin = { pin -> viewModel.verifyManagerResult(pin) }
             )
         }
 
@@ -908,7 +909,8 @@ internal fun PurchaseReceiptCard(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp)
+                    .heightIn(min = 140.dp)
+                    .padding(vertical = 4.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color.White)
                     .border(1.dp, colors.ink, RoundedCornerShape(16.dp))
@@ -943,7 +945,7 @@ internal fun PurchaseReceiptCard(
             }
 
             // ==================== SEKSI BAWAH: KARTU DISKON & RINCIAN PEMBAYARAN ====================
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // Kartu Diskon Interaktif Taktil (C06 Dialog Trigger)
                 if (calculation.discount > 0L) {
                     AppliedDiscountCard(
@@ -958,18 +960,9 @@ internal fun PurchaseReceiptCard(
                     )
                 }
 
-                Text(
-                    text = "Payment Details",
-                    color = colors.ink,
-                    style = A3Theme.typography.label.copy(
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                )
-
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
                 ) {
                     PaymentRow(label = "Subtotal", amount = calculation.subtotal)
 
@@ -986,14 +979,12 @@ internal fun PurchaseReceiptCard(
                         PaymentRow(label = "Pembulatan", amount = calculation.rounding)
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(0.5.dp)
                             .background(Color(0xFFE5E7EB))
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
 
                     // BARIS TOTAL BESAR
                     Row(

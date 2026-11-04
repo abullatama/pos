@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.a3.core.data.local.entity.OrderWithLines
+import id.a3.core.domain.security.failureMessage
 import id.a3.core.ui.component.A3Button
 import id.a3.core.ui.component.A3Dialog
 import id.a3.core.ui.component.A3MoneyText
@@ -115,6 +116,7 @@ fun CafeOpenOrdersScreen(
     var activeTab by remember { mutableStateOf(CafeOrdersTab.OPEN_TABLES) }
     val openOrders by viewModel.openOrders.collectAsState()
     val completedOrders by viewModel.completedOrders.collectAsState()
+    val paymentLabels by viewModel.paymentLabels.collectAsState()
     val activeShift by viewModel.activeShift.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
@@ -481,6 +483,7 @@ fun CafeOpenOrdersScreen(
                                     orderWithLines = item,
                                     isSelected = isSelected,
                                     isOldTransaction = isOld,
+                                    paymentLabel = paymentLabels[item.order.id],
                                     onClick = { selectedCompletedOrderId = item.order.id }
                                 )
                             }
@@ -636,9 +639,9 @@ fun CafeOpenOrdersScreen(
                 },
                 onSubmitApproval = { pin, reasonCode, note ->
                     coroutineScope.launch {
-                        val isPinValid = viewModel.verifyManagerPin(pin)
-                        if (!isPinValid) {
-                            managerPinErrorMessage = "PIN Manager salah (Percobaan gagal dicatat)"
+                        val failure = viewModel.verifyManagerPinResult(pin).failureMessage()
+                        if (failure != null) {
+                            managerPinErrorMessage = failure
                             return@launch
                         }
                         val res = viewModel.refundOrVoidOrder(
@@ -1070,6 +1073,7 @@ private fun CompletedOrderCard(
     orderWithLines: OrderWithLines,
     isSelected: Boolean,
     isOldTransaction: Boolean = false,
+    paymentLabel: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1176,7 +1180,7 @@ private fun CompletedOrderCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "$itemCount item",
+                    text = if (paymentLabel != null) "$itemCount item · $paymentLabel" else "$itemCount item",
                     color = colors.inkMuted,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium

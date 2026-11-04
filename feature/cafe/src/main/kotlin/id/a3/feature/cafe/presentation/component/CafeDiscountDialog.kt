@@ -47,7 +47,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import id.a3.core.domain.cafe.DiscountType
 import id.a3.core.domain.cafe.OrderDiscount
-import id.a3.core.domain.security.ManagerApproval
+import id.a3.core.domain.security.ApprovalResult
+import id.a3.core.domain.security.failureMessage
 import kotlinx.coroutines.launch
 import id.a3.core.domain.money.MoneyMath
 import id.a3.core.ui.component.A3Button
@@ -87,7 +88,7 @@ fun CafeDiscountDialog(
     onDismissRequest: () -> Unit,
     onApplyDiscount: (AppliedDiscount) -> Unit,
     onRemoveDiscount: () -> Unit,
-    onVerifyManagerPin: suspend (pin: String) -> ManagerApproval?,
+    onVerifyManagerPin: suspend (pin: String) -> ApprovalResult,
     modifier: Modifier = Modifier
 ) {
     val colors = A3Theme.colors
@@ -329,11 +330,12 @@ fun CafeDiscountDialog(
                                 val pinToCheck = managerPinInput
                                 // Verifikasi PBKDF2 sengaja lambat: jangan di thread UI.
                                 verifyScope.launch {
-                                    val approval = try {
+                                    val result = try {
                                         onVerifyManagerPin(pinToCheck)
                                     } finally {
                                         isVerifyingPin = false
                                     }
+                                    val approval = (result as? ApprovalResult.Approved)?.approval
                                     if (approval != null) {
                                         val discount = OrderDiscount(type = manualType, value = numVal)
                                         val labelText = if (manualType == DiscountType.PERCENT) "Diskon Manual $numVal%" else "Potongan Manual ${formatRupiah(numVal)}"
@@ -350,7 +352,7 @@ fun CafeDiscountDialog(
                                         )
                                         onDismissRequest()
                                     } else {
-                                        pinErrorMessage = "PIN Manager salah, terkunci, atau akun manager belum tersinkron"
+                                        pinErrorMessage = result.failureMessage()
                                         managerPinInput = ""
                                     }
                                 }

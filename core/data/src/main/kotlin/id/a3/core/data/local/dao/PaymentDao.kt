@@ -19,6 +19,9 @@ interface PaymentDao {
     @Query("SELECT * FROM payments WHERE shiftId = :shiftId ORDER BY createdAt ASC")
     fun observePaymentsForShift(shiftId: String): Flow<List<PaymentEntity>>
 
+    @Query("SELECT * FROM payments ORDER BY createdAt ASC")
+    fun observeAllPayments(): Flow<List<PaymentEntity>>
+
     @Query("SELECT * FROM payments WHERE shiftId = :shiftId AND method = 'qris_static' ORDER BY createdAt ASC")
     fun observeQrisPaymentsForShift(shiftId: String): Flow<List<PaymentEntity>>
 

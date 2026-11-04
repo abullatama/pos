@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -238,6 +239,16 @@ class CafeMenuViewModel(
             initialValue = emptyList()
         )
 
+    /** Jenis pembayaran per pesanan (orderId ke "Tunai", "QRIS", atau gabungan) untuk riwayat selesai. */
+    val paymentLabels: StateFlow<Map<String, String>> =
+        (transactionManager?.paymentDao?.observeAllPayments() ?: kotlinx.coroutines.flow.flowOf(emptyList()))
+            .map { list -> paymentLabelsByOrder(list.map { it.orderId to it.method }) }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyMap()
+            )
+
     val completedOrders: StateFlow<List<OrderWithLines>> = allCompletedOrders
 
     /**
@@ -363,16 +374,21 @@ class CafeMenuViewModel(
      * Memeriksa PIN terhadap akun manager/owner dari server (tanpa PIN bawaan). Salah 3 kali mengunci
      * persetujuan 5 menit (COR-07). Mengembalikan manager yang menyetujui, atau null.
      */
-    suspend fun verifyManagerApproval(pin: String): ManagerApproval? {
-        val approver = managerApprover ?: return null
-        return (approver.verify(pin) as? ApprovalResult.Approved)?.approval
-    }
+    suspend fun verifyManagerApproval(pin: String): ManagerApproval? =
+        (verifyManagerResult(pin) as? ApprovalResult.Approved)?.approval
+
+    /** Hasil lengkap verifikasi supaya layar bisa membedakan PIN salah, terkunci, dan akun belum tersinkron. */
+    suspend fun verifyManagerResult(pin: String): ApprovalResult =
+        managerApprover?.verify(pin) ?: ApprovalResult.NoApproverAvailable
 
     /** Untuk alur void/refund: menyimpan manager yang menyetujui agar dipakai sekali oleh [refundOrVoidOrder]. */
-    suspend fun verifyManagerPin(pin: String): Boolean {
-        val approval = verifyManagerApproval(pin)
-        verifiedManager = approval
-        return approval != null
+    suspend fun verifyManagerPin(pin: String): Boolean = verifyManagerPinResult(pin) is ApprovalResult.Approved
+
+    /** Seperti [verifyManagerPin] tetapi mengembalikan penyebab gagal. */
+    suspend fun verifyManagerPinResult(pin: String): ApprovalResult {
+        val result = verifyManagerResult(pin)
+        verifiedManager = (result as? ApprovalResult.Approved)?.approval
+        return result
     }
 
     /**
@@ -910,3 +926,17 @@ class CafeMenuViewModel(
         _taxMode.value = taxMode
     }
 }
+
+/** Gabungkan metode bayar per pesanan menjadi label singkat. Metode tak dikenal diabaikan. */
+internal fun paymentLabelsByOrder(rows: List<Pair<String, String>>): Map<String, String> =
+    rows.groupBy({ it.first }, { it.second })
+        .mapValues { (_, methods) ->
+            methods.distinct().mapNotNull {
+                when (it) {
+                    "cash" -> "Tunai"
+                    "qris_static" -> "QRIS"
+                    else -> null
+                }
+            }.joinToString(" + ")
+        }
+        .filterValues { it.isNotEmpty() }
