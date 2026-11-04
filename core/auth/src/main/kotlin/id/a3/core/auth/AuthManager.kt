@@ -36,7 +36,19 @@ class AuthManager(
     private val _isUnlocked = MutableStateFlow(false)
     val isUnlocked: StateFlow<Boolean> = _isUnlocked.asStateFlow()
 
-    suspend fun initialize() {
+    /** Status kunci idle dari penyimpanan sudah dipulihkan untuk proses ini. */
+    @Volatile
+    private var idleStateRestored = false
+
+    /**
+     * [wallClockMs] dan [idleTimeoutMs] dipakai sekali per proses: bila proses dimulai ulang setelah
+     * kunci idle, atau aplikasi sempat di latar lebih lama dari batas idle, layar tetap meminta PIN.
+     */
+    suspend fun initialize(
+        wallClockMs: Long = System.currentTimeMillis(),
+        idleTimeoutMs: Long = IdleLockController.DEFAULT_TIMEOUT_MS
+    ) {
+        restoreIdleState(wallClockMs, idleTimeoutMs)
         val token = encryptedDataStore.getAccessToken()
         val user = encryptedDataStore.getUser()
         _isUnlocked.value = !lockedByIdle && user != null && !token.isNullOrBlank()
@@ -87,6 +99,7 @@ class AuthManager(
             val tokenResponse = response.body()!!
             encryptedDataStore.saveAuth(tokenResponse, pin)
             lockedByIdle = false
+            encryptedDataStore.setLockedByIdle(false)
             _isUnlocked.value = true
             return AuthResult.Success(tokenResponse.user)
         }
@@ -108,6 +121,7 @@ class AuthManager(
         val isValid = encryptedDataStore.verifyOfflinePin(pin)
         if (isValid) {
             lockedByIdle = false
+            encryptedDataStore.setLockedByIdle(false)
             _isUnlocked.value = true
         }
         return isValid
@@ -116,10 +130,41 @@ class AuthManager(
     /**
      * Mengunci layar kasir (misal saat jeda atau selesai transaksi).
      */
-    fun lock() {
+    suspend fun lock() {
         lockedByIdle = true
         _isUnlocked.value = false
+        encryptedDataStore.setLockedByIdle(true)
         Log.i(DIAG_TAG, "lock: layar dikunci, token dipertahankan")
+    }
+
+    private suspend fun restoreIdleState(wallClockMs: Long, idleTimeoutMs: Long) {
+        if (idleStateRestored) return
+        idleStateRestored = true
+        if (encryptedDataStore.isLockedByIdle()) {
+            lockedByIdle = true
+            Log.i(DIAG_TAG, "mulai: kunci idle dipulihkan dari penyimpanan")
+        } else {
+            val backgroundAt = encryptedDataStore.getBackgroundAt()
+            // now < backgroundAt berarti jam diubah: anggap sudah lewat batas.
+            if (backgroundAt != null && (wallClockMs < backgroundAt || wallClockMs - backgroundAt >= idleTimeoutMs)) {
+                lockedByIdle = true
+                encryptedDataStore.setLockedByIdle(true)
+                Log.i(DIAG_TAG, "mulai: terlalu lama di latar, layar dikunci")
+            }
+        }
+        encryptedDataStore.setBackgroundAt(null)
+    }
+
+    /** Aplikasi masuk latar. Dicatat agar proses yang dimatikan sistem tetap terkunci saat dibuka lagi. */
+    suspend fun onEnterBackground(wallClockMs: Long = System.currentTimeMillis()) {
+        if (!idleStateRestored) return
+        encryptedDataStore.setBackgroundAt(wallClockMs)
+    }
+
+    /** Aplikasi tampil lagi dengan proses yang sama; pengecek idle di layar yang menentukan kunci. */
+    suspend fun onEnterForeground() {
+        if (!idleStateRestored) return
+        encryptedDataStore.setBackgroundAt(null)
     }
 
     /**

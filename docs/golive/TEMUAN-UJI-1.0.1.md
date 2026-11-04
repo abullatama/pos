@@ -48,3 +48,9 @@ UI-1, UI-2, dan UI-3 (cafe) diuji di Redmi Pad 2 dengan APK rilis bertanda tanga
 - Log diagnostik tanpa data sensitif, tag `AuthDiag`: lock, logout, penyebab refresh gagal, dan awal aplikasi. Saat terulang: `adb logcat -d | grep AuthDiag`.
 - Perbaikan `refreshToken` terhadap gangguan jaringan ditunda sampai log membuktikan.
 - Perlu uji tablet: layar terkunci setelah 2 menit, keranjang utuh setelah PIN, buka kunci offline.
+
+## AUTH-1: celah proses dimatikan sistem (5 Nov 2026)
+- Celah: penanda kunci idle hanya di memori, dan pengecek idle berhenti saat aplikasi di latar. Proses yang dimatikan sistem lalu dibuka lagi masuk tanpa PIN karena token masih ada.
+- Perbaikan: kunci idle disimpan di DataStore (`locked_by_idle`) dan dipulihkan oleh `initialize()` sekali per proses. Saat masuk latar dicatat `background_at` (jam dinding); bila proses dimulai ulang dan sudah lewat 2 menit (atau jam mundur), layar dikunci. Kembali ke depan pada proses yang sama membersihkan penanda. Logout menghapus keduanya.
+- Belum ditutup: isi layar bisa terlihat sepersekian detik saat kembali, dan pratinjau aplikasi terbaru (perlu keputusan FLAG_SECURE).
+- Perlu uji tablet: login, tekan Home, tunggu lebih dari 2 menit, hentikan paksa aplikasi, buka lagi: harus meminta PIN. Dengan jeda kurang dari 2 menit: langsung masuk.

@@ -3,6 +3,8 @@ package id.a3.core.auth.datastore
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import id.a3.core.auth.crypto.PinHasher
 import id.a3.core.auth.crypto.TinkCryptoManager
@@ -34,6 +36,8 @@ class EncryptedAuthDataStore(
         val KEY_DEVICE_CREDENTIAL_CIPHER = stringPreferencesKey("device_credential_cipher")
         val KEY_REGISTRATION_CODE = stringPreferencesKey("registration_code")
         val KEY_DEVICE_SERVER_CODE = stringPreferencesKey("device_server_code")
+        val KEY_LOCKED_BY_IDLE = booleanPreferencesKey("locked_by_idle")
+        val KEY_BACKGROUND_AT = longPreferencesKey("background_at")
     }
 
     /**
@@ -123,8 +127,26 @@ class EncryptedAuthDataStore(
             prefs.remove(KEY_USER_ID)
             prefs.remove(KEY_USER_NAME)
             prefs.remove(KEY_USER_ROLE)
+            prefs.remove(KEY_LOCKED_BY_IDLE)
+            prefs.remove(KEY_BACKGROUND_AT)
         }
     }
+
+    /** Kunci layar karena idle bertahan melewati proses yang dimatikan sistem. */
+    suspend fun setLockedByIdle(locked: Boolean) {
+        dataStore.edit { prefs -> prefs[KEY_LOCKED_BY_IDLE] = locked }
+    }
+
+    suspend fun isLockedByIdle(): Boolean = dataStore.data.first()[KEY_LOCKED_BY_IDLE] == true
+
+    /** Waktu (jam dinding) aplikasi masuk latar; null saat aplikasi tampil. */
+    suspend fun setBackgroundAt(wallClockMs: Long?) {
+        dataStore.edit { prefs ->
+            if (wallClockMs == null) prefs.remove(KEY_BACKGROUND_AT) else prefs[KEY_BACKGROUND_AT] = wallClockMs
+        }
+    }
+
+    suspend fun getBackgroundAt(): Long? = dataStore.data.first()[KEY_BACKGROUND_AT]
 
     suspend fun clearTokens() {
         dataStore.edit { prefs ->

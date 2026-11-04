@@ -200,6 +200,77 @@ class AuthManagerTest {
         assertTrue(authManager.isUnlocked.value)
     }
 
+    private fun newProcessManager() = AuthManager(
+        encryptedDataStore = encryptedDataStore,
+        apiService = authApiService
+    )
+
+    private suspend fun loginKasir() {
+        val serverResponse = """
+            {
+                "access_token": "tok-p",
+                "refresh_token": "ref-p",
+                "expires_in": 3600,
+                "user": { "id": "u-kasir-2", "name": "Siti", "role": "kasir" },
+                "business_unit_id": "bu-1",
+                "server_time": "2026-10-14T10:00:00Z"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(serverResponse))
+        authManager.loginWithPinOnline(userId = "u-kasir-2", pin = "654321")
+    }
+
+    @Test
+    fun `kunci idle bertahan setelah proses dimulai ulang`() = runBlocking {
+        loginKasir()
+        authManager.initialize()
+        authManager.lock()
+
+        val restarted = newProcessManager()
+        restarted.initialize()
+        assertFalse("proses baru harus tetap terkunci", restarted.isUnlocked.value)
+        assertTrue(restarted.unlockWithPinOffline("654321"))
+        assertTrue(restarted.isUnlocked.value)
+
+        val restartedAgain = newProcessManager()
+        restartedAgain.initialize()
+        assertTrue("setelah PIN benar, kunci dibersihkan", restartedAgain.isUnlocked.value)
+    }
+
+    @Test
+    fun `proses dimatikan setelah terlalu lama di latar membuat layar terkunci`() = runBlocking {
+        loginKasir()
+        authManager.initialize(wallClockMs = 1_000L)
+        authManager.onEnterBackground(wallClockMs = 1_000L)
+
+        val restarted = newProcessManager()
+        restarted.initialize(wallClockMs = 1_000L + 120_000L, idleTimeoutMs = 120_000L)
+        assertFalse(restarted.isUnlocked.value)
+    }
+
+    @Test
+    fun `proses dimulai ulang sebelum batas idle tetap terbuka`() = runBlocking {
+        loginKasir()
+        authManager.initialize(wallClockMs = 1_000L)
+        authManager.onEnterBackground(wallClockMs = 1_000L)
+
+        val restarted = newProcessManager()
+        restarted.initialize(wallClockMs = 1_000L + 119_999L, idleTimeoutMs = 120_000L)
+        assertTrue(restarted.isUnlocked.value)
+    }
+
+    @Test
+    fun `kembali ke depan membersihkan penanda latar sehingga initialize berikutnya tidak mengunci`() = runBlocking {
+        loginKasir()
+        authManager.initialize(wallClockMs = 1_000L)
+        authManager.onEnterBackground(wallClockMs = 1_000L)
+        authManager.onEnterForeground()
+
+        // Efek layar memanggil initialize lagi lama kemudian saat kasir aktif.
+        authManager.initialize(wallClockMs = 10_000_000L)
+        assertTrue(authManager.isUnlocked.value)
+    }
+
     @Test
     fun `offline unlock works with correct PIN and fails with wrong PIN without internet`() = runBlocking {
         val plainAccessToken = "secret-token-abc"

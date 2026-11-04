@@ -93,6 +93,19 @@ class MainActivity : ComponentActivity() {
     private lateinit var printerService: DefaultPrinterService
     private lateinit var idleLock: id.a3.core.auth.IdleLockController
 
+    /** Lingkup untuk tulis status kunci; tidak ikut dibatalkan saat activity berhenti. */
+    private val authScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    override fun onStop() {
+        super.onStop()
+        authScope.launch { AuthManagerFactory.getOrCreate(applicationContext, CafeAppConfig).onEnterBackground() }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        authScope.launch { AuthManagerFactory.getOrCreate(applicationContext, CafeAppConfig).onEnterForeground() }
+    }
+
     override fun dispatchTouchEvent(ev: android.view.MotionEvent?): Boolean {
         if (::idleLock.isInitialized) idleLock.onUserActivity()
         return super.dispatchTouchEvent(ev)
@@ -261,7 +274,7 @@ class MainActivity : ComponentActivity() {
         val idleAuthManager = AuthManagerFactory.getOrCreate(this, CafeAppConfig)
         idleLock = id.a3.core.auth.IdleLockController(
             clock = android.os.SystemClock::elapsedRealtime,
-            onIdle = { idleAuthManager.lock() }
+            onIdle = { authScope.launch { idleAuthManager.lock() } }
         )
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
