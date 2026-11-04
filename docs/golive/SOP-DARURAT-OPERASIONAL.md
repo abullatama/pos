@@ -51,6 +51,8 @@ Dokumen ini adalah instruksi kerja wajib bagi seluruh kasir dan staf saat mengha
    - **DILARANG MENGHAPUS DATA APLIKASI (Clear Storage/Data).**
    - **DILARANG RESET TABLET KE SETELAN PABRIK.**
 4. Seluruh transaksi tersimpan aman di antrean Outbox lokal tablet (Room Database).
+   - **Layar terkunci otomatis** bila tablet tidak disentuh 2 menit (juga saat internet mati). Pesanan dan keranjang **tidak hilang**; masukkan PIN untuk melanjutkan.
+   - Saat internet mati, **hanya kasir yang terakhir login (online) di tablet itu** yang bisa membuka kunci dengan PIN-nya. Karena itu, kasir yang bertugas **wajib login saat internet menyala** di awal shift. Bila kasir lain harus bergantian saat internet mati, tunggu internet pulih atau hubungi manager.
 5. Begitu internet/Wi-Fi menyala kembali, sistem akan mengirim seluruh transaksi ke server secara otomatis tanpa ada data yang hilang.
 
 ---

@@ -24,6 +24,10 @@ Dokumen ini adalah silabus pelatihan praktis 1 jam bagi seluruh kasir dan staf o
 1. **Konsep Shift Mandiri per Tablet:**
    - 1 tablet hanya menjalankan 1 shift aktif pada satu waktu (SHF-03).
    - Kasir login menggunakan PIN masing-masing (4 digit).
+   - **Kunci layar otomatis:** bila tablet tidak disentuh 2 menit, layar kembali ke pilih akun dan PIN. Itu normal. Pesanan dan keranjang tidak hilang; cukup pilih akun dan masukkan PIN lagi. Ini juga terjadi bila aplikasi dibuka lagi setelah ditinggal lebih dari 2 menit.
+   - Login di awal shift dilakukan saat **internet menyala**. Bila internet mati, hanya kasir yang terakhir login yang bisa membuka kunci.
+   - **Pesan PIN manager** menyebut penyebabnya: "PIN salah" (dengan sisa percobaan), "terkunci" (dengan lama menunggu, 5 menit setelah salah 3 kali), atau "akun manager belum tersedia" (sambungkan internet sekali).
+   - Di **Riwayat Selesai**, tiap transaksi menampilkan jenis pembayaran (Tunai atau QRIS). Di Laundry, jenis bayar tampil pada label pembayaran (mis. "Lunas · Tunai").
 2. **Penghitungan Modal Awal (Float):**
    - Modal standar laci kas adalah **Rp 200.000** (OQ-06).
    - Buka layar **Buka Shift (S04)**.
