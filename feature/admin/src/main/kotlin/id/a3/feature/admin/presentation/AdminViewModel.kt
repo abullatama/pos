@@ -15,7 +15,10 @@ import id.a3.core.printer.escpos.EscPosBuilder
 import id.a3.core.printer.format.EmergencySopData
 import id.a3.core.printer.format.EmergencySopFormatter
 import id.a3.feature.admin.kiosk.KioskManager
+import id.a3.feature.admin.update.ApkCheckResult
+import id.a3.feature.admin.update.ApkInspector
 import id.a3.feature.admin.update.ApkInstallerHelper
+import id.a3.feature.admin.update.ApkUpdateChecker
 import id.a3.feature.admin.update.UpdateEligibility
 import id.a3.feature.admin.update.UpdatePreconditionValidator
 import kotlinx.coroutines.CoroutineDispatcher
@@ -27,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -418,7 +422,41 @@ class AdminViewModel(
                 return@launch
             }
 
-            _uiState.update { it.copy(statusMessage = "Memulai pemasangan pembaruan via PackageInstaller...") }
+            if (!ApkInstallerHelper.canInstallPackages(context)) {
+                ApkInstallerHelper.openInstallPermissionSettings(context)
+                _uiState.update {
+                    it.copy(
+                        statusMessage = "Izin memasang pembaruan belum aktif di tablet ini. " +
+                            "Aktifkan \"Izinkan dari sumber ini\" pada layar yang terbuka, lalu pilih berkas lagi. " +
+                            "Jika bingung, hubungi pengembang."
+                    )
+                }
+                return@launch
+            }
+
+            // Periksa APK: aplikasi yang benar, versi lebih baru, tanda tangan sama.
+            val check = withContext(Dispatchers.IO) {
+                ApkUpdateChecker.check(ApkInspector.readInstalled(context), ApkInspector.readArchive(context, apkFile))
+            }
+            when (check) {
+                is ApkCheckResult.Rejected -> {
+                    apkFile.delete()
+                    _uiState.update { it.copy(statusMessage = check.message) }
+                    return@launch
+                }
+                is ApkCheckResult.Ok -> {
+                    // Mode kios (pin layar) dapat memblokir dialog pemasang sistem; lepas dulu.
+                    val activity = context as? Activity
+                    val kioskNote = if (activity != null && KioskManager.isLockTaskActive(context)) {
+                        disableKiosk(activity)
+                        " Mode kios dimatikan sementara; aktifkan lagi setelah pembaruan selesai."
+                    } else ""
+                    _uiState.update {
+                        it.copy(statusMessage = "${check.summary}. Memulai pemasangan...$kioskNote")
+                    }
+                }
+            }
+
             ApkInstallerHelper.installApk(context, apkFile) { success, msg ->
                 _uiState.update {
                     it.copy(
@@ -427,6 +465,11 @@ class AdminViewModel(
                 }
             }
         }
+    }
+
+    /** Menampilkan pesan status dari layar (mis. berkas APK tidak terbaca). */
+    fun showStatus(message: String) {
+        _uiState.update { it.copy(statusMessage = message) }
     }
 
     fun clearStatusMessage() {

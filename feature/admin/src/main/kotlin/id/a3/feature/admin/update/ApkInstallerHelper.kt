@@ -20,6 +20,22 @@ object ApkInstallerHelper {
     private const val TAG = "ApkInstallerHelper"
     const val ACTION_INSTALL_STATUS = "id.a3.feature.admin.INSTALL_STATUS"
 
+    /** Izin "pasang aplikasi tidak dikenal" untuk aplikasi ini. Diaktifkan sekali saat tablet disiapkan. */
+    fun canInstallPackages(context: Context): Boolean =
+        context.packageManager.canRequestPackageInstalls()
+
+    fun openInstallPermissionSettings(context: Context) {
+        val intent = Intent(
+            android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            android.net.Uri.parse("package:${context.packageName}")
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Tidak bisa membuka pengaturan izin: ${e.message}")
+        }
+    }
+
     fun installApk(
         context: Context,
         apkFile: File,

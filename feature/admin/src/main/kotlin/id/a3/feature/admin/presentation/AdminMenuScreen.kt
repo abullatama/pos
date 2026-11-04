@@ -102,7 +102,7 @@ fun AdminMenuScreen(
                 }
                 viewModel.installApk(context, tempFile)
             } catch (e: Exception) {
-                // error handling handled via viewModel status message
+                viewModel.showStatus("Berkas tidak bisa dibaca. Unduh ulang dari tautan Drive lalu coba lagi.")
             }
         }
     }
