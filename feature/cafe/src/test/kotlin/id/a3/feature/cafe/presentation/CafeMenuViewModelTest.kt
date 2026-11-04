@@ -129,7 +129,7 @@ class CafeMenuViewModelTest {
         Dispatchers.setMain(testDispatcher)
         fakeRepository = FakeCafeMenuRepository()
         fakePrinter = FakePrinterService()
-        viewModel = CafeMenuViewModel(fakeRepository, null, fakePrinter, testDispatcher)
+        viewModel = CafeMenuViewModel(fakeRepository, null, fakePrinter, testDispatcher, managerApprover = FakeManagerApprover())
     }
 
     @After
@@ -301,7 +301,7 @@ class CafeMenuViewModelTest {
                 discount = OrderDiscount(type = DiscountType.AMOUNT, value = 5000L),
                 label = "Potongan Rp5.000",
                 isPreset = false,
-                approvedBy = "Manager",
+                approval = id.a3.core.domain.security.ManagerApproval(2L, "Manager Uji", "manager"),
                 reason = "Promo Khusus / Tamu VIP"
             )
         )
@@ -414,8 +414,8 @@ class CafeMenuViewModelTest {
     }
 
     @Test
-    fun `verifyManagerPin succeeds with 4444 and locks after 3 failures`() = runTest(testDispatcher) {
-        // PIN benar bawaan seed
+    fun `verifyManagerPin succeeds with the approver PIN and locks after 3 failures`() = runTest(testDispatcher) {
+        // PIN benar menurut penyetuju tiruan
         assertTrue(viewModel.verifyManagerPin("4444"))
 
         // Percobaan salah 1
@@ -613,8 +613,7 @@ class CafeMenuViewModelTest {
             orderWithLines = dummyOrder,
             type = "refund",
             reasonCode = "wrong_input",
-            note = null,
-            approvedBy = "u-manager-1"
+            note = null
         )
         assertTrue(res.isFailure)
     }

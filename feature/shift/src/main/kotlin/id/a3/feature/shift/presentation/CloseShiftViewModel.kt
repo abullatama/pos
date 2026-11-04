@@ -2,7 +2,9 @@ package id.a3.feature.shift.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import id.a3.core.domain.security.ManagerPinVerifier
+import id.a3.core.domain.security.ApprovalResult
+import id.a3.core.domain.security.ManagerApprover
+import id.a3.core.domain.security.failureMessage
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.ZReportData
 import id.a3.core.printer.format.ZReportFormatter
@@ -86,7 +88,8 @@ data class CloseShiftUiState(
 
 class CloseShiftViewModel(
     private val repository: ShiftRepository,
-    private val printerService: PrinterService? = null
+    private val printerService: PrinterService? = null,
+    private val managerApprover: ManagerApprover? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CloseShiftUiState())
@@ -261,44 +264,29 @@ class CloseShiftViewModel(
     }
 
     fun verifyManagerPinForRecount(pin: String) {
-        val now = System.currentTimeMillis()
-        if (now < recountLockedUntilMs) {
-            val remainingSec = ((recountLockedUntilMs - now) / 1000).coerceAtLeast(1).toInt()
-            _uiState.update {
-                it.copy(
-                    isRecountLocked = true,
-                    recountLockoutSeconds = remainingSec,
-                    recountPinError = "Akses terkunci sementara. Sisa $remainingSec detik"
-                )
-            }
-            return
-        }
-
-        val isCorrect = ManagerPinVerifier.verify(pin)
-        if (isCorrect) {
-            failedRecountPinAttempts = 0
-            _uiState.update {
-                it.copy(
-                    isRecountPinDialogOpen = false,
-                    recountPinError = null,
-                    currentStep = CloseShiftStep.STEP_1_BLIND_COUNT,
-                    error = null
-                )
-            }
-        } else {
-            failedRecountPinAttempts++
-            if (failedRecountPinAttempts >= 3) {
-                recountLockedUntilMs = now + (300 * 1000L)
+        viewModelScope.launch {
+            val verdict = managerApprover?.verify(pin) ?: ApprovalResult.NoApproverAvailable
+            if (verdict is ApprovalResult.Approved) {
+                recountLockedUntilMs = 0L
                 _uiState.update {
                     it.copy(
-                        isRecountLocked = true,
-                        recountLockoutSeconds = 300,
-                        recountPinError = "PIN salah 3 kali. Akses terkunci selama 5 menit"
+                        isRecountPinDialogOpen = false,
+                        recountPinError = null,
+                        isRecountLocked = false,
+                        recountLockoutSeconds = 0,
+                        currentStep = CloseShiftStep.STEP_1_BLIND_COUNT,
+                        error = null
                     )
                 }
             } else {
+                val locked = verdict as? ApprovalResult.Locked
+                if (locked != null) recountLockedUntilMs = System.currentTimeMillis() + locked.retryAfterSeconds * 1000L
                 _uiState.update {
-                    it.copy(recountPinError = "PIN Manager salah. Sisa ${3 - failedRecountPinAttempts} percobaan")
+                    it.copy(
+                        isRecountLocked = locked != null,
+                        recountLockoutSeconds = locked?.retryAfterSeconds?.toInt() ?: 0,
+                        recountPinError = verdict.failureMessage()
+                    )
                 }
             }
         }

@@ -220,7 +220,7 @@ fun CafePosScreen(
                 onDismissRequest = { viewModel.dismissDiscountDialog() },
                 onApplyDiscount = { viewModel.applyAppliedDiscount(it) },
                 onRemoveDiscount = { viewModel.removeDiscount() },
-                onVerifyManagerPin = { pin -> viewModel.verifyManagerPin(pin) }
+                onVerifyManagerPin = { pin -> viewModel.verifyManagerApproval(pin) }
             )
         }
 

@@ -2,7 +2,9 @@ package id.a3.feature.cafe.model
 
 import id.a3.core.domain.cafe.DiscountType
 import id.a3.core.domain.cafe.OrderDiscount
+import id.a3.core.domain.security.ManagerApproval
 
+/** Preset dari server (nama persis seperti di pengaturan owner). Tidak ada preset bawaan di tablet. */
 data class DiscountPreset(
     val id: String,
     val name: String,
@@ -10,25 +12,28 @@ data class DiscountPreset(
     val value: Long
 )
 
-val DEFAULT_DISCOUNT_PRESETS = listOf(
-    DiscountPreset(id = "p-5", name = "Diskon 5%", type = DiscountType.PERCENT, value = 5L),
-    DiscountPreset(id = "p-10", name = "Diskon 10%", type = DiscountType.PERCENT, value = 10L),
-    DiscountPreset(id = "p-5k", name = "Potongan Rp5.000", type = DiscountType.AMOUNT, value = 5000L)
-)
-
-enum class DiscountReason(val label: String) {
-    SPECIAL_PROMO("Promo Khusus / Tamu VIP"),
-    QUALITY_COMPLAINT("Komplain Kualitas / Pelayanan"),
-    OWNER_COMPLIMENT("Kerabat / Komplimen Owner"),
-    INPUT_MISTAKE("Salah Input Sebelumnya"),
-    OTHER("Lainnya (+ Catatan)")
+/**
+ * Alasan diskon manual. [code] mengikuti daftar tetap COR-01 yang dipakai koreksi
+ * (wrong_input, customer_cancelled, quality_complaint, wrong_made, promo, other).
+ */
+enum class DiscountReason(val label: String, val code: String) {
+    SPECIAL_PROMO("Promo Khusus / Tamu VIP", "promo"),
+    QUALITY_COMPLAINT("Komplain Kualitas / Pelayanan", "quality_complaint"),
+    OWNER_COMPLIMENT("Kerabat / Komplimen Owner", "other"),
+    INPUT_MISTAKE("Salah Input Sebelumnya", "wrong_input"),
+    OTHER("Lainnya (+ Catatan)", "other")
 }
 
+/**
+ * Diskon yang dipasang pada keranjang. Diskon manual wajib membawa [approval]: manager yang benar-benar
+ * memasukkan PIN (bukan tulisan tetap), karena identitasnya dikirim ke server sebagai approved_by.
+ */
 data class AppliedDiscount(
     val discount: OrderDiscount,
     val label: String,
     val isPreset: Boolean,
-    val approvedBy: String? = null,
+    val approval: ManagerApproval? = null,
     val reason: String? = null,
+    val reasonCode: String? = null,
     val note: String? = null
 )

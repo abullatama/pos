@@ -1451,7 +1451,8 @@ class OrderTransactionManager(
             val bundleId = UUID.randomUUID().toString()
             val occurredAt = Instant.ofEpochMilli(closedAt).toString()
 
-            val numericApprovedBy = LaundryStatusMapper.normalizeNumericUserId(approvedBy) ?: 4L
+            val numericApprovedBy = LaundryStatusMapper.normalizeNumericUserId(approvedBy)
+                ?: throw IllegalArgumentException("approved_by harus ID akun manager (angka)")
 
             val payload = buildJsonObject {
                 put("shift_id", shiftId)
@@ -1515,6 +1516,9 @@ class OrderTransactionManager(
             require(!note.isNullOrBlank()) { "Alasan 'other' / 'lainnya' wajib menyertakan catatan (note)" }
         }
         require(approvedBy.isNotBlank()) { "Otorisasi PIN Manager (approved_by) wajib diisi (COR-01, COR-07)" }
+        require(approvedBy.trim().toLongOrNull() != null) {
+            "approved_by harus ID akun manager (angka) dari persetujuan PIN, bukan teks"
+        }
         require(amount > 0L) { "Nominal koreksi harus lebih besar dari 0" }
 
         val order = orderDao.getOrderById(orderId)
@@ -1609,11 +1613,7 @@ class OrderTransactionManager(
             val effectiveReasonNote = note?.trim()?.takeIf { it.isNotEmpty() }
                 ?: if (backendReason == "lainnya") "Koreksi kasir" else null
 
-            val numericApprovedBy = when {
-                approvedBy.toLongOrNull() != null -> approvedBy.toLong()
-                approvedBy.contains("manager", ignoreCase = true) -> 4L
-                else -> 2L
-            }
+            val numericApprovedBy = approvedBy.trim().toLong()
 
             val payload = buildJsonObject {
                 put("correction_id", correctionId)
@@ -1740,7 +1740,8 @@ class OrderTransactionManager(
                     put("receipt_file_id", JsonNull)
                 }
                 if (approvedBy != null) {
-                    put("approved_by", approvedBy)
+                    put("approved_by", JsonPrimitive(approvedBy.trim().toLongOrNull()
+                        ?: throw IllegalArgumentException("approved_by harus ID akun manager (angka)")))
                 } else {
                     put("approved_by", JsonNull)
                 }

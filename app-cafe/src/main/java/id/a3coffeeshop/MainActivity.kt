@@ -47,6 +47,8 @@ import id.a3.core.auth.DeviceManagerFactory
 import id.a3.core.auth.DeviceRegisterResult
 import id.a3.core.auth.model.UserDto
 import id.a3.core.data.local.AppDatabase
+import id.a3.core.data.security.DefaultManagerApprover
+import id.a3.core.data.security.ManagerApproverProvider
 import id.a3.core.data.local.entity.SyncStateEntity
 import id.a3.core.domain.device.DeviceStatus
 import id.a3.core.domain.monitoring.AppCrashManager
@@ -179,7 +181,13 @@ class MainActivity : ComponentActivity() {
             masterDataDao = database.masterDataDao(),
             apiService = masterApiService,
             appId = CafeAppConfig.appId.value,
-            appVersion = CafeAppConfig.appVersion
+            appVersion = CafeAppConfig.appVersion,
+            userDao = database.userDao()
+        )
+
+        // Persetujuan PIN manager memakai akun dari server (tidak ada PIN bawaan).
+        ManagerApproverProvider.install(
+            DefaultManagerApprover(database.userDao(), { deviceManager.getDeviceCredential() })
         )
 
         var masterDataSyncJob: Job? = null

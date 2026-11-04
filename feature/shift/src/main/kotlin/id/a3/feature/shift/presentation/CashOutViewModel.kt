@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import id.a3.core.data.local.entity.CashOutEntity
-import id.a3.core.domain.security.ManagerPinVerifier
+import id.a3.core.domain.security.ApprovalResult
+import id.a3.core.domain.security.ManagerApprover
+import id.a3.core.domain.security.failureMessage
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.CashOutReceiptData
 import id.a3.core.printer.format.CashOutReceiptFormatter
@@ -69,14 +71,13 @@ data class CashOutUiState(
 class CashOutViewModel(
     private val repository: ShiftRepository,
     private val printerService: PrinterService? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val managerApprover: ManagerApprover? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CashOutUiState())
     val uiState: StateFlow<CashOutUiState> = _uiState.asStateFlow()
 
-    private var failedPinAttempts = 0
-    private var isManagerLockedUntilMs = 0L
 
     init {
         viewModelScope.launch {
@@ -244,7 +245,6 @@ class CashOutViewModel(
                 return
             }
             // Wajib otorisasi PIN Manager
-            checkLockoutStatus()
             _uiState.update { it.copy(isManagerPinDialogOpen = true, managerPinErrorMessage = null) }
             return
         }
@@ -254,66 +254,35 @@ class CashOutViewModel(
     }
 
     fun verifyManagerPinAndSubmit(pin: String) {
-        val now = System.currentTimeMillis()
-        if (now < isManagerLockedUntilMs) {
-            val remainingSec = ((isManagerLockedUntilMs - now) / 1000).coerceAtLeast(1).toInt()
-            _uiState.update {
-                it.copy(
-                    isManagerLocked = true,
-                    lockoutRemainingSeconds = remainingSec,
-                    managerPinErrorMessage = "Akses terkunci sementara. Sisa $remainingSec detik"
-                )
-            }
-            return
-        }
-
-        val isCorrect = ManagerPinVerifier.verify(pin)
-        if (!isCorrect) {
-            failedPinAttempts++
-            if (failedPinAttempts >= 3) {
-                isManagerLockedUntilMs = now + (300 * 1000L)
+        viewModelScope.launch {
+            // PIN diperiksa terhadap akun manager/owner dari server; identitasnya dikirim sebagai approved_by.
+            val verdict = managerApprover?.verify(pin) ?: ApprovalResult.NoApproverAvailable
+            if (verdict !is ApprovalResult.Approved) {
                 _uiState.update {
                     it.copy(
-                        isManagerLocked = true,
-                        lockoutRemainingSeconds = 300,
-                        managerPinErrorMessage = "PIN salah 3 kali. Akses terkunci selama 5 menit"
+                        isManagerLocked = verdict is ApprovalResult.Locked,
+                        lockoutRemainingSeconds = (verdict as? ApprovalResult.Locked)?.retryAfterSeconds?.toInt() ?: 0,
+                        managerPinErrorMessage = verdict.failureMessage()
                     )
                 }
-            } else {
-                _uiState.update {
-                    it.copy(managerPinErrorMessage = "PIN Manager salah. Sisa ${3 - failedPinAttempts} percobaan")
-                }
+                return@launch
             }
-            return
-        }
-
-        // PIN Benar
-        failedPinAttempts = 0
-        _uiState.update { it.copy(isManagerPinDialogOpen = false, managerPinErrorMessage = null) }
-        executeSaveCashOut(approvedBy = "u-manager-1")
-    }
-
-    private fun checkLockoutStatus() {
-        val now = System.currentTimeMillis()
-        if (now < isManagerLockedUntilMs) {
-            val remainingSec = ((isManagerLockedUntilMs - now) / 1000).coerceAtLeast(1).toInt()
             _uiState.update {
                 it.copy(
-                    isManagerLocked = true,
-                    lockoutRemainingSeconds = remainingSec
-                )
-            }
-        } else {
-            _uiState.update {
-                it.copy(
+                    isManagerPinDialogOpen = false,
+                    managerPinErrorMessage = null,
                     isManagerLocked = false,
                     lockoutRemainingSeconds = 0
                 )
             }
+            executeSaveCashOut(
+                approvedBy = verdict.approval.userId.toString(),
+                approvedByName = verdict.approval.name
+            )
         }
     }
 
-    private fun executeSaveCashOut(approvedBy: String?) {
+    private fun executeSaveCashOut(approvedBy: String?, approvedByName: String? = null) {
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
             val state = _uiState.value
@@ -354,7 +323,7 @@ class CashOutViewModel(
                     reason = state.reason.trim(),
                     amount = state.amount,
                     hasPhotoReceipt = state.receiptBitmap != null || state.receiptFilePath != null,
-                    approvedBy = approvedBy
+                    approvedBy = approvedByName ?: approvedBy
                 )
 
                 printerService?.let { printer ->

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.data.repository.OrderTransactionManager
+import id.a3.core.data.security.ManagerApproverProvider
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.connection.DefaultPrinterService
 import id.a3.feature.cafe.presentation.CafeMenuViewModel
@@ -29,7 +30,8 @@ class CafeMenuViewModelFactory(
                 repository,
                 transactionManager,
                 actualPrinterService,
-                deviceCodeProvider = deviceCodeProvider
+                deviceCodeProvider = deviceCodeProvider,
+                managerApprover = ManagerApproverProvider.get()
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

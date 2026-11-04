@@ -169,7 +169,7 @@ class ShiftViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         fakeRepository = FakeShiftRepository()
-        viewModel = ShiftViewModel(fakeRepository)
+        viewModel = ShiftViewModel(fakeRepository, FakeManagerApprover())
     }
 
     @After
@@ -368,7 +368,7 @@ class ShiftViewModelTest {
         // Verifikasi repo menerima data force close
         assertEquals("shift-001", fakeRepository.lastForceClosedShiftId)
         assertEquals("Kasir sakit mendadak, shift ditutup paksa", fakeRepository.lastForceClosedNote)
-        assertEquals("u-manager-1", fakeRepository.lastForceClosedApprovedBy)
+        assertEquals("2", fakeRepository.lastForceClosedApprovedBy)
 
         collectJob.cancel()
     }

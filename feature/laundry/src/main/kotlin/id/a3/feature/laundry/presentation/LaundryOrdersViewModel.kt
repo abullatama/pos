@@ -6,7 +6,9 @@ import id.a3.core.data.local.entity.CustomerEntity
 import id.a3.core.data.local.entity.LaundryPickupEntity
 import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.data.repository.LaundryPickupItem
-import id.a3.core.domain.security.ManagerPinVerifier
+import id.a3.core.domain.security.ApprovalResult
+import id.a3.core.domain.security.ManagerApprover
+import id.a3.core.domain.security.failureMessage
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.LaundryTagData
 import id.a3.core.printer.format.LaundryTagFormatter
@@ -78,7 +80,8 @@ data class LaundryOrdersUiState(
 class LaundryOrdersViewModel(
     private val repository: LaundryOrderRepository,
     private val printerService: PrinterService? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val managerApprover: ManagerApprover? = null
 ) : ViewModel() {
 
     private val _filterStatus = MutableStateFlow(LaundryFilterStatus.ALL)
@@ -98,8 +101,6 @@ class LaundryOrdersViewModel(
     private val _isCheckingNotification = MutableStateFlow(false)
 
     // Pelacak PIN salah (COR-07: 3x salah terkunci 5 menit)
-    private var failedPinAttempts = 0
-    private var isManagerLockedUntilMs = 0L
 
     private val _rawOrdersFlow: StateFlow<List<OrderWithLines>> = _filterStatus
         .flatMapLatest { filter ->
@@ -457,42 +458,30 @@ class LaundryOrdersViewModel(
     }
 
     fun verifyManagerPinAndExecute(pin: String) {
-        val now = System.currentTimeMillis()
-        if (now < isManagerLockedUntilMs) {
-            val remainingSec = ((isManagerLockedUntilMs - now) / 1000).coerceAtLeast(1)
-            _pinErrorMessage.value = "Akun terkunci sementara ($remainingSec dtk)"
-            return
-        }
-
-        val isCorrect = ManagerPinVerifier.verify(pin)
-        if (!isCorrect) {
-            failedPinAttempts++
-            if (failedPinAttempts >= 3) {
-                isManagerLockedUntilMs = now + (300 * 1000L) // 5 menit lockout
-                _pinErrorMessage.value = "PIN salah 3x. Terkunci 5 menit (COR-07)"
-            } else {
-                _pinErrorMessage.value = "PIN Manager salah (${3 - failedPinAttempts}x tersisa)"
+        viewModelScope.launch {
+            // PIN diperiksa terhadap akun manager/owner dari server; identitasnya dikirim sebagai approved_by.
+            val verdict = managerApprover?.verify(pin) ?: ApprovalResult.NoApproverAvailable
+            if (verdict !is ApprovalResult.Approved) {
+                _pinErrorMessage.value = verdict.failureMessage()
+                return@launch
             }
-            return
-        }
+            _pinErrorMessage.value = null
+            val action = _pendingAction.value ?: return@launch
+            val currentOrder = uiState.value.selectedOrder?.order ?: return@launch
+            val approvedBy = verdict.approval.userId.toString()
 
-        // PIN benar!
-        failedPinAttempts = 0
-        _pinErrorMessage.value = null
-        val action = _pendingAction.value ?: return
-        val currentOrder = uiState.value.selectedOrder?.order ?: return
+            closeManagerPinDialog()
 
-        closeManagerPinDialog()
-
-        when (action) {
-            is PendingManagerAction.UnpaidPickup -> {
-                executePickup(currentOrder.id, action.items, approvedBy = "u-manager-1")
-            }
-            is PendingManagerAction.Rework -> {
-                executeRework(currentOrder.id, action.reason, approvedBy = "u-manager-1")
-            }
-            is PendingManagerAction.Refund -> {
-                executeRefund(currentOrder.id, action.amount, action.reasonCode, action.note, approvedBy = "u-manager-1")
+            when (action) {
+                is PendingManagerAction.UnpaidPickup -> {
+                    executePickup(currentOrder.id, action.items, approvedBy = approvedBy)
+                }
+                is PendingManagerAction.Rework -> {
+                    executeRework(currentOrder.id, action.reason, approvedBy = approvedBy)
+                }
+                is PendingManagerAction.Refund -> {
+                    executeRefund(currentOrder.id, action.amount, action.reasonCode, action.note, approvedBy = approvedBy)
+                }
             }
         }
     }

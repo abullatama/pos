@@ -52,6 +52,9 @@ class MasterDataSyncManager(
         const val KEY_BOOTSTRAP_CURSOR = "bootstrap_cursor"
         const val KEY_DELTA_CURSOR = "delta_cursor"
         const val KEY_BOOTSTRAP_DONE = "bootstrap_done"
+
+        /** Penanda bahwa data akun staf (verifier PIN) sudah diunduh. Tablet lama diunduh ulang sekali. */
+        const val KEY_USERS_BOOTSTRAP = "users_bootstrap_v1"
         const val KEY_TAX_PERCENT = "tax_percent"
         const val KEY_TAX_MODE = "tax_mode"
         const val KEY_SERVICE_PERCENT = "service_charge_percent"
@@ -464,6 +467,7 @@ class MasterDataSyncManager(
                     syncStateDao.set(SyncStateEntity(key = KEY_DELTA_CURSOR, value = body.deltaCursor))
                 }
                 syncStateDao.set(SyncStateEntity(key = KEY_BOOTSTRAP_DONE, value = "true"))
+                syncStateDao.set(SyncStateEntity(key = KEY_USERS_BOOTSTRAP, value = "true"))
                 syncStateDao.delete(KEY_BOOTSTRAP_CURSOR)
                 return BootstrapResult.Completed(deltaCursor = body.deltaCursor)
             } else {
@@ -481,7 +485,8 @@ class MasterDataSyncManager(
      * Bila server merespons 410 (CURSOR_EXPIRED), memicu pembersihan dan bootstrap ulang otomatis.
      */
     suspend fun syncDelta(): DeltaResult {
-        val isDone = syncStateDao.get(KEY_BOOTSTRAP_DONE) == "true"
+        val isDone = syncStateDao.get(KEY_BOOTSTRAP_DONE) == "true" &&
+            (userDao == null || syncStateDao.get(KEY_USERS_BOOTSTRAP) == "true")
         var deltaCursor = syncStateDao.get(KEY_DELTA_CURSOR)
 
         if (!isDone || deltaCursor == null) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import id.a3.core.data.local.AppDatabase
 import id.a3.core.data.repository.OrderTransactionManager
+import id.a3.core.data.security.ManagerApproverProvider
 import id.a3.core.printer.PrinterService
 import id.a3.core.sync.api.SyncApiService
 import id.a3.feature.laundry.presentation.LaundryOrderViewModel
@@ -39,7 +40,7 @@ class LaundryViewModelFactory(
                 LaundryScanViewModel(repository, printerService) as T
             }
             modelClass.isAssignableFrom(LaundryOrdersViewModel::class.java) -> {
-                LaundryOrdersViewModel(repository, printerService) as T
+                LaundryOrdersViewModel(repository, printerService, managerApprover = ManagerApproverProvider.get()) as T
             }
             modelClass.isAssignableFrom(id.a3.feature.laundry.presentation.LaundryHomeViewModel::class.java) -> {
                 id.a3.feature.laundry.presentation.LaundryHomeViewModel(repository) as T

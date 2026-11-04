@@ -3,7 +3,7 @@ package id.a3.feature.admin.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import id.a3.core.data.local.AppDatabase
-import id.a3.core.domain.security.ManagerPinVerifier
+import id.a3.core.data.security.ManagerApproverProvider
 import id.a3.core.printer.PrinterService
 import id.a3.feature.admin.update.UpdatePreconditionValidator
 
@@ -12,8 +12,7 @@ class AdminViewModelFactory(
     private val printerService: PrinterService? = null,
     private val deviceId: String = "DEV-TABLET-01",
     private val businessUnitId: String = "BU-01",
-    private val appVersion: String = "1.0.0",
-    private val ownerPinHash: String = ManagerPinVerifier.hashPin("9999")
+    private val appVersion: String = "1.0.0"
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
@@ -31,7 +30,7 @@ class AdminViewModelFactory(
                 deviceId = deviceId,
                 businessUnitId = businessUnitId,
                 appVersion = appVersion,
-                ownerPinHash = ownerPinHash
+                managerApprover = ManagerApproverProvider.get()
             ) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")

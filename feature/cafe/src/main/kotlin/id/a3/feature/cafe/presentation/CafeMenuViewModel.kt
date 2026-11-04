@@ -13,7 +13,10 @@ import id.a3.core.domain.cafe.CafeCalculator
 import id.a3.core.domain.cafe.CafeOrderLine
 import id.a3.core.domain.cafe.OrderDiscount
 import id.a3.core.domain.cafe.TaxMode
-import id.a3.core.domain.security.ManagerPinVerifier
+import id.a3.core.domain.cafe.ManualDiscountSync
+import id.a3.core.domain.security.ApprovalResult
+import id.a3.core.domain.security.ManagerApproval
+import id.a3.core.domain.security.ManagerApprover
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.format.CustomerReceiptData
 import id.a3.core.printer.format.CustomerReceiptFormatter
@@ -85,7 +88,8 @@ class CafeMenuViewModel(
     private val transactionManager: OrderTransactionManager? = null,
     val printerService: PrinterService? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val deviceCodeProvider: (() -> String?)? = null
+    private val deviceCodeProvider: (() -> String?)? = null,
+    private val managerApprover: ManagerApprover? = null
 ) : ViewModel() {
 
     val devicePrefix: String
@@ -109,9 +113,8 @@ class CafeMenuViewModel(
     private val _taxPercent = MutableStateFlow(0)
     private val _taxMode = MutableStateFlow(TaxMode.ADDED)
 
-    // Pelacak percobaan PIN manager salah (COR-07)
-    private var failedPinAttempts = 0
-    private var isManagerLockedUntilMs = 0L
+    // Manager yang baru memasukkan PIN untuk void/refund. Sekali pakai agar tidak terbawa ke aksi lain.
+    private var verifiedManager: ManagerApproval? = null
 
     suspend fun generateNextReceiptId(prefix: String = devicePrefix): String {
         val tm = transactionManager ?: return prefix + "0001"
@@ -356,26 +359,56 @@ class CafeMenuViewModel(
         _isDiscountDialogOpen.value = false
     }
 
-    suspend fun verifyManagerPin(pin: String): Boolean {
-        val now = System.currentTimeMillis()
-        if (now < isManagerLockedUntilMs) {
-            return false
-        }
-
-        val isCorrect = ManagerPinVerifier.verify(pin)
-
-        if (isCorrect) {
-            failedPinAttempts = 0
-            return true
-        } else {
-            failedPinAttempts++
-            if (failedPinAttempts >= 3) {
-                // Kunci 5 menit (300 detik) sesuai aturan COR-07
-                isManagerLockedUntilMs = now + (300 * 1000L)
-            }
-            return false
-        }
+    /**
+     * Memeriksa PIN terhadap akun manager/owner dari server (tanpa PIN bawaan). Salah 3 kali mengunci
+     * persetujuan 5 menit (COR-07). Mengembalikan manager yang menyetujui, atau null.
+     */
+    suspend fun verifyManagerApproval(pin: String): ManagerApproval? {
+        val approver = managerApprover ?: return null
+        return (approver.verify(pin) as? ApprovalResult.Approved)?.approval
     }
+
+    /** Untuk alur void/refund: menyimpan manager yang menyetujui agar dipakai sekali oleh [refundOrVoidOrder]. */
+    suspend fun verifyManagerPin(pin: String): Boolean {
+        val approval = verifyManagerApproval(pin)
+        verifiedManager = approval
+        return approval != null
+    }
+
+    /**
+     * Susun data diskon manual/komplimen untuk sinkron: total tanpa diskon (rumus yang sama dengan server)
+     * dan identitas manager. Null untuk diskon preset atau tanpa diskon.
+     */
+    private fun manualDiscountSync(cart: List<CafeCartLine>): ManualDiscountSync? {
+        val applied = _appliedDiscount.value ?: return null
+        if (applied.isPreset) return null
+        val approval = applied.approval
+            ?: throw IllegalStateException("Diskon manual tanpa persetujuan manager")
+        val full = CafeCalculator.calculate(
+            CafeCalculationInput(
+                lines = cart.map { CafeOrderLine(unitPrice = it.unitPrice, quantity = it.quantity) },
+                discount = null,
+                servicePercent = _servicePercent.value,
+                taxPercent = _taxPercent.value,
+                taxMode = _taxMode.value
+            )
+        )
+        val reasonCode = applied.reasonCode ?: "other"
+        return ManualDiscountSync(
+            fullSubtotal = full.subtotal,
+            fullServiceCharge = full.serviceCharge,
+            fullTax = full.tax,
+            fullRounding = full.rounding,
+            fullTotal = full.total,
+            reasonCode = reasonCode,
+            note = applied.note ?: if (reasonCode == "other") applied.reason else null,
+            approvedByUserId = approval.userId,
+            approvedByName = approval.name
+        )
+    }
+
+    /** Nama preset hanya untuk diskon preset; diskon manual dikirim lewat [manualDiscountSync]. */
+    private fun presetNameForSync(): String? = _appliedDiscount.value?.takeIf { it.isPreset }?.label
 
     fun setOrderType(type: CafeOrderType) {
         val current = _orderHeader.value
@@ -497,7 +530,8 @@ class CafeMenuViewModel(
                 order = orderEntity,
                 lines = lineEntities,
                 shiftId = currentShiftId,
-                discountPresetName = _appliedDiscount.value?.label
+                discountPresetName = presetNameForSync(),
+                manualDiscount = manualDiscountSync(cart)
             )
         } catch (e: Exception) {
             return Result.failure(e)
@@ -594,7 +628,8 @@ class CafeMenuViewModel(
                 order = orderEntity,
                 lines = lineEntities,
                 shiftId = currentShiftId,
-                discountPresetName = _appliedDiscount.value?.label
+                discountPresetName = presetNameForSync(),
+                manualDiscount = manualDiscountSync(cart)
             )
         } catch (e: Exception) {
             return Result.failure(e)
@@ -674,10 +709,13 @@ class CafeMenuViewModel(
         orderWithLines: OrderWithLines,
         type: String, // "refund" atau "void"
         reasonCode: String,
-        note: String?,
-        approvedBy: String
+        note: String?
     ): Result<Unit> {
         val tm = transactionManager ?: return Result.failure(IllegalStateException("TransactionManager tidak tersedia"))
+        // Persetujuan berlaku untuk satu aksi: ambil lalu hapus agar tidak terbawa ke aksi berikutnya.
+        val approver = verifiedManager
+            ?: return Result.failure(IllegalStateException("Persetujuan PIN manager diperlukan"))
+        verifiedManager = null
         val order = orderWithLines.order
 
         return try {
@@ -689,7 +727,7 @@ class CafeMenuViewModel(
                 type = type,
                 amount = amount,
                 reasonCode = reasonCode,
-                approvedBy = approvedBy,
+                approvedBy = approver.userId.toString(),
                 note = note,
                 orderLineIds = lineIds
             )
@@ -717,7 +755,7 @@ class CafeMenuViewModel(
                     orderDisplayNumber = order.displayNumber,
                     tableOrQueueLabel = order.tableLabel,
                     cashierName = active?.cashierName ?: "Kasir",
-                    approvedBy = approvedBy,
+                    approvedBy = approver.name,
                     occurredAt = dateStr,
                     correctionType = if (type == "refund") "REFUND TUNAI" else "VOID PESANAN",
                     reason = reasonLabel,
@@ -753,6 +791,16 @@ class CafeMenuViewModel(
 
         val existing = transactionManager?.getOrderWithLines(orderId)
             ?: return Result.failure(IllegalStateException("Pesanan tidak ditemukan"))
+
+        // Total gabungan dihitung ulang tanpa diskon, sedangkan server mempertahankan diskon asli pesanan.
+        // Menambah item ke pesanan berdiskon akan membuat angka tablet dan server berbeda, jadi ditolak.
+        if (existing.order.discount > 0L) {
+            return Result.failure(
+                IllegalStateException(
+                    "Pesanan ini memakai diskon, item tidak dapat ditambahkan. Buat pesanan baru untuk item tambahan."
+                )
+            )
+        }
 
         val newLineEntities = newItems.map { line ->
             val optionsStr = (listOfNotNull(line.selectedVariant?.name) + line.selectedAddons.map { it.name }).joinToString(", ")
@@ -797,8 +845,7 @@ class CafeMenuViewModel(
                 newTax = calculation.tax,
                 newRounding = calculation.rounding,
                 newTotal = calculation.total,
-                shiftId = currentShiftId,
-                discountPresetName = _appliedDiscount.value?.label
+                shiftId = currentShiftId
             )
         } catch (e: Exception) {
             return Result.failure(e)

@@ -6,7 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import id.a3.core.data.local.dao.OutboxDao
 import id.a3.core.data.local.dao.ShiftDao
-import id.a3.core.domain.security.ManagerPinVerifier
+import id.a3.core.domain.security.ApprovalResult
+import id.a3.core.domain.security.ManagerApprover
+import id.a3.core.domain.security.failureMessage
 import id.a3.core.printer.PrinterService
 import id.a3.core.printer.PrinterStatus
 import id.a3.core.printer.escpos.EscPosBuilder
@@ -67,7 +69,7 @@ class AdminViewModel(
     private val deviceId: String = "DEV-TABLET-01",
     private val businessUnitId: String = "BU-01",
     private val appVersion: String = "1.0.0",
-    private val ownerPinHash: String = ManagerPinVerifier.hashPin("9999"),
+    private val managerApprover: ManagerApprover? = null,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
 
@@ -167,28 +169,27 @@ class AdminViewModel(
 
     fun verifyOwnerPin(pin: String = _uiState.value.enteredPin) {
         if (_uiState.value.isPinLocked) return
-        val isCorrect = ManagerPinVerifier.hashPin(pin) == ownerPinHash
-        if (isCorrect) {
-            failedPinAttempts = 0
-            _uiState.update {
-                it.copy(
-                    isOwnerUnlocked = true,
-                    enteredPin = "",
-                    pinError = null
-                )
-            }
-            checkUpdateEligibility()
-        } else {
-            failedPinAttempts++
-            if (failedPinAttempts >= 3) {
-                triggerLockout(300) // 5 menit
-            } else {
-                val sisa = 3 - failedPinAttempts
-                _uiState.update {
-                    it.copy(
-                        enteredPin = "",
-                        pinError = "PIN Owner salah. Sisa kesempatan: $sisa kali"
-                    )
+        viewModelScope.launch {
+            // PIN diperiksa terhadap akun manager/owner dari server; tidak ada PIN bawaan.
+            val verdict = managerApprover?.verify(pin) ?: ApprovalResult.NoApproverAvailable
+            when (verdict) {
+                is ApprovalResult.Approved -> {
+                    failedPinAttempts = 0
+                    _uiState.update {
+                        it.copy(
+                            isOwnerUnlocked = true,
+                            enteredPin = "",
+                            pinError = null
+                        )
+                    }
+                    checkUpdateEligibility()
+                }
+                is ApprovalResult.Locked -> {
+                    _uiState.update { it.copy(enteredPin = "") }
+                    triggerLockout(verdict.retryAfterSeconds.toInt())
+                }
+                else -> _uiState.update {
+                    it.copy(enteredPin = "", pinError = verdict.failureMessage())
                 }
             }
         }

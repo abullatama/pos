@@ -32,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +47,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import id.a3.core.domain.cafe.DiscountType
 import id.a3.core.domain.cafe.OrderDiscount
+import id.a3.core.domain.security.ManagerApproval
+import kotlinx.coroutines.launch
 import id.a3.core.domain.money.MoneyMath
 import id.a3.core.ui.component.A3Button
 import id.a3.core.ui.component.A3Keypad
@@ -54,7 +57,6 @@ import id.a3.core.ui.component.ButtonVariant
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
 import id.a3.feature.cafe.model.AppliedDiscount
-import id.a3.feature.cafe.model.DEFAULT_DISCOUNT_PRESETS
 import id.a3.feature.cafe.model.DiscountPreset
 import id.a3.feature.cafe.model.DiscountReason
 import kotlin.math.min
@@ -85,10 +87,11 @@ fun CafeDiscountDialog(
     onDismissRequest: () -> Unit,
     onApplyDiscount: (AppliedDiscount) -> Unit,
     onRemoveDiscount: () -> Unit,
-    onVerifyManagerPin: suspend (pin: String) -> Boolean,
+    onVerifyManagerPin: suspend (pin: String) -> ManagerApproval?,
     modifier: Modifier = Modifier
 ) {
     val colors = A3Theme.colors
+    val verifyScope = rememberCoroutineScope()
 
     var activeTab by remember(presets) {
         mutableStateOf(
@@ -321,11 +324,17 @@ fun CafeDiscountDialog(
                                     return@A3Button
                                 }
 
+                                if (isVerifyingPin) return@A3Button
                                 isVerifyingPin = true
-                                kotlinx.coroutines.runBlocking {
-                                    val isValid = onVerifyManagerPin(managerPinInput)
-                                    isVerifyingPin = false
-                                    if (isValid) {
+                                val pinToCheck = managerPinInput
+                                // Verifikasi PBKDF2 sengaja lambat: jangan di thread UI.
+                                verifyScope.launch {
+                                    val approval = try {
+                                        onVerifyManagerPin(pinToCheck)
+                                    } finally {
+                                        isVerifyingPin = false
+                                    }
+                                    if (approval != null) {
                                         val discount = OrderDiscount(type = manualType, value = numVal)
                                         val labelText = if (manualType == DiscountType.PERCENT) "Diskon Manual $numVal%" else "Potongan Manual ${formatRupiah(numVal)}"
                                         onApplyDiscount(
@@ -333,14 +342,15 @@ fun CafeDiscountDialog(
                                                 discount = discount,
                                                 label = labelText,
                                                 isPreset = false,
-                                                approvedBy = "Manager",
+                                                approval = approval,
                                                 reason = selectedReason.label,
+                                                reasonCode = selectedReason.code,
                                                 note = customNote.ifBlank { null }
                                             )
                                         )
                                         onDismissRequest()
                                     } else {
-                                        pinErrorMessage = "PIN Manager salah atau terkunci"
+                                        pinErrorMessage = "PIN Manager salah, terkunci, atau akun manager belum tersinkron"
                                         managerPinInput = ""
                                     }
                                 }

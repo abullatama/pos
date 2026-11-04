@@ -646,7 +646,6 @@ fun CafeOpenOrdersScreen(
                             type = correctionType,
                             reasonCode = reasonCode,
                             note = note,
-                            approvedBy = "u-manager-1"
                         )
                         if (res.isSuccess) {
                             printStatusMessage = if (correctionType == "refund") {

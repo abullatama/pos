@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import id.a3.core.domain.cash.CashCalculator
 import id.a3.core.domain.cash.ShiftCashInput
-import id.a3.core.domain.security.ManagerPinVerifier
+import id.a3.core.domain.security.ApprovalResult
+import id.a3.core.domain.security.ManagerApprover
+import id.a3.core.domain.security.failureMessage
 import id.a3.feature.shift.model.StandardDenominations
 import id.a3.feature.shift.repository.ActiveShift
 import id.a3.feature.shift.repository.ShiftRepository
@@ -44,7 +46,8 @@ data class ShiftUiState(
 }
 
 class ShiftViewModel(
-    private val repository: ShiftRepository
+    private val repository: ShiftRepository,
+    private val managerApprover: ManagerApprover? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ShiftUiState())
@@ -173,7 +176,6 @@ class ShiftViewModel(
     }
 
     fun openForceCloseDialog() {
-        checkLockoutStatus()
         _uiState.update { it.copy(isForceCloseDialogOpen = true, forceCloseErrorMessage = null) }
     }
 
@@ -187,49 +189,29 @@ class ShiftViewModel(
         onSuccess: () -> Unit = {}
     ) {
         val shift = _uiState.value.currentShift ?: return
-        val now = System.currentTimeMillis()
 
-        if (now < isManagerLockedUntilMs) {
-            val remainingSec = ((isManagerLockedUntilMs - now) / 1000).coerceAtLeast(1).toInt()
-            _uiState.update {
-                it.copy(
-                    isManagerLocked = true,
-                    lockoutRemainingSeconds = remainingSec,
-                    forceCloseErrorMessage = "Akun terkunci ($remainingSec dtk)"
-                )
-            }
-            return
-        }
-
-        val isCorrect = ManagerPinVerifier.verify(pin)
-        if (!isCorrect) {
-            failedPinAttempts++
-            if (failedPinAttempts >= 3) {
-                isManagerLockedUntilMs = now + (300 * 1000L)
-                _uiState.update {
-                    it.copy(
-                        isManagerLocked = true,
-                        lockoutRemainingSeconds = 300,
-                        forceCloseErrorMessage = "PIN salah 3x. Akun terkunci 5 menit (COR-07)"
-                    )
-                }
-            } else {
-                _uiState.update {
-                    it.copy(forceCloseErrorMessage = "PIN Manager salah (${3 - failedPinAttempts}x percobaan tersisa)")
-                }
-            }
-            return
-        }
-
-        // PIN benar
-        failedPinAttempts = 0
         viewModelScope.launch {
             _uiState.update { it.copy(isForceClosing = true, forceCloseErrorMessage = null) }
+
+            // PIN diperiksa terhadap akun manager/owner dari server; identitasnya dikirim sebagai approved_by.
+            val verdict = managerApprover?.verify(pin) ?: ApprovalResult.NoApproverAvailable
+            if (verdict !is ApprovalResult.Approved) {
+                _uiState.update {
+                    it.copy(
+                        isForceClosing = false,
+                        isManagerLocked = verdict is ApprovalResult.Locked,
+                        lockoutRemainingSeconds = (verdict as? ApprovalResult.Locked)?.retryAfterSeconds?.toInt() ?: 0,
+                        forceCloseErrorMessage = verdict.failureMessage()
+                    )
+                }
+                return@launch
+            }
+            _uiState.update { it.copy(isManagerLocked = false, lockoutRemainingSeconds = 0) }
 
             val result = repository.forceCloseShift(
                 shiftId = shift.shiftId,
                 note = note.trim(),
-                approvedBy = "u-manager-1"
+                approvedBy = verdict.approval.userId.toString()
             )
 
             if (result.isSuccess) {
@@ -248,29 +230,6 @@ class ShiftViewModel(
                         forceCloseErrorMessage = result.exceptionOrNull()?.message ?: "Gagal menutup paksa shift"
                     )
                 }
-            }
-        }
-    }
-
-    private var failedPinAttempts = 0
-    private var isManagerLockedUntilMs = 0L
-
-    private fun checkLockoutStatus() {
-        val now = System.currentTimeMillis()
-        if (now < isManagerLockedUntilMs) {
-            val remainingSec = ((isManagerLockedUntilMs - now) / 1000).coerceAtLeast(1).toInt()
-            _uiState.update {
-                it.copy(
-                    isManagerLocked = true,
-                    lockoutRemainingSeconds = remainingSec
-                )
-            }
-        } else {
-            _uiState.update {
-                it.copy(
-                    isManagerLocked = false,
-                    lockoutRemainingSeconds = 0
-                )
             }
         }
     }

@@ -1244,13 +1244,13 @@ class RoomOutboxTransactionTest {
         val outbox = transactionManager.recordLaundryPickups(
             orderId = orderId,
             items = listOf(pickupItem),
-            approvedBy = "u-manager-1"
+            approvedBy = "2"
         )
         val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
         assertNotNull(savedOutbox)
         assertTrue(savedOutbox!!.eventsJson.contains("\"type\":\"laundry.status_changed\""))
         assertTrue(savedOutbox.eventsJson.contains("\"status\":\"diambil\""))
-        assertTrue(savedOutbox.eventsJson.contains("\"approved_by\":4"))
+        assertTrue(savedOutbox.eventsJson.contains("\"approved_by\":2"))
 
         // Status berubah menjadi picked_up karena baris tunggal ini selesai
         val updatedOrder = database.orderDao().getOrderById(orderId)
@@ -1624,7 +1624,7 @@ class RoomOutboxTransactionTest {
             type = "refund",
             amount = 50000L,
             reasonCode = "quality_complaint",
-            approvedBy = "u-manager-1",
+            approvedBy = "2",
             note = "Rasa kopi asam",
             currentShiftId = shiftId
         )
@@ -1644,7 +1644,7 @@ class RoomOutboxTransactionTest {
         assertEquals("cash", correction.refundMethod)
         assertEquals("quality_complaint", correction.reasonCode)
         assertEquals("Rasa kopi asam", correction.note)
-        assertEquals("u-manager-1", correction.approvedBy)
+        assertEquals("2", correction.approvedBy)
         assertFalse(correction.isOldTransactionRefund)
 
         // 3. Verifikasi kas laci berkurang (getCashRefundTotalForShift)
@@ -1658,7 +1658,7 @@ class RoomOutboxTransactionTest {
         assertTrue(outbox.eventsJson.contains("reason_note"))
         assertTrue(outbox.eventsJson.contains("payment_id"))
         assertTrue(outbox.eventsJson.contains("order_line_id"))
-        assertTrue(outbox.eventsJson.contains(""""approved_by":4"""))
+        assertTrue(outbox.eventsJson.contains(""""approved_by":2"""))
         assertTrue(outbox.eventsJson.contains(""""amount":50000"""))
         assertTrue(outbox.eventsJson.contains(""""refund_method":"cash""""))
     }
@@ -1699,7 +1699,7 @@ class RoomOutboxTransactionTest {
             type = "void",
             amount = 30000L,
             reasonCode = "customer_cancelled",
-            approvedBy = "u-manager-1"
+            approvedBy = "2"
         )
 
         val updatedOrder = database.orderDao().getOrderById(orderId)
@@ -1758,7 +1758,7 @@ class RoomOutboxTransactionTest {
             type = "refund",
             amount = 80000L,
             reasonCode = "quality_complaint",
-            approvedBy = "u-manager-1",
+            approvedBy = "2",
             note = "Komplain susu basi",
             currentShiftId = activeShiftId,
             occurredAtMs = now
@@ -1822,7 +1822,7 @@ class RoomOutboxTransactionTest {
                 type = "refund",
                 amount = 120000L,
                 reasonCode = "quality_complaint",
-                approvedBy = "u-manager-1",
+                approvedBy = "2",
                 currentShiftId = activeShiftId,
                 occurredAtMs = now
             )
@@ -1876,7 +1876,7 @@ class RoomOutboxTransactionTest {
                 type = "refund",
                 amount = 40000L,
                 reasonCode = "wrong_input",
-                approvedBy = "u-manager-1",
+                approvedBy = "2",
                 currentShiftId = activeShiftId,
                 occurredAtMs = now
             )
@@ -1988,7 +1988,7 @@ class RoomOutboxTransactionTest {
                 reason = "Beli gula dan susu",
                 receiptFileId = null,
                 receiptFilePath = null, // Tanpa foto nota
-                approvedBy = "u-manager-1",
+                approvedBy = "2",
                 shiftId = shiftId
             )
             org.junit.Assert.fail("Harus ditolak bila kas keluar > Rp 50.000 tanpa foto nota (KAS-02)")
@@ -2019,7 +2019,7 @@ class RoomOutboxTransactionTest {
             reason = "Servis grinder kopi",
             receiptFileId = fileId,
             receiptFilePath = "/data/user/0/id.a3/files/nota_grinder.jpg",
-            approvedBy = "u-manager-1",
+            approvedBy = "2",
             shiftId = shiftId
         )
 
@@ -2027,14 +2027,14 @@ class RoomOutboxTransactionTest {
         assertEquals(1, list.size)
         val item = list.first()
         assertEquals(90000L, item.amount)
-        assertEquals("u-manager-1", item.approvedBy)
+        assertEquals("2", item.approvedBy)
         assertEquals(fileId, item.receiptFileId)
 
         assertNotNull(outbox)
         assertTrue(outbox.eventsJson.contains("cashout.recorded"))
         assertTrue(outbox.eventsJson.contains(""""amount":90000"""))
         assertTrue(outbox.eventsJson.contains(""""receipt_file_id":"$fileId""""))
-        assertTrue(outbox.eventsJson.contains(""""approved_by":"u-manager-1""""))
+        assertTrue(outbox.eventsJson.contains(""""approved_by":2"""))
     }
 
     // =========================================================================
@@ -2060,7 +2060,7 @@ class RoomOutboxTransactionTest {
         assertNotNull(database.shiftDao().getActiveShift())
 
         val note = "Kasir sakit mendadak, shift ditutup paksa manager"
-        val approvedBy = "u-manager-1"
+        val approvedBy = "2"
         val outbox = transactionManager.forceCloseShift(
             shiftId = shiftId,
             note = note,
@@ -2083,7 +2083,7 @@ class RoomOutboxTransactionTest {
         assertTrue(outbox.eventsJson.contains("shift.force_closed"))
         assertTrue(outbox.eventsJson.contains(shiftId))
         assertTrue(outbox.eventsJson.contains("Kasir sakit mendadak"))
-        assertTrue(outbox.eventsJson.contains("u-manager-1"))
+        assertTrue(outbox.eventsJson.contains("\"approved_by\":2"))
 
         // 4. Verifikasi kasir berikutnya langsung dapat membuka shift baru tanpa terhalang
         val nextShiftId = UUID.randomUUID().toString()
@@ -2127,7 +2127,7 @@ class RoomOutboxTransactionTest {
             transactionManager.forceCloseShift(
                 shiftId = shiftId,
                 note = "   ",
-                approvedBy = "u-manager-1"
+                approvedBy = "2"
             )
             org.junit.Assert.fail("Harus ditolak bila catatan alasan kosong (ShiftForceClosed)")
         } catch (e: IllegalArgumentException) {

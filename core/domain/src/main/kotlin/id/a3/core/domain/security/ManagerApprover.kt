@@ -20,6 +20,15 @@ sealed interface ApprovalResult {
     data object NoApproverAvailable : ApprovalResult
 }
 
+/** Pesan untuk kasir bila persetujuan gagal; null bila disetujui. Tanpa istilah teknis. */
+fun ApprovalResult.failureMessage(): String? = when (this) {
+    is ApprovalResult.Approved -> null
+    is ApprovalResult.WrongPin -> "PIN Manager salah. Sisa $attemptsLeft percobaan"
+    is ApprovalResult.Locked -> "PIN salah 3 kali. Akses terkunci, coba lagi dalam ${(retryAfterSeconds + 59) / 60} menit"
+    ApprovalResult.NoApproverAvailable ->
+        "Akun manager belum tersedia di tablet ini. Sambungkan internet sekali agar akun tersinkron."
+}
+
 /**
  * Persetujuan manager untuk aksi yang menuntut PIN (diskon manual, void, refund, kas keluar besar).
  * Tidak ada PIN bawaan: PIN diperiksa terhadap akun manager/owner dari server.

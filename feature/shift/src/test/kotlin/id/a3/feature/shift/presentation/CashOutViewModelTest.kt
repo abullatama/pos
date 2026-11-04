@@ -37,7 +37,7 @@ class CashOutViewModelTest {
             openingCash = 200000L
         )
         fakePrinter = FakePrinterForShift()
-        viewModel = CashOutViewModel(fakeRepository, fakePrinter, testDispatcher)
+        viewModel = CashOutViewModel(fakeRepository, fakePrinter, testDispatcher, FakeManagerApprover())
         viewModel.initializeStore("A3 COFFEESHOP", "Jl. Trans Sulawesi Kelurahan Bintauna", "0823-4778-5986")
     }
 
@@ -185,12 +185,12 @@ class CashOutViewModelTest {
         assertFalse(state.isManagerPinDialogOpen)
 
         assertEquals(75000L, fakeRepository.lastCashOutAmount)
-        assertEquals("u-manager-1", fakeRepository.lastCashOutApprovedBy)
+        assertEquals("2", fakeRepository.lastCashOutApprovedBy)
 
         // Verifikasi struk dicetak dengan keterangan disetujui
         assertEquals(1, fakePrinter.printedBytes.size)
         val text = String(fakePrinter.printedBytes.first(), Charsets.ISO_8859_1)
-        assertTrue(text.contains("u-manager-1"))
+        assertTrue(text.contains("Manager Uji"))
         assertTrue(text.contains("Rp75.000"))
     }
 

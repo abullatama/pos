@@ -342,12 +342,12 @@ class AuthManagerTest {
     }
 
     @Test
-    fun `unlockWithPinOffline succeeds with manager pin even if no cashier was logged in`() = runBlocking {
+    fun `unlockWithPinOffline rejects the old default manager PIN 4444 when no cashier was logged in`() = runBlocking {
         authManager.lock()
         assertFalse(authManager.isUnlocked.value)
 
         val unlocked = authManager.unlockWithPinOffline("4444")
-        assertTrue("Buka kunci offline harus berhasil dengan PIN manager bawaan", unlocked)
-        assertTrue(authManager.isUnlocked.value)
+        assertFalse("PIN bawaan lama tidak boleh membuka kunci", unlocked)
+        assertFalse(authManager.isUnlocked.value)
     }
 }

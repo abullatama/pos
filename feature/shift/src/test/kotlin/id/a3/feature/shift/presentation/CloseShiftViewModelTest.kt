@@ -85,7 +85,7 @@ class CloseShiftViewModelTest {
         fakeRepository = FakeShiftRepository()
         fakeRepository.mockSummary = k1Summary
         fakePrinter = FakePrinterForShift()
-        viewModel = CloseShiftViewModel(fakeRepository, fakePrinter)
+        viewModel = CloseShiftViewModel(fakeRepository, fakePrinter, FakeManagerApprover())
     }
 
     @After

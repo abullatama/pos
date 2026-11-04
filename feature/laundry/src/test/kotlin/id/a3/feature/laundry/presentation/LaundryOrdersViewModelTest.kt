@@ -235,7 +235,7 @@ class LaundryOrdersViewModelTest {
         fakeRepository.orders["ord-1"] = OrderWithLines(paidOrder, listOf(line1))
         fakeRepository.orders["ord-2"] = OrderWithLines(unpaidOrder, listOf(line1.copy(id = "line-2", orderId = "ord-2")))
 
-        viewModel = LaundryOrdersViewModel(fakeRepository, fakePrinter, testDispatcher)
+        viewModel = LaundryOrdersViewModel(fakeRepository, fakePrinter, testDispatcher, FakeManagerApprover())
     }
 
     @After
@@ -368,7 +368,7 @@ class LaundryOrdersViewModelTest {
         // 2. Masukkan PIN benar ("4444" bawaan seed)
         viewModel.verifyManagerPinAndExecute("4444")
         assertFalse(viewModel.uiState.value.isManagerPinDialogOpen)
-        assertEquals("u-manager-1", fakeRepository.lastRecordedApprovedBy)
+        assertEquals("2", fakeRepository.lastRecordedApprovedBy)
         assertNotNull(viewModel.uiState.value.successMessage)
 
         collectJob.cancel()
@@ -393,7 +393,7 @@ class LaundryOrdersViewModelTest {
         assertFalse(viewModel.uiState.value.isManagerPinDialogOpen)
         assertEquals("ord-1", fakeRepository.lastReworkedOrderId)
         assertEquals("Pakaian masih bau apek", fakeRepository.lastReworkedReason)
-        assertEquals("u-manager-1", fakeRepository.lastReworkedApprovedBy)
+        assertEquals("2", fakeRepository.lastReworkedApprovedBy)
         assertNotNull(viewModel.uiState.value.successMessage)
 
         collectJob.cancel()

@@ -5,7 +5,6 @@ import id.a3.core.data.local.dao.ShiftDao
 import id.a3.core.data.local.entity.OutboxEntity
 import id.a3.core.data.local.entity.OutboxStatus
 import id.a3.core.data.local.entity.ShiftEntity
-import id.a3.core.domain.security.ManagerPinVerifier
 import id.a3.feature.admin.update.UpdatePreconditionValidator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -113,7 +112,7 @@ class AdminViewModelTest {
             deviceId = "DEV-TEST-01",
             businessUnitId = "CAFE-01",
             appVersion = "1.0.0",
-            ownerPinHash = ManagerPinVerifier.hashPin("9999"),
+            managerApprover = FakeManagerApprover("9999"),
             ioDispatcher = testDispatcher
         )
     }
@@ -198,7 +197,7 @@ class AdminViewModelTest {
         assertFalse(state.isOwnerUnlocked)
         assertEquals("", state.enteredPin)
         assertNotNull(state.pinError)
-        assertTrue(state.pinError!!.contains("Sisa kesempatan: 2 kali"))
+        assertTrue(state.pinError!!.contains("Sisa 2 percobaan"))
     }
 
     @Test
