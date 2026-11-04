@@ -41,6 +41,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import id.a3.core.auth.AuthManagerFactory
+import id.a3.core.domain.security.ShiftLoginPolicy
 import id.a3.core.auth.AuthResult
 import id.a3.core.auth.DeviceCheckResult
 import id.a3.core.auth.DeviceManager
@@ -86,6 +87,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -429,6 +431,18 @@ class MainActivity : ComponentActivity() {
                                     listOf(CashierAccountItem(cachedUser.id, cachedUser.name, cachedUser.role))
                                 } else {
                                     listOf(CashierAccountItem("2", "Kasir", "kasir"))
+                                }
+                                // Transaksi tercatat atas nama pembuka shift: selama shift berjalan, hanya
+                                // pembuka shift atau manager/owner yang boleh membuka kunci.
+                                val activeShift = withContext(Dispatchers.IO) { database.shiftDao().getActiveShift() }
+                                if (activeShift != null) {
+                                    val allowed = accountsList.filter {
+                                        ShiftLoginPolicy.isAllowed(it.id, it.role, activeShift.cashierId)
+                                    }
+                                    loginErrorMessage = if (allowed.isEmpty()) {
+                                        ShiftLoginPolicy.blockedMessage(activeShift.cashierName)
+                                    } else null
+                                    accountsList = allowed
                                 }
                                 isLoginLoading = false
                             }

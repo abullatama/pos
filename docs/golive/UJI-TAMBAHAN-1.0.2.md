@@ -1,7 +1,9 @@
 # Uji Tambahan: Versi 1.0.2 (versionCode 10002)
 
 Untuk: uji di Redmi Pad 2 dengan APK rilis bertanda tangan. Melengkapi `UJI-TABLET-1.0.1.md`; skenario di sana tetap berlaku.
-APK: `D:\Android\A3-releases\1.0.2-code10002\` (cek `SHA256SUMS.txt`). Tag git: `cafe-v1.0.2`, `laundry-v1.0.2`.
+APK laundry: `D:\Android\A3-releases\1.0.2-code10002\app-laundry-release.apk`.
+APK cafe: `D:\Android\A3-releases\1.0.3-code10003\app-cafe-release.apk` (cafe 1.0.2 digantikan 1.0.3 sebelum pernah dipasang; jangan pakai `app-cafe-release.apk` di folder 1.0.2).
+Cek `SHA256SUMS.txt` di tiap folder. Tag git: `cafe-v1.0.3`, `laundry-v1.0.2`.
 
 Perubahan sejak 1.0.1: perbaikan tampilan POS cafe (UI-1), pesan PIN manager yang jelas (UI-2), jenis bayar di riwayat cafe dan laundry (UI-3), kunci layar otomatis saat idle (AUT-05), log diagnostik sesi. Rumus uang dan sinkron tidak berubah.
 
@@ -18,7 +20,7 @@ Jika muncul `INSTALL_FAILED_USER_RESTRICTED`, lihat layar tablet dan ketuk Insta
 
 | # | Periksa | Hasil yang diharapkan | Lulus? |
 | --- | --- | --- | --- |
-| P1 | Versi di Info aplikasi (cafe dan laundry) | 1.0.2 | |
+| P1 | Versi di Info aplikasi | Cafe 1.0.3, laundry 1.0.2 | |
 | P2 | Data lama masih ada (shift terbuka, antrean sinkron, riwayat) | Tidak hilang setelah update | |
 
 ## 2. Cafe
@@ -50,7 +52,18 @@ Jika muncul `INSTALL_FAILED_USER_RESTRICTED`, lihat layar tablet dan ketuk Insta
 | K5 | Ulangi K4 dengan jeda kurang dari 2 menit | Langsung masuk tanpa PIN | |
 | K6 | Sentuh layar berkala selama 5 menit | Tidak terkunci | |
 
-## 5. Jika ada yang gagal
+## 5. Kunci layar saat shift berjalan (cafe)
+
+Transaksi dalam satu shift tercatat atas nama pembuka shift. Karena itu, selama shift berjalan hanya pembuka shift atau manager/owner yang boleh membuka kunci.
+
+| # | Skenario | Hasil yang diharapkan | Lulus? |
+| --- | --- | --- | --- |
+| S1 | Kasir A buka shift, layar terkunci idle, lihat daftar akun | Hanya A, manager, dan owner yang tampil; kasir B tidak |  |
+| S2 | Manager membuka kunci lalu bertransaksi | Berhasil; transaksi tercatat atas nama A (pembuka shift); persetujuan PIN tercatat atas nama manager |  |
+| S3 | Wi-Fi mati, kasir terakhir login bukan pembuka shift dan bukan manager | Pesan "Shift sedang dibuka oleh ..."; tidak bisa masuk sampai internet pulih atau manager datang |  |
+| S4 | Tutup shift, lalu kunci layar | Semua akun boleh masuk lagi |  |
+
+## 6. Jika ada yang gagal
 
 Catat nomor skenario, langkah, hasil nyata, dan foto layar. Untuk masalah sesi atau kunci layar, ambil log segera:
 
@@ -60,8 +73,8 @@ adb logcat -d | Select-String -Pattern "AuthDiag|MasterDataSync"
 
 Hentikan dan laporkan bila: data hilang setelah update, total berbeda dari server, atau layar terbuka tanpa PIN setelah lewat 2 menit.
 
-## 6. Hasil
+## 7. Hasil
 
 | Tanggal | Penguji | Perangkat | Versi | Lulus | Catatan |
 | --- | --- | --- | --- | --- | --- |
-| | | | 1.0.2 (10002) | / 16 | |
+| | | | 1.0.2 (10002) | / 20 | |
