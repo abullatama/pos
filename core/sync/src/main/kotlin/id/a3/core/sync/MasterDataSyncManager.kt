@@ -11,6 +11,7 @@ import id.a3.core.sync.api.SyncMasterApiService
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -116,31 +117,106 @@ class MasterDataSyncManager(
         else -> elem.toString()
     }
 
+    private enum class SettingScope { GLOBAL, UNIT, RESOLVED }
+
+    /**
+     * Pengaturan dari GET /v1/config (sudah digabung server untuk usaha ini).
+     */
     suspend fun saveSettingsMap(settings: Map<String, JsonElement>) {
-        val taxVal = extractElementContent(settings["tax_percent"])
-            ?: extractElementContent(settings["tax_rate"])
-            ?: extractElementContent(settings["tax_bp"])?.let { basisPointsToPercent(it) }
-        if (taxVal != null) {
-            syncStateDao.set(SyncStateEntity(key = KEY_TAX_PERCENT, value = taxVal))
+        for ((key, value) in settings) {
+            applyServerSetting(key, value, isDelete = false, scope = SettingScope.RESOLVED)
+        }
+        recomputeDerivedSettings()
+    }
+
+    /**
+     * Satu-satunya jalur penerapan pengaturan dari server (config, bootstrap, delta).
+     * Nama kunci server: tax_bp, tax_mode, service_charge_enabled, service_charge_bp,
+     * rounding_multiple, discount_presets. Pengaturan khusus usaha mengalahkan yang global.
+     */
+    private suspend fun applyServerSetting(key: String, valueElem: JsonElement?, isDelete: Boolean, scope: SettingScope) {
+        val marker = "scope_unit:$key"
+        if (scope == SettingScope.GLOBAL && !isDelete && syncStateDao.get(marker) != null) return
+
+        if (isDelete) {
+            syncStateDao.delete(legacyKey(key))
+            if (scope == SettingScope.UNIT) syncStateDao.delete(marker)
+            return
+        }
+        if (scope == SettingScope.UNIT) syncStateDao.set(SyncStateEntity(key = marker, value = "1"))
+
+        if (key == "discount_presets" && valueElem is JsonArray) {
+            applyDiscountPresetList(valueElem)
+            return
+        }
+        val value = extractElementContent(valueElem) ?: return
+        syncStateDao.set(SyncStateEntity(key = legacyKey(key), value = value))
+    }
+
+    /** Kunci lama (mock server) dipetakan ke kunci yang dibaca aplikasi. */
+    private fun legacyKey(key: String): String = when (key) {
+        "tax_rate" -> KEY_TAX_PERCENT
+        "service_charge_rate" -> KEY_SERVICE_PERCENT
+        else -> key
+    }
+
+    /**
+     * Turunkan nilai yang dipakai aplikasi dari kunci server. Biaya layanan nol bila server
+     * menonaktifkannya (service_charge_enabled = false), apa pun nilai service_charge_bp.
+     */
+    private suspend fun recomputeDerivedSettings() {
+        syncStateDao.get("tax_bp")?.let { basisPointsToPercent(it) }?.let {
+            syncStateDao.set(SyncStateEntity(key = KEY_TAX_PERCENT, value = it))
         }
 
-        val modeVal = extractElementContent(settings["tax_mode"])
-        if (modeVal != null) {
-            syncStateDao.set(SyncStateEntity(key = KEY_TAX_MODE, value = modeVal))
+        val enabled = syncStateDao.get("service_charge_enabled")?.trim()?.lowercase()?.let { it == "true" || it == "1" }
+        val serviceBp = syncStateDao.get("service_charge_bp") ?: syncStateDao.get("service_bp")
+        val servicePercent = when {
+            enabled == false -> "0"
+            serviceBp != null -> basisPointsToPercent(serviceBp)
+            else -> null
+        }
+        if (servicePercent != null) {
+            syncStateDao.set(SyncStateEntity(key = KEY_SERVICE_PERCENT, value = servicePercent))
         }
 
-        val serviceVal = extractElementContent(settings["service_charge_percent"])
-            ?: extractElementContent(settings["service_charge_rate"])
-            ?: (extractElementContent(settings["service_bp"]) ?: extractElementContent(settings["service_charge_bp"]))
-                ?.let { basisPointsToPercent(it) }
-        if (serviceVal != null) {
-            syncStateDao.set(SyncStateEntity(key = KEY_SERVICE_PERCENT, value = serviceVal))
+        syncStateDao.get("rounding_multiple")?.let {
+            syncStateDao.set(SyncStateEntity(key = KEY_ROUNDING_STEP, value = it))
         }
+    }
 
-        val roundingVal = extractElementContent(settings["rounding_step"])
-        if (roundingVal != null) {
-            syncStateDao.set(SyncStateEntity(key = KEY_ROUNDING_STEP, value = roundingVal))
+    /**
+     * Server menyimpan preset persen dalam basis poin (1000 = 10%) dan nominal dalam rupiah.
+     * Tablet menyimpan persen bulat. Preset persen yang bukan kelipatan 100 bp dibuang karena
+     * tablet tidak bisa menghitungnya sama persis dengan server.
+     * Daftar dari server menggantikan seluruh daftar lama.
+     */
+    private suspend fun applyDiscountPresetList(list: JsonArray) {
+        val presets = list.mapNotNull { elem ->
+            val pObj = elem as? JsonObject ?: return@mapNotNull null
+            val name = pObj["name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val type = pObj["type"]?.jsonPrimitive?.content ?: "percent"
+            val raw = pObj["value"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+            val isPercent = !(type.equals("nominal", true) || type.equals("amount", true))
+            val value = if (isPercent) {
+                basisPointsToPercent(raw.toString())?.toLongOrNull()?.takeIf { it in 0L..100L } ?: return@mapNotNull null
+            } else {
+                raw.takeIf { it >= 0L } ?: return@mapNotNull null
+            }
+            DiscountPresetEntity(
+                id = pObj["id"]?.jsonPrimitive?.content ?: java.util.UUID.nameUUIDFromBytes(name.toByteArray()).toString(),
+                name = name,
+                type = if (isPercent) "percent" else "nominal",
+                value = value
+            )
         }
+        masterDataDao.clearDiscountPresets()
+        if (presets.isNotEmpty()) masterDataDao.upsertDiscountPresets(presets)
+    }
+
+    private fun scopeOf(obj: JsonObject): SettingScope {
+        val unit = obj["business_unit_id"]
+        return if (unit == null || unit is JsonNull) SettingScope.GLOBAL else SettingScope.UNIT
     }
 
     /**
@@ -339,41 +415,13 @@ class MasterDataSyncManager(
                     masterDataDao.upsertDiscountPresets(presets)
                 }
                 sectionNorm == "settings" -> {
-                    for (record in body.records) {
-                        val obj = record.jsonObject
-                        val key = obj["key"]?.jsonPrimitive?.content
-                        val valueElem = obj["value"]
-                        val value = extractElementContent(valueElem)
-                        if (key != null && value != null) {
-                            val mappedKey = when (key) {
-                                "tax_rate", "tax_bp" -> KEY_TAX_PERCENT
-                                "service_charge_rate", "service_bp", "service_charge_bp" -> KEY_SERVICE_PERCENT
-                                "rounding_multiple" -> KEY_ROUNDING_STEP
-                                else -> key
-                            }
-                            val mappedValue = if (key.endsWith("_bp")) basisPointsToPercent(value) else value
-                            if (mappedValue != null) {
-                                syncStateDao.set(SyncStateEntity(key = mappedKey, value = mappedValue))
-                            }
-                        }
-                        if (key == "discount_presets" && valueElem is JsonArray) {
-                            val presets = valueElem.mapNotNull { elem ->
-                                val pObj = elem.jsonObject
-                                val pName = pObj["name"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                                val pType = pObj["type"]?.jsonPrimitive?.content ?: "percent"
-                                val pVal = pObj["value"]?.jsonPrimitive?.longOrNull ?: 0L
-                                DiscountPresetEntity(
-                                    id = pObj["id"]?.jsonPrimitive?.content ?: java.util.UUID.nameUUIDFromBytes(pName.toByteArray()).toString(),
-                                    name = pName,
-                                    type = pType,
-                                    value = pVal
-                                )
-                            }
-                            if (presets.isNotEmpty()) {
-                                masterDataDao.upsertDiscountPresets(presets)
-                            }
-                        }
+                    // Urutkan: pengaturan global lebih dulu, lalu khusus usaha (menang).
+                    val records = body.records.map { it.jsonObject }.sortedBy { if (scopeOf(it) == SettingScope.GLOBAL) 0 else 1 }
+                    for (obj in records) {
+                        val key = obj["key"]?.jsonPrimitive?.content ?: continue
+                        applyServerSetting(key, obj["value"], isDelete = false, scope = scopeOf(obj))
                     }
+                    recomputeDerivedSettings()
                 }
             }
 
@@ -582,19 +630,9 @@ class MasterDataSyncManager(
                     tableNorm == "settings" -> {
                         val obj = change.record.jsonObject
                         val key = obj["key"]?.jsonPrimitive?.content
-                        val valueElem = obj["value"]
-                        val value = extractElementContent(valueElem)
                         if (key != null) {
-                            val mappedKey = when (key) {
-                                "tax_rate" -> KEY_TAX_PERCENT
-                                "service_charge_rate" -> KEY_SERVICE_PERCENT
-                                else -> key
-                            }
-                            if (change.op == "delete") {
-                                syncStateDao.delete(mappedKey)
-                            } else if (value != null) {
-                                syncStateDao.set(SyncStateEntity(key = mappedKey, value = value))
-                            }
+                            applyServerSetting(key, obj["value"], isDelete = change.op == "delete", scope = scopeOf(obj))
+                            recomputeDerivedSettings()
                         }
                     }
                 }

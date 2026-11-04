@@ -524,7 +524,7 @@ class MasterDataSyncManagerTest {
                 "records": [
                     { "id": 1, "key": "opening_cash_default", "value": 200000 },
                     { "id": 4, "key": "discount_presets", "value": [{"name":"Promo 10%","type":"percent","value":1000}] },
-                    { "id": 5, "key": "tax_rate", "value": 1000 }
+                    { "id": 5, "key": "tax_bp", "value": 1000 }
                 ],
                 "next_cursor": null,
                 "done": true,
@@ -537,11 +537,90 @@ class MasterDataSyncManagerTest {
         assertTrue("Bootstrap must complete", result is BootstrapResult.Completed)
 
         val taxVal = database.syncStateDao().get(MasterDataSyncManager.KEY_TAX_PERCENT)
-        assertEquals("1000", taxVal)
+        assertEquals("10", taxVal)
 
         val presets = database.masterDataDao().getActiveDiscountPresets()
         assertNotNull(presets)
         assertEquals(1, presets.size)
         assertEquals("Promo 10%", presets[0].name)
+        // Server mengirim 1000 bp; tablet menyimpan 10 (persen) agar rumus diskon tablet = server.
+        assertEquals(10L, presets[0].value)
+        assertEquals("percent", presets[0].type)
+    }
+
+    @Test
+    fun `bootstrap converts nominal preset as rupiah and drops percent preset that is not a whole percent`() = runBlocking {
+        val pageJson = """
+            {
+                "section": "settings",
+                "records": [
+                    { "id": 1, "key": "discount_presets", "value": [
+                        {"name":"Potong 5rb","type":"nominal","value":5000},
+                        {"name":"Aneh 7,5%","type":"percent","value":750},
+                        {"name":"Promo 10%","type":"percent","value":1000}
+                    ] }
+                ],
+                "next_cursor": null, "done": true, "delta_cursor": "d1"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(pageJson))
+
+        assertTrue(syncManager.syncBootstrap() is BootstrapResult.Completed)
+
+        val byName = database.masterDataDao().getActiveDiscountPresets().associateBy { it.name }
+        assertEquals(setOf("Potong 5rb", "Promo 10%"), byName.keys)
+        assertEquals(5000L, byName["Potong 5rb"]!!.value)
+        assertEquals(10L, byName["Promo 10%"]!!.value)
+    }
+
+    @Test
+    fun `service charge is zero when server disables it even if service_charge_bp is set`() = runBlocking {
+        val pageJson = """
+            {
+                "section": "settings",
+                "records": [
+                    { "id": 1, "key": "service_charge_enabled", "value": false },
+                    { "id": 2, "key": "service_charge_bp", "value": 500 }
+                ],
+                "next_cursor": null, "done": true, "delta_cursor": "d1"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(pageJson))
+        assertTrue(syncManager.syncBootstrap() is BootstrapResult.Completed)
+        assertEquals("0", database.syncStateDao().get(MasterDataSyncManager.KEY_SERVICE_PERCENT))
+    }
+
+    @Test
+    fun `service charge uses service_charge_bp when server enables it`() = runBlocking {
+        val pageJson = """
+            {
+                "section": "settings",
+                "records": [
+                    { "id": 1, "key": "service_charge_enabled", "value": true },
+                    { "id": 2, "key": "service_charge_bp", "value": 500 }
+                ],
+                "next_cursor": null, "done": true, "delta_cursor": "d1"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(pageJson))
+        assertTrue(syncManager.syncBootstrap() is BootstrapResult.Completed)
+        assertEquals("5", database.syncStateDao().get(MasterDataSyncManager.KEY_SERVICE_PERCENT))
+    }
+
+    @Test
+    fun `unit specific setting wins over global regardless of record order`() = runBlocking {
+        val pageJson = """
+            {
+                "section": "settings",
+                "records": [
+                    { "id": 9, "key": "tax_bp", "value": 1100, "business_unit_id": 1 },
+                    { "id": 2, "key": "tax_bp", "value": 1000, "business_unit_id": null }
+                ],
+                "next_cursor": null, "done": true, "delta_cursor": "d1"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(pageJson))
+        assertTrue(syncManager.syncBootstrap() is BootstrapResult.Completed)
+        assertEquals("11", database.syncStateDao().get(MasterDataSyncManager.KEY_TAX_PERCENT))
     }
 }
