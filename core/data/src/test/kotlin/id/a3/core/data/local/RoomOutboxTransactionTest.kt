@@ -498,6 +498,102 @@ class RoomOutboxTransactionTest {
         assertEquals("open", updated!!.status)
         assertEquals(53000L, updated.paidAmount)
         assertEquals(53000L, updated.total)
+
+        // Verifikasi payload payment memuat is_dp dan payment_type
+        assertTrue("Harus memuat payment.recorded", outbox.eventsJson.contains(""""type":"payment.recorded""""))
+        assertTrue("Harus memuat is_dp false", outbox.eventsJson.contains(""""is_dp":false"""))
+        assertTrue("Harus memuat payment_type full", outbox.eventsJson.contains(""""payment_type":"full""""))
+    }
+
+    @Test
+    fun `recordPayment merges payment recorded into existing pending order created bundle atomically`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0020",
+            businessUnitId = "bu-laundry-01",
+            shiftId = "shift-001",
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 53000L,
+            total = 53000L,
+            paidAmount = 0L
+        )
+        val line = OrderLineEntity(
+            id = UUID.randomUUID().toString(),
+            orderId = orderId,
+            itemRefId = "5",
+            nameSnapshot = "Cuci Setrika Reguler",
+            quantity = 1,
+            unitPriceSnapshot = 7000L,
+            weight = 4.0
+        )
+
+        // 1. Simpan order laundry awal (menghasilkan 1 bundel PENDING)
+        val initialOutbox = transactionManager.createLaundryOrderWithCustomer(
+            order = order,
+            lines = listOf(line),
+            customer = null,
+            isNewCustomer = false,
+            deviceId = "dev-laundry-1",
+            shiftId = "shift-001"
+        )
+        val bundlesBeforePayment = database.outboxDao().findBundlesByOrderId(orderId)
+        assertEquals(1, bundlesBeforePayment.size)
+        assertTrue(initialOutbox.eventsJson.contains(""""type":"order.created""""))
+        assertFalse(initialOutbox.eventsJson.contains(""""type":"payment.recorded""""))
+
+        // 2. Bayar DP di muka
+        val mergedOutbox = transactionManager.recordPayment(
+            orderId = orderId,
+            method = "cash",
+            amount = 20000L,
+            tendered = 20000L,
+            isDp = true,
+            deviceId = "dev-laundry-1",
+            shiftId = "shift-001"
+        )
+
+        // Verifikasi tidak ada bundel kedua yang terbuat; bundel yang sama digabungkan secara atomik
+        val bundlesAfterPayment = database.outboxDao().findBundlesByOrderId(orderId)
+        assertEquals(1, bundlesAfterPayment.size)
+        assertEquals(initialOutbox.bundleId, mergedOutbox.bundleId)
+
+        // Verifikasi bundel atomik memuat order.created DAN payment.recorded
+        val mergedJson = bundlesAfterPayment[0].eventsJson
+        assertTrue("Harus memuat order.created", mergedJson.contains(""""type":"order.created""""))
+        assertTrue("Harus memuat payment.recorded", mergedJson.contains(""""type":"payment.recorded""""))
+        assertTrue("Harus memuat is_dp true", mergedJson.contains(""""is_dp":true"""))
+        assertTrue("Harus memuat payment_type dp", mergedJson.contains(""""payment_type":"dp""""))
+
+        // Urutan event: order.created harus mendahului payment.recorded
+        val orderCreatedIndex = mergedJson.indexOf(""""type":"order.created"""")
+        val paymentRecordedIndex = mergedJson.indexOf(""""type":"payment.recorded"""")
+        assertTrue("order.created harus berada sebelum payment.recorded", orderCreatedIndex < paymentRecordedIndex)
+
+        // 3. Simulasikan pengiriman bundel pertama sukses (SENT), lalu bayar pelunasan
+        database.outboxDao().markSent(mergedOutbox.bundleId)
+        val settlementOutbox = transactionManager.recordPayment(
+            orderId = orderId,
+            method = "cash",
+            amount = 33000L,
+            tendered = 50000L,
+            isDp = false,
+            deviceId = "dev-laundry-1",
+            shiftId = "shift-001"
+        )
+
+        // Karena bundel pertama sudah SENT, pelunasan membuat bundel baru berstatus PENDING
+        val bundlesAfterSettlement = database.outboxDao().findBundlesByOrderId(orderId)
+        assertEquals(2, bundlesAfterSettlement.size)
+        assertTrue("Pelunasan harus berstatus payment_type settlement", settlementOutbox.eventsJson.contains(""""payment_type":"settlement""""))
+        assertTrue("Pelunasan bukan DP", settlementOutbox.eventsJson.contains(""""is_dp":false"""))
+
+        val finalOrder = database.orderDao().getOrderById(orderId)
+        assertNotNull(finalOrder)
+        assertEquals(53000L, finalOrder!!.paidAmount)
     }
 
     @Test
@@ -992,11 +1088,13 @@ class RoomOutboxTransactionTest {
         assertNotNull(orderAfterFirst)
         assertEquals("ready", orderAfterFirst!!.status)
 
-        // Verifikasi event outbox laundry.picked_up
+        // Verifikasi event outbox laundry.status_changed (status: diambil, API 4.9)
         val savedOutbox1 = database.outboxDao().getByBundleId(outbox1.bundleId)
         assertNotNull(savedOutbox1)
-        assertTrue(savedOutbox1!!.eventsJson.contains("\"type\":\"laundry.picked_up\""))
+        assertTrue(savedOutbox1!!.eventsJson.contains("\"type\":\"laundry.status_changed\""))
+        assertTrue(savedOutbox1.eventsJson.contains("\"status\":\"diambil\""))
         assertTrue(savedOutbox1.eventsJson.contains("\"order_line_id\":\"$line1Id\""))
+        assertTrue(savedOutbox1.eventsJson.contains("\"line_ids\":[\"$line1Id\"]"))
 
         // 2. Sekarang ambil baris kedua (Selimut) secara tuntas (isFinal = true)
         val pickupLine2 = LaundryPickupItem(orderLineId = line2Id, quantity = 1, isFinal = true)
@@ -1049,12 +1147,88 @@ class RoomOutboxTransactionTest {
         )
         val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
         assertNotNull(savedOutbox)
-        assertTrue(savedOutbox!!.eventsJson.contains("\"type\":\"laundry.picked_up\""))
-        assertTrue(savedOutbox.eventsJson.contains("\"approved_by\":\"u-manager-1\""))
+        assertTrue(savedOutbox!!.eventsJson.contains("\"type\":\"laundry.status_changed\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"status\":\"diambil\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"approved_by\":4"))
 
         // Status berubah menjadi picked_up karena baris tunggal ini selesai
         val updatedOrder = database.orderDao().getOrderById(orderId)
         assertEquals("picked_up", updatedOrder!!.status)
+    }
+
+    @Test
+    fun `createLaundryOrderWithCustomer guarantees numeric item_ref_id and strictly isolates pcs from weight_grams (Poin 4)`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val lineKgId = UUID.randomUUID().toString()
+        val linePcsId = UUID.randomUUID().toString()
+
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0020",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 78000L,
+            total = 78000L,
+            paidAmount = 0L
+        )
+
+        // Baris 1: Kiloan (svc-kiloan) dengan bobot 4.0 kg @ 7000 = 28000
+        val lineKg = OrderLineEntity(
+            id = lineKgId,
+            orderId = orderId,
+            itemRefId = "svc-kiloan",
+            nameSnapshot = "Kiloan Reguler (Cuci + Setrika)",
+            quantity = 1,
+            weight = 4.0,
+            unitPriceSnapshot = 7000L
+        )
+
+        // Baris 2: Satuan (svc-selimut) 2 pcs @ 25000 = 50000 (tanpa bobot kg)
+        val linePcs = OrderLineEntity(
+            id = linePcsId,
+            orderId = orderId,
+            itemRefId = "svc-selimut",
+            nameSnapshot = "Selimut Tebal",
+            quantity = 2,
+            weight = null,
+            unitPriceSnapshot = 25000L
+        )
+
+        val outbox = transactionManager.createLaundryOrderWithCustomer(
+            order = order,
+            lines = listOf(lineKg, linePcs),
+            customer = null,
+            isNewCustomer = false,
+            deviceId = "dev-laundry-1",
+            shiftId = null
+        )
+
+        val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
+        assertNotNull(savedOutbox)
+        val jsonStr = savedOutbox!!.eventsJson
+
+        // Verifikasi item_ref_id numerik untuk kiloan (1L) dan selimut (4L)
+        assertTrue("item_ref_id untuk kiloan harus numerik 1", jsonStr.contains(""""item_ref_id":1"""))
+        assertTrue("item_ref_id untuk selimut harus numerik 4", jsonStr.contains(""""item_ref_id":4"""))
+        assertFalse("Tidak boleh ada item_ref_id berbasis string svc-kiloan", jsonStr.contains(""""svc-kiloan""""))
+        assertFalse("Tidak boleh ada item_ref_id berbasis string svc-selimut", jsonStr.contains(""""svc-selimut""""))
+
+        // Verifikasi baris kiloan membawa weight_grams
+        assertTrue("Baris kiloan harus membawa weight_grams 4000", jsonStr.contains(""""weight_grams":4000"""))
+
+        // Parsing JSON untuk verifikasi baris pcs tidak membawa atribut weight_grams sama sekali
+        val rootArray = kotlinx.serialization.json.Json.parseToJsonElement(jsonStr).jsonArray
+        val orderCreated = rootArray.first { it.jsonObject["type"]?.jsonPrimitive?.content == "order.created" }
+        val linesArray = orderCreated.jsonObject["payload"]!!.jsonObject["lines"]!!.jsonArray
+
+        val pcsLineObj = linesArray.first { it.jsonObject["line_id"]?.jsonPrimitive?.content == linePcsId }.jsonObject
+        assertEquals("pcs", pcsLineObj["unit"]?.jsonPrimitive?.content)
+        assertEquals(2, pcsLineObj["quantity"]?.jsonPrimitive?.content?.toInt())
+        assertFalse("Baris satuan pcs DILARANG memiliki atribut weight_grams", pcsLineObj.containsKey("weight_grams"))
     }
 
     @Test

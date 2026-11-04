@@ -118,3 +118,32 @@ Sesi ini menuntaskan **Rencana 4 Tahap Penyelarasan Sinkronisasi & Integrasi Bac
    - Ikuti instruksi pada `docs/golive/PROTOKOL-UJI-OFFLINE-24JAM.md`.
    - Aktifkan Mode Pesawat (Airplane Mode) pada tablet dan jalankan operasional penjualan selama 24 jam.
    - Sambungkan kembali ke internet pada T+24 jam dan pastikan seluruh transaksi outbox terkirim (ACCEPTED) ke live server tanpa ada yang masuk antrean bermasalah.
+
+---
+
+## 5. Status Penyelesaian Roadmap & Agenda Sesi Selanjutnya
+
+Seluruh **Poin 1 s/d Poin 4 Roadmap Ketahanan & Penyelarasan Sinkronisasi** telah resmi selesai 100%:
+1. **Poin 1: Proteksi Isolasi Pajak Laundry & Sanitasi Otomatis (Selesai):**
+   - Transaksi laundry 100% bebas pajak, biaya layanan, dan pembulatan (OQ-03).
+2. **Poin 2: Penyatuan Transaksi Atomik Outbox (Selesai):**
+   - Penggabungan event `order.created` dan `payment.recorded` ke dalam bundel atomik tunggal saat pembayaran lunas di muka / DP.
+3. **Poin 3: Dual-Compatibility Payload Pembayaran DP (Selesai):**
+   - Injeksi otomatis `is_dp` dan `payment_type` ('dp', 'full', 'settlement') pada `OrderTransactionManager` dan `SyncSender`.
+4. **Poin 4: Presisi ID Layanan item_ref_id Numerik & Sanitasi Baris Satuan/Kiloan (Selesai):**
+   - Jaminan `item_ref_id` selalu numerik integer (1L s/d 7L untuk layanan awal) di `OrderTransactionManager` & `SyncSender`.
+   - Sanitasi mutlak `weight_grams`: dihapus 100% dari baris satuan `pcs` untuk mencegah salah hitung gramasi kg backend Laravel 12.
+   - Penyelarasan langsung `laundry.status_changed` (status: `diambil`) saat penyerahan cucian di `OrderTransactionManager.recordLaundryPickups`.
+
+### Langkah Operasional Selanjutnya:
+1. **Deploy APK ke Tablet Fisik (Redmi Pad 2):**
+   ```powershell
+   adb install -r app-cafe\build\outputs\apk\debug\app-cafe-debug.apk
+   adb install -r app-laundry\build\outputs\apk\debug\app-laundry-debug.apk
+   ```
+2. **Uji Transaksi Nyata Laundry:**
+   - Buat order kiloan dan order satuan di aplikasi `athialoundry`.
+   - Lakukan penyerahan cucian (status `diambil`).
+   - Verifikasi TopBar: status tetap **Hijau ("Tersinkron")** dan seluruh outbox langsung berstatus **ACCEPTED** di server live `a3-api.nen.asia`.
+3. **Eksekusi Pengujian Offline 24 Jam (F43):**
+   - Ikuti protokol di `docs/golive/PROTOKOL-UJI-OFFLINE-24JAM.md`.

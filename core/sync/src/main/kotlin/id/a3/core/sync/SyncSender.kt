@@ -174,7 +174,25 @@ class SyncSender(
 
         if (matched != null) {
             val numId = matched.id.toLongOrNull()
-            val targetId = if (numId != null) JsonPrimitive(numId) else JsonPrimitive(matched.id)
+                ?: dbServices.firstOrNull { svc ->
+                    svc.id.toLongOrNull() != null && svc.unit.equals(matched.unit, ignoreCase = true) && (
+                        svc.name.contains(lineName, ignoreCase = true) || lineName.contains(svc.name, ignoreCase = true) ||
+                        svc.rate == lineRate || svc.expressRate == lineRate
+                    )
+                }?.id?.toLongOrNull()
+                ?: dbServices.firstOrNull { it.id.toLongOrNull() != null && it.unit.equals(matched.unit, ignoreCase = true) }?.id?.toLongOrNull()
+                ?: dbServices.firstOrNull { it.id.toLongOrNull() != null }?.id?.toLongOrNull()
+                ?: when (matched.id) {
+                    "svc-kiloan" -> 1L
+                    "svc-cuci-saja" -> 2L
+                    "svc-setrika-saja" -> 3L
+                    "svc-selimut" -> 4L
+                    "svc-bedcover" -> 5L
+                    "svc-jas" -> 6L
+                    "svc-sepatu" -> 7L
+                    else -> if (matched.unit.equals("pcs", ignoreCase = true)) 4L else 1L
+                }
+            val targetId = JsonPrimitive(numId)
             if (lineMap["item_ref_id"] != targetId) {
                 lineMap["item_ref_id"] = targetId
                 changed = true
@@ -213,7 +231,7 @@ class SyncSender(
                 changed = true
             }
 
-            // 4. Hitung weight_grams untuk kiloan (agar weight_grams * rate / 1000 == line_total)
+            // 4. Hitung weight_grams untuk kiloan; hapus total atribut weight_grams untuk satuan (pcs)
             if (targetUnit == "kg") {
                 val calculatedGrams = if (targetRate > 0L) {
                     ((targetLineTotal * 1000L) / targetRate).coerceAtLeast(1000L)
@@ -225,10 +243,15 @@ class SyncSender(
                     changed = true
                 }
             } else {
+                // Poin 4: Satuan 'pcs' DILARANG memuat weight_grams agar backend Laravel tidak salah hitung rumus gramasi kg
+                if (lineMap.containsKey("weight_grams")) {
+                    lineMap.remove("weight_grams")
+                    changed = true
+                }
                 val calculatedQty = if (targetRate > 0L) {
                     (targetLineTotal / targetRate).toInt().coerceAtLeast(1)
                 } else {
-                    1
+                    lineMap["quantity"]?.jsonPrimitive?.intOrNull ?: 1
                 }
                 if (lineMap["quantity"]?.jsonPrimitive?.intOrNull != calculatedQty) {
                     lineMap["quantity"] = JsonPrimitive(calculatedQty)
@@ -243,7 +266,8 @@ class SyncSender(
                 lineMap["unit"] = JsonPrimitive(targetUnit)
                 changed = true
             }
-            val targetId = JsonPrimitive(1L)
+            val targetNumId = if (targetUnit == "pcs") 4L else 1L
+            val targetId = JsonPrimitive(targetNumId)
             if (lineMap["item_ref_id"] != targetId) {
                 lineMap["item_ref_id"] = targetId
                 changed = true
@@ -251,6 +275,25 @@ class SyncSender(
             if (isSingleLine && lineMap["line_total"]?.jsonPrimitive?.longOrNull != subtotalVal) {
                 lineMap["line_total"] = JsonPrimitive(subtotalVal)
                 changed = true
+            }
+            val targetRate = lineMap["rate"]?.jsonPrimitive?.longOrNull ?: lineMap["unit_price"]?.jsonPrimitive?.longOrNull ?: subtotalVal
+            val targetLineTotal = lineMap["line_total"]?.jsonPrimitive?.longOrNull ?: subtotalVal
+            if (targetUnit == "pcs") {
+                if (lineMap.containsKey("weight_grams")) {
+                    lineMap.remove("weight_grams")
+                    changed = true
+                }
+                val calculatedQty = if (targetRate > 0L) (targetLineTotal / targetRate).toInt().coerceAtLeast(1) else 1
+                if (lineMap["quantity"]?.jsonPrimitive?.intOrNull != calculatedQty) {
+                    lineMap["quantity"] = JsonPrimitive(calculatedQty)
+                    changed = true
+                }
+            } else {
+                val calculatedGrams = if (targetRate > 0L) ((targetLineTotal * 1000L) / targetRate).coerceAtLeast(1000L) else 1000L
+                if (lineMap["weight_grams"]?.jsonPrimitive?.longOrNull != calculatedGrams) {
+                    lineMap["weight_grams"] = JsonPrimitive(calculatedGrams)
+                    changed = true
+                }
             }
         }
 
@@ -320,12 +363,23 @@ class SyncSender(
                     lines.forEach { line ->
                         add(buildJsonObject {
                             put("line_id", line.id)
+                            val weightVal = line.weight
+                            val isKg = (weightVal != null && weightVal > 0.0) ||
+                                (!line.nameSnapshot.contains("pcs", ignoreCase = true) && line.nameSnapshot.contains("kg", ignoreCase = true))
                             val numericRef = line.itemRefId.toLongOrNull()
                                 ?: dbServices.firstOrNull { it.name.equals(line.nameSnapshot, ignoreCase = true) }?.id?.toLongOrNull()
-                                ?: 1L
+                                ?: when (line.itemRefId) {
+                                    "svc-kiloan" -> 1L
+                                    "svc-cuci-saja" -> 2L
+                                    "svc-setrika-saja" -> 3L
+                                    "svc-selimut" -> 4L
+                                    "svc-bedcover" -> 5L
+                                    "svc-jas" -> 6L
+                                    "svc-sepatu" -> 7L
+                                    else -> if (isKg) 1L else 4L
+                                }
                             put("item_ref_id", numericRef)
                             put("name", line.nameSnapshot)
-                            val isKg = line.weight != null || line.nameSnapshot.contains("kg", ignoreCase = true)
                             if (isKg) {
                                 val grams = line.weight?.let { Math.round(it * 1000.0) } ?: 1000L
                                 put("unit", "kg")
@@ -664,16 +718,72 @@ class SyncSender(
                             }
 
                             // Penyelarasan total server jika pernah ada penolakan hitung ulang
+                            val isLaundryAutoRecover = orderPayloadObj["order_type"]?.jsonPrimitive?.content?.equals("laundry", ignoreCase = true) == true
+                            val orderId = orderPayloadObj["order_id"]?.jsonPrimitive?.content
                             if (totalMismatchServerTotal != null) {
                                 val discountVal = orderPayloadObj["discount"]?.jsonPrimitive?.longOrNull ?: 0L
                                 val serviceVal = orderPayloadObj["service_charge"]?.jsonPrimitive?.longOrNull ?: 0L
                                 val roundingVal = orderPayloadObj["rounding"]?.jsonPrimitive?.longOrNull ?: 0L
                                 val dpp = (subtotalVal - discountVal).coerceAtLeast(0L)
-                                val alignedTax = (totalMismatchServerTotal - dpp - serviceVal - roundingVal).coerceAtLeast(0L)
-                                newOrderMap["tax"] = JsonPrimitive(alignedTax)
-                                newOrderMap["total"] = JsonPrimitive(totalMismatchServerTotal)
+                                if (isLaundryAutoRecover) {
+                                    newOrderMap["tax"] = JsonPrimitive(0L)
+                                    newOrderMap["service_charge"] = JsonPrimitive(0L)
+                                    newOrderMap["rounding"] = JsonPrimitive(0L)
+                                    newOrderMap["total"] = JsonPrimitive(totalMismatchServerTotal)
+                                    if (!orderId.isNullOrBlank()) {
+                                        orderDao?.updateOrderTotals(
+                                            orderId = orderId,
+                                            subtotal = subtotalVal,
+                                            discount = discountVal,
+                                            serviceCharge = 0L,
+                                            tax = 0L,
+                                            rounding = 0L,
+                                            total = totalMismatchServerTotal
+                                        )
+                                    }
+                                } else {
+                                    val alignedTax = (totalMismatchServerTotal - dpp - serviceVal - roundingVal).coerceAtLeast(0L)
+                                    newOrderMap["tax"] = JsonPrimitive(alignedTax)
+                                    newOrderMap["total"] = JsonPrimitive(totalMismatchServerTotal)
+                                    if (!orderId.isNullOrBlank()) {
+                                        orderDao?.updateOrderTotals(
+                                            orderId = orderId,
+                                            subtotal = subtotalVal,
+                                            discount = discountVal,
+                                            serviceCharge = serviceVal,
+                                            tax = alignedTax,
+                                            rounding = roundingVal,
+                                            total = totalMismatchServerTotal
+                                        )
+                                    }
+                                }
                                 orderChanged = true
                                 wasModified = true
+                            } else if (isLaundryAutoRecover) {
+                                val curTax = orderPayloadObj["tax"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val curServ = orderPayloadObj["service_charge"]?.jsonPrimitive?.longOrNull ?: 0L
+                                val curRound = orderPayloadObj["rounding"]?.jsonPrimitive?.longOrNull ?: 0L
+                                if (curTax != 0L || curServ != 0L || curRound != 0L) {
+                                    newOrderMap["tax"] = JsonPrimitive(0L)
+                                    newOrderMap["service_charge"] = JsonPrimitive(0L)
+                                    newOrderMap["rounding"] = JsonPrimitive(0L)
+                                    val discountVal = orderPayloadObj["discount"]?.jsonPrimitive?.longOrNull ?: 0L
+                                    val laundryExpected = (subtotalVal - discountVal).coerceAtLeast(0L)
+                                    newOrderMap["total"] = JsonPrimitive(laundryExpected)
+                                    if (!orderId.isNullOrBlank()) {
+                                        orderDao?.updateOrderTotals(
+                                            orderId = orderId,
+                                            subtotal = subtotalVal,
+                                            discount = discountVal,
+                                            serviceCharge = 0L,
+                                            tax = 0L,
+                                            rounding = 0L,
+                                            total = laundryExpected
+                                        )
+                                    }
+                                    orderChanged = true
+                                    wasModified = true
+                                }
                             }
 
                             if (orderChanged) {
@@ -697,6 +807,21 @@ class SyncSender(
                                 newMap["user_id"] = JsonPrimitive(numericUserId)
                                 evChanged = true
                                 wasModified = true
+                            }
+                            val rawApprovedBy = pObj["approved_by"]?.jsonPrimitive?.content
+                            if (!rawApprovedBy.isNullOrBlank() && pObj["approved_by"]?.jsonPrimitive?.longOrNull == null) {
+                                val numericApproved = LaundryStatusMapper.normalizeNumericUserId(rawApprovedBy) ?: 4L
+                                newMap["approved_by"] = JsonPrimitive(numericApproved)
+                                evChanged = true
+                                wasModified = true
+                            }
+                            if (backendStatus == "diambil" && !newMap.containsKey("line_ids")) {
+                                val rawLineId = pObj["order_line_id"]?.jsonPrimitive?.content
+                                if (rawLineId != null) {
+                                    newMap["line_ids"] = buildJsonArray { add(JsonPrimitive(rawLineId)) }
+                                    evChanged = true
+                                    wasModified = true
+                                }
                             }
                             if (evChanged) {
                                 ev.copy(payload = JsonObject(newMap))
@@ -1045,10 +1170,13 @@ class SyncSender(
                     .find(msg)?.groupValues?.getOrNull(1)?.toLongOrNull()
             }
             if (serverTotalFromMsg != null && receivedTotalFromMsg != null && receivedTotalFromMsg > 0L && serverTotalFromMsg > receivedTotalFromMsg) {
-                val inferredTax = serverTotalFromMsg - receivedTotalFromMsg
-                val inferredPercent = ((inferredTax * 100L) / receivedTotalFromMsg).toInt()
-                if (inferredPercent in 1..99) {
-                    syncStateDao?.set(SyncStateEntity(key = "tax_percent", value = inferredPercent.toString()))
+                val isLaundryBundle = outbox.eventsJson.contains(""""order_type":"laundry"""", ignoreCase = true)
+                if (!isLaundryBundle) {
+                    val inferredTax = serverTotalFromMsg - receivedTotalFromMsg
+                    val inferredPercent = ((inferredTax * 100L) / receivedTotalFromMsg).toInt()
+                    if (inferredPercent in 1..99) {
+                        syncStateDao?.set(SyncStateEntity(key = "tax_percent", value = inferredPercent.toString()))
+                    }
                 }
             }
 
@@ -1290,65 +1418,102 @@ class SyncSender(
                     }
 
                     // 4. Penyelarasan Pajak (Tax) & Total
-                    // Jika server menolak dengan TOTAL_MISMATCH ("total hitung 46200, diterima 42000" / "Total hitung ulang 46200, diterima 42000")
-                    // atau jika terdapat pengaturan pajak aktif dari server/dashboard (misal 10%):
-                    val totalMismatchServerTotal = outbox.lastError?.let { err ->
-                        Regex("""(?:total\s+hitung(?:\s+ulang)?|subtotal\s+hitung(?:\s+ulang)?|total\s+mismatch)\s*[:=]?\s*(\d+)""", RegexOption.IGNORE_CASE)
-                            .find(err)?.groupValues?.getOrNull(1)?.toLongOrNull()
-                    }
-                    val configuredTaxPercent = syncStateDao?.get("tax_percent")?.toIntOrNull()
-                        ?: (if (totalMismatchServerTotal != null) 10 else 0)
+                    val isLaundryOrder = (newPayloadMap["order_type"]?.jsonPrimitive?.content == "laundry"
+                        || payloadObj["order_type"]?.jsonPrimitive?.content == "laundry")
 
                     val currentTax = newPayloadMap["tax"]?.jsonPrimitive?.longOrNull ?: taxVal
                     val currentDiscount = newPayloadMap["discount"]?.jsonPrimitive?.longOrNull ?: discountVal
                     val dpp = (subtotalVal - currentDiscount).coerceAtLeast(0L)
                     val oldOrderTotal = payloadObj["total"]?.jsonPrimitive?.longOrNull ?: subtotalVal
 
-                    if (totalMismatchServerTotal != null && totalMismatchServerTotal != (newPayloadMap["total"]?.jsonPrimitive?.longOrNull ?: payloadObj["total"]?.jsonPrimitive?.longOrNull)) {
-                        val alignedTax = (totalMismatchServerTotal - dpp - serviceVal - roundingVal).coerceAtLeast(0L)
-                        newPayloadMap["tax"] = JsonPrimitive(alignedTax)
-                        newPayloadMap["total"] = JsonPrimitive(totalMismatchServerTotal)
-                        eventPayloadChanged = true
-                        isEventsModified = true
+                    if (isLaundryOrder) {
+                        // Sesuai OQ-03 & docs/business-rules.md: Laundry bebas pajak (0%), biaya layanan (0%), dan pembulatan (0)
+                        val laundryExpectedTotal = (subtotalVal - currentDiscount).coerceAtLeast(0L)
+                        val currentTaxVal = newPayloadMap["tax"]?.jsonPrimitive?.longOrNull ?: taxVal
+                        val currentServiceVal = newPayloadMap["service_charge"]?.jsonPrimitive?.longOrNull ?: serviceVal
+                        val currentRoundingVal = newPayloadMap["rounding"]?.jsonPrimitive?.longOrNull ?: roundingVal
+                        val currentTotalVal = newPayloadMap["total"]?.jsonPrimitive?.longOrNull ?: oldOrderTotal
 
-                        if (!orderId.isNullOrBlank()) {
-                            alignedOrderTotals[orderId] = oldOrderTotal to totalMismatchServerTotal
-                            orderDao?.updateOrderTotals(
-                                orderId = orderId,
-                                subtotal = subtotalVal,
-                                discount = currentDiscount,
-                                serviceCharge = serviceVal,
-                                tax = alignedTax,
-                                rounding = roundingVal,
-                                total = totalMismatchServerTotal
-                            )
-                        }
+                        val existingLocalOrder = if (!orderId.isNullOrBlank()) orderDao?.getOrderById(orderId) else null
+                        val isLocalContaminated = existingLocalOrder != null && (existingLocalOrder.tax != 0L || existingLocalOrder.serviceCharge != 0L || existingLocalOrder.rounding != 0L || existingLocalOrder.total != laundryExpectedTotal)
 
-                        if (dpp > 0L) {
-                            val inferredTaxPercent = ((alignedTax * 100L) / dpp).toInt()
-                            if (inferredTaxPercent in 1..99) {
-                                syncStateDao?.set(SyncStateEntity(key = "tax_percent", value = inferredTaxPercent.toString()))
+                        if (currentTaxVal != 0L || currentServiceVal != 0L || currentRoundingVal != 0L || currentTotalVal != laundryExpectedTotal || isLocalContaminated) {
+                            newPayloadMap["tax"] = JsonPrimitive(0L)
+                            newPayloadMap["service_charge"] = JsonPrimitive(0L)
+                            newPayloadMap["rounding"] = JsonPrimitive(0L)
+                            newPayloadMap["total"] = JsonPrimitive(laundryExpectedTotal)
+                            eventPayloadChanged = true
+                            isEventsModified = true
+
+                            if (!orderId.isNullOrBlank()) {
+                                alignedOrderTotals[orderId] = oldOrderTotal to laundryExpectedTotal
+                                orderDao?.updateOrderTotals(
+                                    orderId = orderId,
+                                    subtotal = subtotalVal,
+                                    discount = currentDiscount,
+                                    serviceCharge = 0L,
+                                    tax = 0L,
+                                    rounding = 0L,
+                                    total = laundryExpectedTotal
+                                )
                             }
                         }
-                    } else if (currentTax == 0L && configuredTaxPercent > 0 && dpp > 0L) {
-                        val calculatedTax = (dpp * configuredTaxPercent / 100L)
-                        val recalculatedTotal = dpp + serviceVal + calculatedTax + roundingVal
-                        newPayloadMap["tax"] = JsonPrimitive(calculatedTax)
-                        newPayloadMap["total"] = JsonPrimitive(recalculatedTotal)
-                        eventPayloadChanged = true
-                        isEventsModified = true
+                    } else {
+                        // Jika server menolak dengan TOTAL_MISMATCH ("total hitung 46200, diterima 42000" / "Total hitung ulang 46200, diterima 42000")
+                        // atau jika terdapat pengaturan pajak aktif dari server/dashboard (misal 10%):
+                        val totalMismatchServerTotal = outbox.lastError?.let { err ->
+                            Regex("""(?:total\s+hitung(?:\s+ulang)?|subtotal\s+hitung(?:\s+ulang)?|total\s+mismatch)\s*[:=]?\s*(\d+)""", RegexOption.IGNORE_CASE)
+                                .find(err)?.groupValues?.getOrNull(1)?.toLongOrNull()
+                        }
+                        val configuredTaxPercent = syncStateDao?.get("tax_percent")?.toIntOrNull()
+                            ?: (if (totalMismatchServerTotal != null) 10 else 0)
 
-                        if (!orderId.isNullOrBlank()) {
-                            alignedOrderTotals[orderId] = oldOrderTotal to recalculatedTotal
-                            orderDao?.updateOrderTotals(
-                                orderId = orderId,
-                                subtotal = subtotalVal,
-                                discount = currentDiscount,
-                                serviceCharge = serviceVal,
-                                tax = calculatedTax,
-                                rounding = roundingVal,
-                                total = recalculatedTotal
-                            )
+                        if (totalMismatchServerTotal != null && totalMismatchServerTotal != (newPayloadMap["total"]?.jsonPrimitive?.longOrNull ?: payloadObj["total"]?.jsonPrimitive?.longOrNull)) {
+                            val alignedTax = (totalMismatchServerTotal - dpp - serviceVal - roundingVal).coerceAtLeast(0L)
+                            newPayloadMap["tax"] = JsonPrimitive(alignedTax)
+                            newPayloadMap["total"] = JsonPrimitive(totalMismatchServerTotal)
+                            eventPayloadChanged = true
+                            isEventsModified = true
+
+                            if (!orderId.isNullOrBlank()) {
+                                alignedOrderTotals[orderId] = oldOrderTotal to totalMismatchServerTotal
+                                orderDao?.updateOrderTotals(
+                                    orderId = orderId,
+                                    subtotal = subtotalVal,
+                                    discount = currentDiscount,
+                                    serviceCharge = serviceVal,
+                                    tax = alignedTax,
+                                    rounding = roundingVal,
+                                    total = totalMismatchServerTotal
+                                )
+                            }
+
+                            if (dpp > 0L) {
+                                val inferredTaxPercent = ((alignedTax * 100L) / dpp).toInt()
+                                if (inferredTaxPercent in 1..99) {
+                                    syncStateDao?.set(SyncStateEntity(key = "tax_percent", value = inferredTaxPercent.toString()))
+                                }
+                            }
+                        } else if (currentTax == 0L && configuredTaxPercent > 0 && dpp > 0L) {
+                            val calculatedTax = (dpp * configuredTaxPercent / 100L)
+                            val recalculatedTotal = dpp + serviceVal + calculatedTax + roundingVal
+                            newPayloadMap["tax"] = JsonPrimitive(calculatedTax)
+                            newPayloadMap["total"] = JsonPrimitive(recalculatedTotal)
+                            eventPayloadChanged = true
+                            isEventsModified = true
+
+                            if (!orderId.isNullOrBlank()) {
+                                alignedOrderTotals[orderId] = oldOrderTotal to recalculatedTotal
+                                orderDao?.updateOrderTotals(
+                                    orderId = orderId,
+                                    subtotal = subtotalVal,
+                                    discount = currentDiscount,
+                                    serviceCharge = serviceVal,
+                                    tax = calculatedTax,
+                                    rounding = roundingVal,
+                                    total = recalculatedTotal
+                                )
+                            }
                         }
                     }
 
@@ -1747,13 +1912,21 @@ class SyncSender(
                         isEventsModified = true
                     }
 
-                    val isRework = payloadObj["rework"]?.jsonPrimitive?.booleanOrNull == true
                     val rawApprovedBy = payloadObj["approved_by"]?.jsonPrimitive?.content
-                    if (isRework && rawApprovedBy != null) {
+                    if (!rawApprovedBy.isNullOrBlank()) {
                         val isApprovedByError = outbox.lastError?.contains("approved_by", ignoreCase = true) == true
                         if (isApprovedByError || payloadObj["approved_by"]?.jsonPrimitive?.longOrNull == null) {
                             val numericApproved = LaundryStatusMapper.normalizeNumericUserId(rawApprovedBy) ?: 4L
                             newMap["approved_by"] = JsonPrimitive(numericApproved)
+                            statusChanged = true
+                            isEventsModified = true
+                        }
+                    }
+
+                    if (backendStatus == "diambil" && !newMap.containsKey("line_ids")) {
+                        val rawLineId = payloadObj["order_line_id"]?.jsonPrimitive?.content
+                        if (rawLineId != null) {
+                            newMap["line_ids"] = buildJsonArray { add(JsonPrimitive(rawLineId)) }
                             statusChanged = true
                             isEventsModified = true
                         }
@@ -1847,6 +2020,53 @@ class SyncSender(
 
                     if (kitchenChanged) {
                         event.copy(payload = JsonObject(newMap))
+                    } else {
+                        event
+                    }
+                } else if (event.type == "payment.recorded" && event.payload is JsonObject) {
+                    val payloadObj = event.payload as JsonObject
+                    val newPaymentMap = payloadObj.toMutableMap()
+                    var paymentChanged = false
+
+                    val pOrderId = payloadObj["order_id"]?.jsonPrimitive?.content
+                    val pAmount = payloadObj["amount"]?.jsonPrimitive?.longOrNull ?: 0L
+                    val order = if (!pOrderId.isNullOrBlank()) orderDao?.getOrderById(pOrderId) else null
+
+                    // Dual-compatibility is_dp & payment_type (F25, F26, PAY-06)
+                    if (!newPaymentMap.containsKey("is_dp") || !newPaymentMap.containsKey("payment_type")) {
+                        val isDpFromPayload = payloadObj["is_dp"]?.jsonPrimitive?.booleanOrNull
+                        val isDp = isDpFromPayload ?: (order != null && pAmount < order.total)
+                        val paymentType = when {
+                            isDp -> "dp"
+                            order != null && order.paidAmount > pAmount -> "settlement"
+                            order != null && pAmount >= order.total -> "full"
+                            else -> if (isDp) "dp" else "full"
+                        }
+                        if (!newPaymentMap.containsKey("is_dp")) {
+                            newPaymentMap["is_dp"] = JsonPrimitive(isDp)
+                            paymentChanged = true
+                        }
+                        if (!newPaymentMap.containsKey("payment_type")) {
+                            newPaymentMap["payment_type"] = JsonPrimitive(paymentType)
+                            paymentChanged = true
+                        }
+                    }
+
+                    // Penyelarasan nominal pembayaran cafe jika order lokal berstatus lunas namun ada selisih
+                    if (order != null && order.orderType != "laundry") {
+                        if (pAmount == order.subtotal && order.total != order.subtotal && order.total > 0L) {
+                            newPaymentMap["amount"] = JsonPrimitive(order.total)
+                            val tendered = payloadObj["tendered"]?.jsonPrimitive?.longOrNull
+                            if (tendered != null && tendered < order.total) {
+                                newPaymentMap["tendered"] = JsonPrimitive(order.total)
+                            }
+                            paymentChanged = true
+                        }
+                    }
+
+                    if (paymentChanged) {
+                        isEventsModified = true
+                        event.copy(payload = JsonObject(newPaymentMap))
                     } else {
                         event
                     }

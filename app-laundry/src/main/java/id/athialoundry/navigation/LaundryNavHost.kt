@@ -259,7 +259,7 @@ fun LaundryNavHost(
                         storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
                         storePhone = "0823-4778-5986",
                         isDp = isDp,
-                        shiftId = null
+                        shiftId = activeShift?.shiftId
                     )
                     navController.navigate(LaundryDestinations.PEMBAYARAN)
                 },
@@ -311,7 +311,7 @@ fun LaundryNavHost(
                         storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
                         storePhone = "0823-4778-5986",
                         isDp = false,
-                        shiftId = null
+                        shiftId = activeShift?.shiftId
                     )
                     navController.navigate(LaundryDestinations.PEMBAYARAN)
                 }

@@ -3890,4 +3890,660 @@ class SyncSenderIdempotencyTest {
         org.junit.Assert.assertTrue("Harus memuat shift.opened yang ter-prepend otomatis", sentPayload.contains(""""type":"shift.opened""""))
         org.junit.Assert.assertTrue("Harus memuat order.created", sentPayload.contains(""""type":"order.created""""))
     }
+
+    @Test
+    fun `SyncSender ensures laundry orders remain 0 tax and total equals subtotal even when tax_percent is configured in sync_state`() = runBlocking {
+        val bundleId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+
+        // Pasang konfigurasi pajak 10% di sync_state (misal hasil bootstrap atau pengaturan toko)
+        database.syncStateDao().set(id.a3.core.data.local.entity.SyncStateEntity(key = "tax_percent", value = "10"))
+
+        val orderEntity = id.a3.core.data.local.entity.OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0008",
+            businessUnitId = "bu-laundry-01",
+            shiftId = "shift-001",
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-laundry",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 31500L,
+            discount = 0L,
+            serviceCharge = 0L,
+            tax = 0L,
+            rounding = 0L,
+            total = 31500L,
+            paidAmount = 0L
+        )
+        database.orderDao().insertOrder(orderEntity)
+
+        val eventsJson = """
+            [
+                {
+                    "event_id": "${UUID.randomUUID()}",
+                    "type": "order.created",
+                    "occurred_at": "2026-11-04T12:00:00Z",
+                    "payload": {
+                        "order_id": "$orderId",
+                        "display_number": "L1-0008",
+                        "order_type": "laundry",
+                        "lines": [
+                            {
+                                "line_id": "line-cuci-1",
+                                "item_ref_id": 5,
+                                "name": "Cuci Setrika Reguler",
+                                "unit": "kg",
+                                "weight_grams": 4500,
+                                "express": false,
+                                "rate": 7000,
+                                "line_total": 31500
+                            }
+                        ],
+                        "subtotal": 31500,
+                        "discount": 0,
+                        "service_charge": 0,
+                        "tax": 0,
+                        "rounding": 0,
+                        "total": 31500
+                    }
+                }
+            ]
+        """.trimIndent()
+
+        val customSender = SyncSender(
+            outboxDao = database.outboxDao(),
+            apiService = apiService,
+            json = json,
+            currentShiftIdProvider = { "shift-001" },
+            currentDeviceIdProvider = { "dev-laundry-1" },
+            currentDeviceCodeProvider = { "L1" },
+            orderDao = database.orderDao(),
+            syncStateDao = database.syncStateDao()
+        )
+
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-laundry-1",
+            shiftId = "shift-001",
+            eventsJson = eventsJson,
+            status = OutboxStatus.PENDING,
+            attempts = 0
+        )
+        database.outboxDao().insert(outbox)
+
+        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                val bodyStr = request.body.readUtf8()
+                recordedRequest.set(bodyStr)
+                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
+                val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+                val sentBundleId = sentBundle["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody("""
+                    {
+                        "results": [
+                            {
+                                "bundle_id": "$sentBundleId",
+                                "status": "ACCEPTED"
+                            }
+                        ],
+                        "server_time": "2026-11-04T12:05:00Z"
+                    }
+                """.trimIndent())
+            }
+        }
+
+        val summary = customSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+
+        val sentPayload = recordedRequest.get()
+        assertNotNull(sentPayload)
+        val jsonBody = json.parseToJsonElement(sentPayload).jsonObject
+        val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+        val orderCreated = sentBundle["events"]!!.jsonArray.first { it.jsonObject["type"]!!.jsonPrimitive.content == "order.created" }.jsonObject
+        val payload = orderCreated["payload"]!!.jsonObject
+
+        assertEquals(0L, payload["tax"]!!.jsonPrimitive.content.toLong())
+        assertEquals(0L, payload["service_charge"]!!.jsonPrimitive.content.toLong())
+        assertEquals(0L, payload["rounding"]!!.jsonPrimitive.content.toLong())
+        assertEquals(31500L, payload["total"]!!.jsonPrimitive.content.toLong())
+    }
+
+    @Test
+    fun `SyncSender auto-recovers and sanitizes tax-contaminated laundry order back to 0 tax and correct total`() = runBlocking {
+        val bundleId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+
+        database.syncStateDao().set(id.a3.core.data.local.entity.SyncStateEntity(key = "tax_percent", value = "10"))
+
+        val orderEntity = id.a3.core.data.local.entity.OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0009",
+            businessUnitId = "bu-laundry-01",
+            shiftId = "shift-001",
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-laundry",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 31500L,
+            discount = 0L,
+            serviceCharge = 0L,
+            tax = 3150L,
+            rounding = 0L,
+            total = 34650L,
+            paidAmount = 0L
+        )
+        database.orderDao().insertOrder(orderEntity)
+
+        // Bundel terkontaminasi pajak 10% dan sebelumnya ditolak server dengan selisih hitung total
+        val contaminatedEventsJson = """
+            [
+                {
+                    "event_id": "${UUID.randomUUID()}",
+                    "type": "order.created",
+                    "occurred_at": "2026-11-04T12:00:00Z",
+                    "payload": {
+                        "order_id": "$orderId",
+                        "display_number": "L1-0009",
+                        "order_type": "laundry",
+                        "lines": [
+                            {
+                                "line_id": "line-cuci-2",
+                                "item_ref_id": 5,
+                                "name": "Cuci Setrika Reguler",
+                                "unit": "kg",
+                                "weight_grams": 4500,
+                                "express": false,
+                                "rate": 7000,
+                                "line_total": 31500
+                            }
+                        ],
+                        "subtotal": 31500,
+                        "discount": 0,
+                        "service_charge": 0,
+                        "tax": 3150,
+                        "rounding": 0,
+                        "total": 34650
+                    }
+                }
+            ]
+        """.trimIndent()
+
+        val customSender = SyncSender(
+            outboxDao = database.outboxDao(),
+            apiService = apiService,
+            json = json,
+            currentShiftIdProvider = { "shift-001" },
+            currentDeviceIdProvider = { "dev-laundry-1" },
+            currentDeviceCodeProvider = { "L1" },
+            orderDao = database.orderDao(),
+            syncStateDao = database.syncStateDao()
+        )
+
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-laundry-1",
+            shiftId = "shift-001",
+            eventsJson = contaminatedEventsJson,
+            status = OutboxStatus.FAILED,
+            attempts = 1,
+            lastError = "total hitung 31500, diterima 34650"
+        )
+        database.outboxDao().insert(outbox)
+
+        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                val bodyStr = request.body.readUtf8()
+                recordedRequest.set(bodyStr)
+                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
+                val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+                val sentBundleId = sentBundle["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody("""
+                    {
+                        "results": [
+                            {
+                                "bundle_id": "$sentBundleId",
+                                "status": "ACCEPTED"
+                            }
+                        ],
+                        "server_time": "2026-11-04T12:05:00Z"
+                    }
+                """.trimIndent())
+            }
+        }
+
+        val summary = customSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+
+        val sentPayload = recordedRequest.get()
+        assertNotNull(sentPayload)
+        val jsonBody = json.parseToJsonElement(sentPayload).jsonObject
+        val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+        val orderCreated = sentBundle["events"]!!.jsonArray.first { it.jsonObject["type"]!!.jsonPrimitive.content == "order.created" }.jsonObject
+        val payload = orderCreated["payload"]!!.jsonObject
+
+        // Verifikasi pajak telah dinolkan dan total kembali ke subtotal asli
+        assertEquals(0L, payload["tax"]!!.jsonPrimitive.content.toLong())
+        assertEquals(0L, payload["service_charge"]!!.jsonPrimitive.content.toLong())
+        assertEquals(0L, payload["rounding"]!!.jsonPrimitive.content.toLong())
+        assertEquals(31500L, payload["total"]!!.jsonPrimitive.content.toLong())
+
+        // Verifikasi entitas lokal di Room juga telah dipulihkan
+        val localOrder = database.orderDao().getOrderById(orderId)
+        assertNotNull(localOrder)
+        assertEquals(0L, localOrder!!.tax)
+        assertEquals(31500L, localOrder.total)
+    }
+
+    @Test
+    fun `SyncSender auto-injects is_dp and payment_type into payment recorded when missing`() = runBlocking {
+        val bundleId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+        val paymentId = UUID.randomUUID().toString()
+
+        val orderEntity = id.a3.core.data.local.entity.OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0021",
+            businessUnitId = "bu-laundry-01",
+            shiftId = "shift-001",
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-laundry",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 53000L,
+            discount = 0L,
+            serviceCharge = 0L,
+            tax = 0L,
+            rounding = 0L,
+            total = 53000L,
+            paidAmount = 20000L
+        )
+        database.orderDao().insertOrder(orderEntity)
+
+        // Payload payment lama/offline tanpa field is_dp & payment_type
+        val paymentEventsJson = """
+            [
+                {
+                    "event_id": "${UUID.randomUUID()}",
+                    "type": "payment.recorded",
+                    "occurred_at": "2026-11-04T12:00:00Z",
+                    "payload": {
+                        "payment_id": "$paymentId",
+                        "order_id": "$orderId",
+                        "method": "cash",
+                        "amount": 20000,
+                        "tendered": 20000,
+                        "idempotency_key": "${UUID.randomUUID()}"
+                    }
+                }
+            ]
+        """.trimIndent()
+
+        val customSender = SyncSender(
+            outboxDao = database.outboxDao(),
+            apiService = apiService,
+            json = json,
+            currentShiftIdProvider = { "shift-001" },
+            currentDeviceIdProvider = { "dev-laundry-1" },
+            currentDeviceCodeProvider = { "L1" },
+            orderDao = database.orderDao(),
+            syncStateDao = database.syncStateDao()
+        )
+
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-laundry-1",
+            shiftId = "shift-001",
+            eventsJson = paymentEventsJson,
+            status = OutboxStatus.PENDING,
+            attempts = 0
+        )
+        database.outboxDao().insert(outbox)
+
+        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                val bodyStr = request.body.readUtf8()
+                recordedRequest.set(bodyStr)
+                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
+                val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+                val sentBundleId = sentBundle["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody("""
+                    {
+                        "results": [
+                            {
+                                "bundle_id": "$sentBundleId",
+                                "status": "ACCEPTED"
+                            }
+                        ],
+                        "server_time": "2026-11-04T12:05:00Z"
+                    }
+                """.trimIndent())
+            }
+        }
+
+        val summary = customSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+
+        val sentPayload = recordedRequest.get()
+        assertNotNull(sentPayload)
+        val jsonBody = json.parseToJsonElement(sentPayload).jsonObject
+        val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+        val paymentRecorded = sentBundle["events"]!!.jsonArray.first { it.jsonObject["type"]!!.jsonPrimitive.content == "payment.recorded" }.jsonObject
+        val payload = paymentRecorded["payload"]!!.jsonObject
+
+        // Verifikasi is_dp true dan payment_type dp terinjeksi otomatis karena 20000 < total 53000
+        assertEquals(true, payload["is_dp"]!!.jsonPrimitive.content.toBoolean())
+        assertEquals("dp", payload["payment_type"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `SyncSender strips weight_grams and ensures numeric item_ref_id for pcs laundry service (Poin 4)`() = runBlocking {
+        // Master data Room hanya memiliki entitas awal berbasis string (misal belum bootstrap)
+        val initialPcsService = id.a3.core.data.local.entity.LaundryServiceEntity(
+            id = "svc-selimut",
+            name = "Selimut Tebal",
+            unit = "pcs",
+            rate = 25000L,
+            expressRate = 35000L,
+            minWeight = 1.0,
+            weightStep = 1.0,
+            active = true
+        )
+        database.masterDataDao().upsertLaundryService(initialPcsService)
+
+        val customSender = SyncSender(
+            outboxDao = database.outboxDao(),
+            apiService = apiService,
+            json = json,
+            currentDeviceCodeProvider = { "L1" },
+            orderDao = database.orderDao(),
+            masterDataDao = database.masterDataDao()
+        )
+
+        val bundleId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+
+        // Bundel dengan baris pcs yang terkontaminasi weight_grams dan item_ref_id string
+        val eventsJson = """
+            [
+                {
+                    "event_id": "${UUID.randomUUID()}",
+                    "type": "order.created",
+                    "occurred_at": "2026-11-04T12:10:00Z",
+                    "payload": {
+                        "order_id": "$orderId",
+                        "display_number": "L1-0021",
+                        "order_type": "laundry",
+                        "customer": {
+                            "name": "Ibu Rahma",
+                            "phone": "081234567899"
+                        },
+                        "lines": [
+                            {
+                                "line_id": "line-pcs-1",
+                                "item_ref_id": "svc-selimut",
+                                "name": "Selimut Tebal",
+                                "unit": "pcs",
+                                "weight_grams": 2000,
+                                "rate": 25000,
+                                "line_total": 50000,
+                                "quantity": 2,
+                                "unit_price": 25000
+                            }
+                        ],
+                        "subtotal": 50000,
+                        "discount": 0,
+                        "service_charge": 0,
+                        "tax": 0,
+                        "rounding": 0,
+                        "total": 50000
+                    }
+                }
+            ]
+        """.trimIndent()
+
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-laundry-1",
+            shiftId = null,
+            eventsJson = eventsJson,
+            status = OutboxStatus.PENDING,
+            attempts = 0
+        )
+        database.outboxDao().insert(outbox)
+
+        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                val bodyStr = request.body.readUtf8()
+                recordedRequest.set(bodyStr)
+                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
+                val sentBundleId = jsonBody["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody("""
+                    {
+                        "results": [
+                            {
+                                "bundle_id": "$sentBundleId",
+                                "status": "ACCEPTED"
+                            }
+                        ],
+                        "server_time": "2026-11-04T12:15:00Z"
+                    }
+                """.trimIndent())
+            }
+        }
+
+        val summary = customSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+
+        val sentPayload = recordedRequest.get()
+        assertNotNull(sentPayload)
+
+        val jsonBody = json.parseToJsonElement(sentPayload).jsonObject
+        val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+        val orderCreated = sentBundle["events"]!!.jsonArray.first { it.jsonObject["type"]!!.jsonPrimitive.content == "order.created" }.jsonObject
+        val sentLine = orderCreated["payload"]!!.jsonObject["lines"]!!.jsonArray[0].jsonObject
+
+        // Verifikasi item_ref_id numerik 4L (terpetakan dari svc-selimut) dan bukan string
+        assertEquals(4L, sentLine["item_ref_id"]!!.jsonPrimitive.content.toLong())
+        assertEquals("pcs", sentLine["unit"]!!.jsonPrimitive.content)
+        assertEquals(2, sentLine["quantity"]!!.jsonPrimitive.content.toInt())
+        assertEquals(50000L, sentLine["line_total"]!!.jsonPrimitive.content.toLong())
+
+        // Verifikasi mutlak: atribut weight_grams berhasil dihapus total dari baris pcs!
+        org.junit.Assert.assertFalse("Atribut weight_grams wajib dihapus dari baris layanan satuan pcs", sentLine.containsKey("weight_grams"))
+    }
+
+    @Test
+    fun `SyncSender maps initial string service ID svc-kiloan to numeric ID 1 when master data only has initial string entities (Poin 4)`() = runBlocking {
+        val initialKiloanService = id.a3.core.data.local.entity.LaundryServiceEntity(
+            id = "svc-kiloan",
+            name = "Kiloan Reguler (Cuci + Setrika)",
+            unit = "kg",
+            rate = 7000L,
+            expressRate = 10000L,
+            minWeight = 1.0,
+            weightStep = 0.5,
+            active = true
+        )
+        database.masterDataDao().upsertLaundryService(initialKiloanService)
+
+        val customSender = SyncSender(
+            outboxDao = database.outboxDao(),
+            apiService = apiService,
+            json = json,
+            currentDeviceCodeProvider = { "L1" },
+            orderDao = database.orderDao(),
+            masterDataDao = database.masterDataDao()
+        )
+
+        val bundleId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+
+        val eventsJson = """
+            [
+                {
+                    "event_id": "${UUID.randomUUID()}",
+                    "type": "order.created",
+                    "occurred_at": "2026-11-04T12:20:00Z",
+                    "payload": {
+                        "order_id": "$orderId",
+                        "display_number": "L1-0022",
+                        "order_type": "laundry",
+                        "customer": {
+                            "name": "Pak Joko",
+                            "phone": "081234567811"
+                        },
+                        "lines": [
+                            {
+                                "line_id": "line-kg-1",
+                                "item_ref_id": "svc-kiloan",
+                                "name": "Kiloan Reguler (Cuci + Setrika)",
+                                "unit": "kg",
+                                "weight_grams": 3000,
+                                "rate": 7000,
+                                "line_total": 21000,
+                                "quantity": 1,
+                                "unit_price": 7000
+                            }
+                        ],
+                        "subtotal": 21000,
+                        "discount": 0,
+                        "service_charge": 0,
+                        "tax": 0,
+                        "rounding": 0,
+                        "total": 21000
+                    }
+                }
+            ]
+        """.trimIndent()
+
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-laundry-1",
+            shiftId = null,
+            eventsJson = eventsJson,
+            status = OutboxStatus.PENDING,
+            attempts = 0
+        )
+        database.outboxDao().insert(outbox)
+
+        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                val bodyStr = request.body.readUtf8()
+                recordedRequest.set(bodyStr)
+                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
+                val sentBundleId = jsonBody["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody("""
+                    {
+                        "results": [
+                            {
+                                "bundle_id": "$sentBundleId",
+                                "status": "ACCEPTED"
+                            }
+                        ],
+                        "server_time": "2026-11-04T12:25:00Z"
+                    }
+                """.trimIndent())
+            }
+        }
+
+        val summary = customSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+
+        val sentPayload = recordedRequest.get()
+        assertNotNull(sentPayload)
+
+        val jsonBody = json.parseToJsonElement(sentPayload).jsonObject
+        val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+        val orderCreated = sentBundle["events"]!!.jsonArray.first { it.jsonObject["type"]!!.jsonPrimitive.content == "order.created" }.jsonObject
+        val sentLine = orderCreated["payload"]!!.jsonObject["lines"]!!.jsonArray[0].jsonObject
+
+        // Verifikasi item_ref_id numerik 1L terpetakan dari svc-kiloan
+        assertEquals(1L, sentLine["item_ref_id"]!!.jsonPrimitive.content.toLong())
+        assertEquals("kg", sentLine["unit"]!!.jsonPrimitive.content)
+        assertEquals(3000L, sentLine["weight_grams"]!!.jsonPrimitive.content.toLong())
+    }
+
+    @Test
+    fun `SyncSender handles direct laundry status_changed with status diambil and normalizes approved_by (Poin 4)`() = runBlocking {
+        val customSender = SyncSender(
+            outboxDao = database.outboxDao(),
+            apiService = apiService,
+            json = json
+        )
+
+        val bundleId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+        val lineId = UUID.randomUUID().toString()
+
+        val eventsJson = """
+            [
+                {
+                    "event_id": "${UUID.randomUUID()}",
+                    "type": "laundry.status_changed",
+                    "occurred_at": "2026-11-04T12:30:00Z",
+                    "payload": {
+                        "order_id": "$orderId",
+                        "status": "diambil",
+                        "order_line_id": "$lineId",
+                        "quantity": 1,
+                        "is_final": true,
+                        "approved_by": "u-manager-1"
+                    }
+                }
+            ]
+        """.trimIndent()
+
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-laundry-1",
+            shiftId = null,
+            eventsJson = eventsJson,
+            status = OutboxStatus.PENDING,
+            attempts = 0
+        )
+        database.outboxDao().insert(outbox)
+
+        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                val bodyStr = request.body.readUtf8()
+                recordedRequest.set(bodyStr)
+                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
+                val sentBundleId = jsonBody["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody("""
+                    {
+                        "results": [
+                            {
+                                "bundle_id": "$sentBundleId",
+                                "status": "ACCEPTED"
+                            }
+                        ],
+                        "server_time": "2026-11-04T12:35:00Z"
+                    }
+                """.trimIndent())
+            }
+        }
+
+        val summary = customSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+
+        val sentPayload = recordedRequest.get()
+        assertNotNull(sentPayload)
+
+        val jsonBody = json.parseToJsonElement(sentPayload).jsonObject
+        val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+        val statusChanged = sentBundle["events"]!!.jsonArray.first { it.jsonObject["type"]!!.jsonPrimitive.content == "laundry.status_changed" }.jsonObject
+        val payload = statusChanged["payload"]!!.jsonObject
+
+        assertEquals("diambil", payload["status"]!!.jsonPrimitive.content)
+        assertEquals(4L, payload["user_id"]!!.jsonPrimitive.content.toLong())
+        assertEquals(4L, payload["approved_by"]!!.jsonPrimitive.content.toLong())
+        org.junit.Assert.assertTrue("line_ids harus array membawa lineId", payload["line_ids"]!!.jsonArray.any { it.jsonPrimitive.content == lineId })
+    }
 }

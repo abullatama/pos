@@ -19,6 +19,7 @@ import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
 import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.data.local.entity.OutboxEntity
+import id.a3.core.data.local.entity.OutboxStatus
 import id.a3.core.data.local.entity.PaymentEntity
 import id.a3.core.data.local.entity.ShiftEntity
 import id.a3.core.data.util.CorrectionReasonMapper
@@ -584,6 +585,14 @@ class OrderTransactionManager(
             val bundleId = UUID.randomUUID().toString()
             val occurredAt = Instant.now().toString()
 
+            val isPartialDp = isDp || (newPaidAmount < currentOrder.total)
+            val paymentType = when {
+                isDp -> "dp"
+                currentOrder.paidAmount > 0L -> "settlement"
+                newPaidAmount >= currentOrder.total -> "full"
+                else -> "dp"
+            }
+
             val paymentPayload = buildJsonObject {
                 put("payment_id", paymentId)
                 put("order_id", orderId)
@@ -591,6 +600,8 @@ class OrderTransactionManager(
                 put("amount", amount)
                 tendered?.let { put("tendered", it) }
                 put("idempotency_key", idempotencyKey)
+                put("is_dp", isPartialDp)
+                put("payment_type", paymentType)
             }
 
             val paymentEvent = buildJsonObject {
@@ -600,18 +611,45 @@ class OrderTransactionManager(
                 put("payload", paymentPayload)
             }
 
-            val eventsArray = buildJsonArray {
-                add(paymentEvent)
+            val effectiveDeviceId = currentOrder.deviceId.ifBlank { deviceId }
+
+            // Poin 2: Penyatuan Transaksi Atomik Outbox
+            // Jika bundel order.created untuk pesanan ini masih berstatus PENDING di outbox lokal,
+            // gabungkan event payment.recorded ke dalam bundel atomik yang sama ([order.created, payment.recorded]).
+            val pendingBundles = outboxDao.findBundlesByOrderId(orderId)
+                .filter { it.status == OutboxStatus.PENDING }
+            val pendingOrderCreatedBundle = pendingBundles.firstOrNull { bundle ->
+                bundle.eventsJson.contains(""""type":"order.created"""")
             }
 
-            val outbox = OutboxEntity(
-                bundleId = bundleId,
-                deviceId = deviceId,
-                shiftId = effectiveShiftId,
-                eventsJson = eventsArray.toString()
-            )
-            outboxDao.insert(outbox)
-            outbox
+            if (pendingOrderCreatedBundle != null) {
+                val existingEventsList = Json.parseToJsonElement(pendingOrderCreatedBundle.eventsJson).jsonArray.toMutableList()
+                existingEventsList.add(paymentEvent)
+                val updatedEventsJson = buildJsonArray {
+                    existingEventsList.forEach { add(it) }
+                }.toString()
+                outboxDao.updateEventsJson(pendingOrderCreatedBundle.bundleId, updatedEventsJson)
+                if (effectiveShiftId != null && effectiveShiftId != pendingOrderCreatedBundle.shiftId) {
+                    outboxDao.updateShiftId(pendingOrderCreatedBundle.bundleId, effectiveShiftId)
+                }
+                pendingOrderCreatedBundle.copy(
+                    eventsJson = updatedEventsJson,
+                    shiftId = effectiveShiftId ?: pendingOrderCreatedBundle.shiftId
+                )
+            } else {
+                val eventsArray = buildJsonArray {
+                    add(paymentEvent)
+                }
+
+                val outbox = OutboxEntity(
+                    bundleId = bundleId,
+                    deviceId = effectiveDeviceId,
+                    shiftId = effectiveShiftId,
+                    eventsJson = eventsArray.toString()
+                )
+                outboxDao.insert(outbox)
+                outbox
+            }
         }
     }
 
@@ -721,6 +759,8 @@ class OrderTransactionManager(
                 put("amount", amount)
                 tendered?.let { put("tendered", it) }
                 put("idempotency_key", idempotencyKey)
+                put("is_dp", false)
+                put("payment_type", "full")
             }
 
             val paymentEvent = buildJsonObject {
@@ -801,9 +841,21 @@ class OrderTransactionManager(
                         add(
                             buildJsonObject {
                                 put("line_id", line.id)
-                                put("item_ref_id", line.itemRefId.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(line.itemRefId))
+                                val weightVal = line.weight
+                                val isKg = (weightVal != null && weightVal > 0.0) ||
+                                    (!line.nameSnapshot.contains("pcs", ignoreCase = true) && line.nameSnapshot.contains("kg", ignoreCase = true))
+                                val numericRef = line.itemRefId.toLongOrNull() ?: when (line.itemRefId) {
+                                    "svc-kiloan" -> 1L
+                                    "svc-cuci-saja" -> 2L
+                                    "svc-setrika-saja" -> 3L
+                                    "svc-selimut" -> 4L
+                                    "svc-bedcover" -> 5L
+                                    "svc-jas" -> 6L
+                                    "svc-sepatu" -> 7L
+                                    else -> if (isKg) 1L else 4L
+                                }
+                                put("item_ref_id", numericRef)
                                 put("name", line.nameSnapshot)
-                                val isKg = line.weight != null || line.nameSnapshot.contains("kg", ignoreCase = true)
                                 if (isKg) {
                                     val grams = line.weight?.let { Math.round(it * 1000.0) } ?: 1000L
                                     put("unit", "kg")
@@ -964,7 +1016,7 @@ class OrderTransactionManager(
      * - Menyimpan entitas pengambilan ke Room (laundry_pickups).
      * - Memvalidasi proteksi belum lunas (LDR-10, F24): jika sisa > 0, wajib menyertakan [approvedBy] (Manager).
      * - Memeriksa apakah semua baris order telah ditandai is_final = true. Jika ya, status order bertransisi ke 'picked_up'.
-     * - Menyusun event 'laundry.picked_up' ke antrean outbox secara atomik tanpa shift_id.
+     * - Menyusun event 'laundry.status_changed' (status: diambil) ke antrean outbox secara atomik tanpa shift_id.
      */
     suspend fun recordLaundryPickups(
         orderId: String,
@@ -1017,28 +1069,33 @@ class OrderTransactionManager(
                 orderDao.updateOrder(order.copy(status = "picked_up"))
             }
 
-            // 3. Susun event outbox laundry.picked_up untuk tiap item pengambilan
+            // 3. Susun event outbox laundry.status_changed untuk tiap item pengambilan (sesuai Laravel 12 API 4.9)
             val eventsArray = buildJsonArray {
                 items.forEach { item ->
+                    val numericUserId = LaundryStatusMapper.normalizeNumericUserId(userId) ?: 4L
                     val numericApprovedBy = approvedBy?.let { LaundryStatusMapper.normalizeNumericUserId(it) }
                     val payload = buildJsonObject {
                         put("order_id", orderId)
-                        put("order_line_id", item.orderLineId)
+                        put("status", "diambil")
+                        put("backend_status", "diambil")
+                        put("user_id", JsonPrimitive(numericUserId))
                         put("line_ids", buildJsonArray { add(JsonPrimitive(item.orderLineId)) })
+                        put("order_line_id", item.orderLineId)
                         put("quantity", item.quantity)
                         put("is_final", item.isFinal)
-                        put("status", "diambil")
                         item.note?.let { put("note", it) }
                         if (approvedBy != null) {
-                            put("approved_by", approvedBy)
                             if (numericApprovedBy != null) {
+                                put("approved_by", JsonPrimitive(numericApprovedBy))
                                 put("approved_by_id", JsonPrimitive(numericApprovedBy))
+                            } else {
+                                put("approved_by", approvedBy)
                             }
                         }
                     }
                     val eventObj = buildJsonObject {
                         put("event_id", UUID.randomUUID().toString())
-                        put("type", "laundry.picked_up")
+                        put("type", "laundry.status_changed")
                         put("occurred_at", occurredAt)
                         put("payload", payload)
                     }
