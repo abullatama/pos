@@ -1,5 +1,6 @@
 package id.a3coffeeshop.navigation
 
+import id.a3coffeeshop.BuildConfig
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -118,7 +119,7 @@ fun CafeNavHost(
             printerService = printerService,
             deviceId = deviceId,
             businessUnitId = businessUnitId,
-            appVersion = "1.0.0"
+            appVersion = BuildConfig.VERSION_NAME
         )
     )
 

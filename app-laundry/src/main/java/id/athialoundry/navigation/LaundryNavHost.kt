@@ -1,5 +1,6 @@
 package id.athialoundry.navigation
 
+import id.athialoundry.BuildConfig
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -144,7 +145,7 @@ fun LaundryNavHost(
             printerService = printerService,
             deviceId = deviceId,
             businessUnitId = businessUnitId,
-            appVersion = "1.0.0"
+            appVersion = BuildConfig.VERSION_NAME
         )
     )
 
