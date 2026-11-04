@@ -30,4 +30,10 @@ interface CashOutDao {
 
     @Query("SELECT * FROM cash_outs ORDER BY createdAt DESC")
     fun observeAllCashOuts(): Flow<List<CashOutEntity>>
+
+    @Query("SELECT * FROM cash_outs WHERE receiptFileId = :fileId LIMIT 1")
+    suspend fun getCashOutByReceiptFileId(fileId: String): CashOutEntity?
+
+    @Query("SELECT * FROM cash_outs WHERE id = :cashoutId LIMIT 1")
+    suspend fun getCashOutById(cashoutId: String): CashOutEntity?
 }

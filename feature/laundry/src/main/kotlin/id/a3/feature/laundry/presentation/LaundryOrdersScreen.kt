@@ -1006,28 +1006,45 @@ private fun LaundryPickupDialog(
                     color = colors.ink
                 )
 
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 220.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(orderWithLines.lines) { line ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(shapes.cardShape)
-                                .background(colors.canvas)
-                                .padding(10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "• ${line.nameSnapshot} (${line.quantity} item)",
-                                style = A3Theme.typography.body,
-                                color = colors.ink
-                            )
-                            A3StatusChip(label = "Diambil Penuh", token = StatusToken.INFO)
+                if (orderWithLines.lines.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(shapes.cardShape)
+                            .background(colors.canvas)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Memeriksa rincian pakaian... Tekan Ambil Semua untuk pemulihan otomatis.",
+                            style = A3Theme.typography.bodySmall,
+                            color = colors.inkMuted
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 220.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(orderWithLines.lines) { line ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(shapes.cardShape)
+                                    .background(colors.canvas)
+                                    .padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "• ${line.nameSnapshot} (${line.quantity} item)",
+                                    style = A3Theme.typography.body,
+                                    color = colors.ink
+                                )
+                                A3StatusChip(label = "Diambil Penuh", token = StatusToken.INFO)
+                            }
                         }
                     }
                 }

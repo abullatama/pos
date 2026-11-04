@@ -10,5 +10,9 @@ interface AppConfig {
     val appVersion: String
     val appName: String
     val apiBaseUrl: String
-        get() = "https://a3-api.sidik.cloud/v1/"
+        get() = DEFAULT_API_BASE_URL
+
+    companion object {
+        const val DEFAULT_API_BASE_URL = "https://a3-api.nen.asia/v1/"
+    }
 }

@@ -136,7 +136,8 @@ fun AdminMenuScreen(
                 onPrintEmergencySop = { viewModel.printEmergencySop() },
                 onCheckUpdate = viewModel::checkUpdateEligibility,
                 onSelectApkFile = { apkPickerLauncher.launch("application/vnd.android.package-archive") },
-                onTriggerHeartbeat = { viewModel.triggerHeartbeat() }
+                onTriggerHeartbeat = { viewModel.triggerHeartbeat() },
+                onRetryFailedSync = { viewModel.retryAllFailedSync(currentDeviceId = uiState.deviceId) }
             )
         }
 
@@ -562,7 +563,8 @@ private fun AdminDashboard(
     onPrintEmergencySop: () -> Unit = {},
     onCheckUpdate: () -> Unit,
     onSelectApkFile: () -> Unit,
-    onTriggerHeartbeat: () -> Unit = {}
+    onTriggerHeartbeat: () -> Unit = {},
+    onRetryFailedSync: () -> Unit = {}
 ) {
     val colors = A3Theme.colors
 
@@ -731,38 +733,82 @@ private fun AdminDashboard(
                         }
 
                         // Sinkronisasi
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Sync,
-                                    contentDescription = "Sync",
-                                    tint = colors.ink,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Column {
-                                    Text(
-                                        text = "Antrean Sinkron",
-                                        style = A3Theme.typography.label,
-                                        color = colors.ink
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Sync,
+                                        contentDescription = "Sync",
+                                        tint = colors.ink,
+                                        modifier = Modifier.size(22.dp)
                                     )
+                                    Column {
+                                        Text(
+                                            text = "Antrean Sinkron",
+                                            style = A3Theme.typography.label,
+                                            color = colors.ink
+                                        )
+                                        Text(
+                                            text = when {
+                                                uiState.failedOutboxCount > 0 -> "${uiState.failedOutboxCount} data bermasalah (${uiState.unsyncedOutboxCount} antre)"
+                                                uiState.unsyncedOutboxCount == 0 -> "Tersinkron penuh"
+                                                else -> "${uiState.unsyncedOutboxCount} data menunggu"
+                                            },
+                                            style = A3Theme.typography.bodySmall,
+                                            color = when {
+                                                uiState.failedOutboxCount > 0 -> colors.status.danger.text
+                                                uiState.unsyncedOutboxCount == 0 -> colors.inkMuted
+                                                else -> colors.status.warning.text
+                                            }
+                                        )
+                                    }
+                                }
+                                A3StatusChip(
+                                    label = when {
+                                        uiState.failedOutboxCount > 0 -> "${uiState.failedOutboxCount} Bermasalah"
+                                        uiState.unsyncedOutboxCount == 0 -> "Sinkron"
+                                        else -> "${uiState.unsyncedOutboxCount} Pending"
+                                    },
+                                    token = when {
+                                        uiState.failedOutboxCount > 0 -> StatusToken.DANGER
+                                        uiState.unsyncedOutboxCount == 0 -> StatusToken.SUCCESS
+                                        else -> StatusToken.WARNING
+                                    }
+                                )
+                            }
+
+                            if (uiState.failedOutboxCount > 0) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(colors.status.danger.background)
+                                        .border(1.dp, colors.status.danger.text.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Text(
-                                        text = if (uiState.unsyncedOutboxCount == 0) "Tersinkron penuh" else "${uiState.unsyncedOutboxCount} data menunggu",
+                                        text = uiState.lastFailedError?.let { "Error: $it" } ?: "Beberapa bundel transaksi ditolak server.",
                                         style = A3Theme.typography.bodySmall,
-                                        color = if (uiState.unsyncedOutboxCount == 0) colors.inkMuted else colors.status.warning.text
+                                        color = colors.status.danger.text,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    A3Button(
+                                        label = if (uiState.isRetryingSync) "Mencoba..." else "Coba Kirim Ulang",
+                                        onClick = onRetryFailedSync,
+                                        enabled = !uiState.isRetryingSync,
+                                        variant = ButtonVariant.SECONDARY
                                     )
                                 }
                             }
-                            A3StatusChip(
-                                label = if (uiState.unsyncedOutboxCount == 0) "Sinkron" else "${uiState.unsyncedOutboxCount} Pending",
-                                token = if (uiState.unsyncedOutboxCount == 0) StatusToken.SUCCESS else StatusToken.WARNING
-                            )
                         }
 
                         // Detak Jantung / Heartbeat Perangkat (F41 & OPS-01)

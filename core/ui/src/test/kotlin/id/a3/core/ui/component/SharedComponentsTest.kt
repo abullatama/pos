@@ -133,4 +133,75 @@ class SharedComponentsTest {
         assertEquals("", input)
         assertEquals(true, clearCalled)
     }
+
+    @Test
+    fun `CashierLoginDialog supports 4 to 6 digit PIN input and enables Masuk button`() {
+        var submittedUserId: String? = null
+        var submittedPin: String? = null
+        val testAccounts = listOf(
+            CashierAccountItem(id = "3", name = "Budi Santoso", role = "kasir"),
+            CashierAccountItem(id = "2", name = "Siti Aminah", role = "manager")
+        )
+
+        composeTestRule.setContent {
+            CafeTheme {
+                CashierLoginDialog(
+                    accounts = testAccounts,
+                    onLoginClick = { userId, pin ->
+                        submittedUserId = userId
+                        submittedPin = pin
+                    }
+                )
+            }
+        }
+
+        // Akun pertama terpilih default
+        composeTestRule.onNodeWithText("Budi Santoso").assertIsDisplayed()
+
+        // Masukkan 5 digit PIN: 1, 2, 3, 4, 5
+        composeTestRule.onNodeWithText("1").performClick()
+        composeTestRule.onNodeWithText("2").performClick()
+        composeTestRule.onNodeWithText("3").performClick()
+        composeTestRule.onNodeWithText("4").performClick()
+        composeTestRule.onNodeWithText("5").performClick()
+
+        // Tombol Masuk harus tampil dan dapat diklik untuk PIN 5 digit
+        composeTestRule.onNodeWithText("Masuk").performClick()
+
+        assertEquals("3", submittedUserId)
+        assertEquals("12345", submittedPin)
+    }
+
+    @Test
+    fun `CashierLoginDialog auto-submits on 6th digit`() {
+        var submittedUserId: String? = null
+        var submittedPin: String? = null
+        val testAccounts = listOf(
+            CashierAccountItem(id = "1", name = "Kasir Cafe", role = "kasir")
+        )
+
+        composeTestRule.setContent {
+            CafeTheme {
+                CashierLoginDialog(
+                    accounts = testAccounts,
+                    onLoginClick = { userId, pin ->
+                        submittedUserId = userId
+                        submittedPin = pin
+                    }
+                )
+            }
+        }
+
+        // Ketik 6 digit: 6, 5, 4, 3, 2, 1
+        composeTestRule.onNodeWithText("6").performClick()
+        composeTestRule.onNodeWithText("5").performClick()
+        composeTestRule.onNodeWithText("4").performClick()
+        composeTestRule.onNodeWithText("3").performClick()
+        composeTestRule.onNodeWithText("2").performClick()
+        composeTestRule.onNodeWithText("1").performClick()
+
+        // Langsung terkirim otomatis di digit ke-6
+        assertEquals("1", submittedUserId)
+        assertEquals("654321", submittedPin)
+    }
 }

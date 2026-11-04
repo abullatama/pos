@@ -2,6 +2,7 @@ package id.a3.core.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.HourglassTop
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.TabletAndroid
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -69,7 +71,8 @@ fun DeviceRegistrationScreen(
     isLoading: Boolean = false,
     errorMessage: String? = null,
     businessUnitName: String? = null,
-    onDebugBypassClick: (() -> Unit)? = null
+    onDebugBypassClick: (() -> Unit)? = null,
+    onRegenerateDeviceId: (() -> Unit)? = null
 ) {
     val colors = A3Theme.colors
 
@@ -119,7 +122,8 @@ fun DeviceRegistrationScreen(
                     isLoading = isLoading,
                     errorMessage = errorMessage,
                     deviceId = deviceId,
-                    onDebugBypassClick = onDebugBypassClick
+                    onDebugBypassClick = onDebugBypassClick,
+                    onRegenerateDeviceId = onRegenerateDeviceId
                 )
             }
         }
@@ -136,7 +140,8 @@ private fun DeviceRegistrationFormCard(
     isLoading: Boolean,
     errorMessage: String?,
     deviceId: String,
-    onDebugBypassClick: (() -> Unit)? = null
+    onDebugBypassClick: (() -> Unit)? = null,
+    onRegenerateDeviceId: (() -> Unit)? = null
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
@@ -239,7 +244,10 @@ private fun DeviceRegistrationFormCard(
             }
 
             // Hardware Identity Badge (Device ID)
-            DeviceTelemetryBadge(deviceId = deviceId)
+            DeviceTelemetryBadge(
+                deviceId = deviceId,
+                onRegenerateDeviceId = onRegenerateDeviceId
+            )
         }
     }
 }
@@ -537,7 +545,10 @@ private fun DeviceRevokedCard(
 }
 
 @Composable
-private fun DeviceTelemetryBadge(deviceId: String) {
+private fun DeviceTelemetryBadge(
+    deviceId: String,
+    onRegenerateDeviceId: (() -> Unit)? = null
+) {
     val colors = A3Theme.colors
     Box(
         modifier = Modifier
@@ -566,6 +577,17 @@ private fun DeviceTelemetryBadge(deviceId: String) {
                 ),
                 textAlign = TextAlign.Center
             )
+            if (onRegenerateDeviceId != null) {
+                Icon(
+                    imageVector = Icons.Outlined.Refresh,
+                    contentDescription = "Ganti Device ID",
+                    tint = colors.accent,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onRegenerateDeviceId)
+                )
+            }
         }
     }
 }

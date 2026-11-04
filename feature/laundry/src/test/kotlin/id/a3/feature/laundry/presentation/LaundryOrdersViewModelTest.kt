@@ -134,7 +134,8 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
         targetStatus: String,
         rework: Boolean,
         reworkReason: String?,
-        reworkApprovedBy: String?
+        reworkApprovedBy: String?,
+        userId: String?
     ): Result<OutboxEntity> {
         val existing = orders[orderId]
         if (existing != null) {
@@ -167,6 +168,19 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
 
     override suspend fun getNotificationStatus(orderId: String): Result<id.a3.core.sync.model.OrderNotificationStatusResponse> {
         return Result.success(notificationStatusToReturn)
+    }
+
+    var repairLinesResult: List<OrderLineEntity> = emptyList()
+    override suspend fun repairMissingOrderLines(orderId: String): List<OrderLineEntity> {
+        val lines = repairLinesResult
+        if (lines.isNotEmpty()) {
+            val existing = orders[orderId]
+            if (existing != null) {
+                orders[orderId] = existing.copy(lines = lines)
+                notifyOrdersChanged()
+            }
+        }
+        return lines
     }
 }
 
@@ -270,6 +284,62 @@ class LaundryOrdersViewModelTest {
         assertNull(fakeRepository.lastRecordedApprovedBy)
         assertEquals(1, fakeRepository.lastRecordedPickups?.size)
         assertNotNull(viewModel.uiState.value.successMessage)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `submitAllItemsFinalPickup on order with lines submits all lines with isFinal true`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        viewModel.selectOrder(fakeRepository.orders["ord-1"]!!)
+        viewModel.submitAllItemsFinalPickup()
+
+        assertEquals(1, fakeRepository.lastRecordedPickups?.size)
+        val firstPickup = fakeRepository.lastRecordedPickups?.first()
+        assertEquals("line-1", firstPickup?.orderLineId)
+        assertTrue(firstPickup?.isFinal == true)
+        assertNotNull(viewModel.uiState.value.successMessage)
+        assertNull(viewModel.uiState.value.errorMessage)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `submitAllItemsFinalPickup on order without lines sets error message and aborts`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        val emptyLinesOrder = OrderWithLines(paidOrder.copy(id = "ord-empty"), emptyList())
+        fakeRepository.orders["ord-empty"] = emptyLinesOrder
+        fakeRepository.notifyOrdersChanged()
+        viewModel.selectOrder(emptyLinesOrder)
+
+        viewModel.submitAllItemsFinalPickup()
+
+        assertNull(fakeRepository.lastRecordedPickups)
+        assertEquals("Daftar pakaian tidak ditemukan untuk pesanan ini", viewModel.uiState.value.errorMessage)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `submitAllItemsFinalPickup on order without lines triggers auto-repair and completes successfully`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        val emptyLinesOrder = OrderWithLines(paidOrder.copy(id = "ord-repair"), emptyList())
+        fakeRepository.orders["ord-repair"] = emptyLinesOrder
+        fakeRepository.notifyOrdersChanged()
+        viewModel.selectOrder(emptyLinesOrder)
+
+        val repairedLine = OrderLineEntity(id = "line-rep", orderId = "ord-repair", itemRefId = "svc-kiloan", nameSnapshot = "Cuci Kiloan", quantity = 1, unitPriceSnapshot = 53000L)
+        fakeRepository.repairLinesResult = listOf(repairedLine)
+
+        viewModel.submitAllItemsFinalPickup()
+
+        assertEquals(1, fakeRepository.lastRecordedPickups?.size)
+        assertEquals("line-rep", fakeRepository.lastRecordedPickups?.first()?.orderLineId)
+        assertNotNull(viewModel.uiState.value.successMessage)
+        assertNull(viewModel.uiState.value.errorMessage)
 
         collectJob.cancel()
     }

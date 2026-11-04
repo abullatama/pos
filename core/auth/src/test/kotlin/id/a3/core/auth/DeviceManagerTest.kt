@@ -336,4 +336,50 @@ class DeviceManagerTest {
         assertEquals(DeviceStatus.REVOKED, deviceManager.deviceStatus.value)
         assertNull(deviceManager.getDeviceCredential())
     }
+
+    @Test
+    fun `regenerateDeviceId generates new UUID and updates storage`() = runBlocking {
+        val id1 = deviceManager.getDeviceId()
+        assertNotNull(id1)
+
+        val id2 = deviceManager.regenerateDeviceId()
+        assertNotNull(id2)
+        org.junit.Assert.assertNotEquals(id1, id2)
+        assertEquals(id2, deviceManager.getDeviceId())
+    }
+
+    @Test
+    fun `registerDevice automatically regenerates deviceId and retries on 409 DEVICE_ALREADY_REGISTERED`() = runBlocking {
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(409)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"code":"DEVICE_ALREADY_REGISTERED","message":"Perangkat sudah terdaftar"}""")
+        )
+        mockWebServer.enqueue(
+            MockResponse()
+                .setResponseCode(202)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"status":"PENDING"}""")
+        )
+
+        val result = deviceManager.registerDevice("REG-NEW-CODE", "Tablet Kasir")
+
+        assertTrue("Must recover and return PendingApproval", result is DeviceRegisterResult.PendingApproval)
+        assertEquals(DeviceStatus.PENDING, deviceManager.deviceStatus.value)
+        assertEquals(2, mockWebServer.requestCount)
+    }
+
+    @Test
+    fun `DeviceManagerFactory getDefaultBaseUrl respects AppConfig and defaults to AppConfig DEFAULT_API_BASE_URL`() {
+        assertEquals("https://a3-api.nen.asia/v1/", DeviceManagerFactory.getDefaultBaseUrl(null))
+
+        val customConfig = object : id.a3.core.domain.config.AppConfig {
+            override val appId = id.a3.core.domain.config.AppId.CAFE
+            override val appVersion = "1.0.0"
+            override val appName = "cafe"
+            override val apiBaseUrl = "https://custom.test.invalid/v1/"
+        }
+        assertEquals("https://custom.test.invalid/v1/", DeviceManagerFactory.getDefaultBaseUrl(customConfig))
+    }
 }

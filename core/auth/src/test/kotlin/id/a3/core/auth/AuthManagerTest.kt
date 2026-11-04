@@ -295,4 +295,49 @@ class AuthManagerTest {
         assertEquals("new-refreshed-access-token", authManager.getAccessToken())
         assertEquals("new-refreshed-refresh-token", authManager.getRefreshToken())
     }
+
+    @Test
+    fun `logout clears only cashier session and preserves device registration and status`() = runBlocking {
+        encryptedDataStore.saveDeviceRegistration(
+            deviceId = "dev-test-123",
+            deviceName = "Tablet Kasir Utama",
+            status = id.a3.core.domain.device.DeviceStatus.ACTIVE
+        )
+        encryptedDataStore.updateDeviceStatus(
+            status = id.a3.core.domain.device.DeviceStatus.ACTIVE,
+            credential = "secret-device-credential-xyz",
+            businessUnitId = "bu-cafe-01"
+        )
+
+        val serverResponse = """
+            {
+                "access_token": "token-abc",
+                "refresh_token": "ref-xyz",
+                "expires_in": 3600,
+                "user": {
+                    "id": "u-1",
+                    "name": "Budi",
+                    "role": "kasir"
+                },
+                "business_unit_id": "bu-cafe-01",
+                "server_time": "2026-10-14T10:00:00Z"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(serverResponse))
+        authManager.loginWithPinOnline(userId = "u-1", pin = "1234")
+
+        assertTrue(authManager.isUnlocked.value)
+        assertNotNull(authManager.getAccessToken())
+
+        authManager.logout()
+
+        assertFalse("Session kasir harus terkunci", authManager.isUnlocked.value)
+        assertNull("Access token harus null", authManager.getAccessToken())
+        assertNull("User harus null", authManager.getCurrentUser())
+
+        assertEquals(id.a3.core.domain.device.DeviceStatus.ACTIVE, encryptedDataStore.getDeviceStatus())
+        assertEquals("secret-device-credential-xyz", encryptedDataStore.getDeviceCredential())
+        assertEquals("dev-test-123", encryptedDataStore.getOrCreateDeviceId())
+        assertEquals("Tablet Kasir Utama", encryptedDataStore.getDeviceName())
+    }
 }

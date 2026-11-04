@@ -31,6 +31,32 @@ class AuthManager(
     private val _isUnlocked = MutableStateFlow(false)
     val isUnlocked: StateFlow<Boolean> = _isUnlocked.asStateFlow()
 
+    suspend fun initialize() {
+        val token = encryptedDataStore.getAccessToken()
+        val user = encryptedDataStore.getUser()
+        _isUnlocked.value = user != null && !token.isNullOrBlank()
+    }
+
+    /**
+     * Mengambil daftar akun staf yang diizinkan pada unit usaha tablet ini dari server.
+     */
+    suspend fun getAccounts(deviceCredential: String? = null): List<UserDto> {
+        val response = try {
+            apiService.getAccounts(
+                deviceCredential = deviceCredential,
+                appId = appId,
+                appVersion = appVersion
+            )
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return if (response.isSuccessful && response.body() != null) {
+            response.body()!!.accounts
+        } else {
+            emptyList()
+        }
+    }
+
     /**
      * Login pertama online menggunakan PIN:
      * Mengirim user_id dan pin ke POST /v1/auth/pin-login.
@@ -128,7 +154,11 @@ class AuthManager(
         if (response.isSuccessful && response.body() != null) {
             val body = response.body()!!
             encryptedDataStore.updateTokens(body.accessToken, body.refreshToken)
+            _isUnlocked.value = true
             return true
+        } else if (response.code() == 401 || response.code() == 403) {
+            // Sesi token server kedaluwarsa; bersihkan token agar request jaringan berikutnya tidak menggunakan token kedaluwarsa
+            encryptedDataStore.clearTokens()
         }
         return false
     }

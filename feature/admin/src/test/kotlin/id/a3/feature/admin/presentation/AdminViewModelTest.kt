@@ -37,12 +37,15 @@ class AdminViewModelTest {
         override suspend fun getShiftById(shiftId: String): ShiftEntity? = null
         override suspend fun getLatestShift(): ShiftEntity? = null
         override fun observeAllShifts(): Flow<List<ShiftEntity>> = emptyFlow()
+        override suspend fun deleteShift(shiftId: String) {}
+        override suspend fun deleteAllOpenShifts() {}
     }
 
     private class FakeOutboxDao : OutboxDao {
         override suspend fun insert(outbox: OutboxEntity) {}
         override suspend fun getOutboxByStatus(status: OutboxStatus, limit: Int): List<OutboxEntity> = emptyList()
         override suspend fun getByBundleId(bundleId: String): OutboxEntity? = null
+        override suspend fun findBundlesByOrderId(orderId: String): List<OutboxEntity> = emptyList()
         override suspend fun markSent(bundleId: String, flagsJson: String?, updatedAt: Long) {}
         override suspend fun markFailed(bundleId: String, error: String, reasonCode: String?, updatedAt: Long) {}
         override suspend fun incrementAttempts(bundleId: String, error: String?, updatedAt: Long) {}
@@ -50,13 +53,25 @@ class AdminViewModelTest {
         override fun observeFailedOutbox(): Flow<List<OutboxEntity>> = emptyFlow()
         override fun observeFailedCount(): Flow<Int> = emptyFlow()
         override suspend fun retryFailedBundle(bundleId: String, updatedAt: Long) {}
-        override suspend fun retryAllFailed(updatedAt: Long) {}
+        override suspend fun retryAllFailed(fallbackShiftId: String?, updatedAt: Long) {}
+        override suspend fun retryAllFailedWithDeviceId(currentDeviceId: String, fallbackShiftId: String?, updatedAt: Long) {}
+        override suspend fun resetFailedStatusWithDeviceId(currentDeviceId: String, fallbackShiftId: String?, updatedAt: Long) {}
+        override suspend fun updateBundleId(oldBundleId: String, newBundleId: String, updatedAt: Long) {}
+        override suspend fun updateEventsJson(bundleId: String, eventsJson: String, updatedAt: Long) {}
+        override suspend fun updateShiftId(bundleId: String, shiftId: String, updatedAt: Long) {}
+        override suspend fun updateMissingShiftId(shiftId: String, updatedAt: Long) {}
+        override suspend fun updateDeviceId(bundleId: String, newDeviceId: String, updatedAt: Long) {}
+        override suspend fun updateAllUnsyncedDeviceId(newDeviceId: String, updatedAt: Long) {}
+        override fun observeLastFailedError(): Flow<String?> = emptyFlow()
+        override suspend fun getLastFailedError(): String? = null
         override suspend fun deleteSentOlderThan(olderThan: Long): Int = 0
         override fun observePendingCount(): Flow<Int> = emptyFlow()
         override suspend fun getPendingCount(): Int = 0
         override suspend fun getFailedCount(): Int = 0
         override suspend fun getUnsyncedCount(): Int = 0
         override fun observeUnsyncedCount(): Flow<Int> = emptyFlow()
+        override suspend fun deleteBundle(bundleId: String) {}
+        override suspend fun deleteFailedUnauthorizedShiftBundles() {}
     }
 
     private class FakePrinterService(

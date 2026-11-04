@@ -43,7 +43,8 @@ class OutboxSyncManager(
             while (isActive) {
                 try {
                     val pending = outboxDao.getPendingCount()
-                    if (pending > 0) {
+                    val failed = outboxDao.getFailedCount()
+                    if (pending > 0 || failed > 0) {
                         triggerSync()
                     }
                 } catch (_: Exception) {

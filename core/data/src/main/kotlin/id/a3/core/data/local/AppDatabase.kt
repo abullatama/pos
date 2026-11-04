@@ -19,9 +19,11 @@ import id.a3.core.data.local.dao.SyncStateDao
 import id.a3.core.data.local.entity.CashOutEntity
 import id.a3.core.data.local.entity.CorrectionEntity
 import id.a3.core.data.local.entity.CustomerEntity
+import id.a3.core.data.local.entity.DiscountPresetEntity
 import id.a3.core.data.local.entity.LaundryPickupEntity
 import id.a3.core.data.local.entity.LaundryServiceEntity
 import id.a3.core.data.local.entity.MenuItemEntity
+import id.a3.core.data.local.entity.MenuOptionEntity
 import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
 import id.a3.core.data.local.entity.OutboxEntity
@@ -36,15 +38,17 @@ import id.a3.core.data.local.entity.SyncStateEntity
         OutboxEntity::class,
         SyncStateEntity::class,
         MenuItemEntity::class,
+        MenuOptionEntity::class,
         LaundryServiceEntity::class,
         CustomerEntity::class,
         LaundryPickupEntity::class,
         ShiftEntity::class,
         PaymentEntity::class,
         CorrectionEntity::class,
-        CashOutEntity::class
+        CashOutEntity::class,
+        DiscountPresetEntity::class
     ],
-    version = 6,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -164,6 +168,39 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `menu_options` (
+                        `id` TEXT NOT NULL,
+                        `menuItemId` TEXT NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `priceDelta` INTEGER NOT NULL,
+                        `active` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_menu_options_menuItemId` ON `menu_options` (`menuItemId`)")
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `discount_presets` (
+                        `id` TEXT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `value` INTEGER NOT NULL,
+                        `active` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """.trimIndent())
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -173,7 +210,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     DATABASE_NAME
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration(false)
                     .build().also { INSTANCE = it }
             }

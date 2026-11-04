@@ -42,6 +42,9 @@ data class AdminUiState(
     val activeShiftCashierName: String? = null,
     val activeShiftId: String? = null,
     val unsyncedOutboxCount: Int = 0,
+    val failedOutboxCount: Int = 0,
+    val lastFailedError: String? = null,
+    val isRetryingSync: Boolean = false,
     val printerStatusText: String = "Memeriksa...",
     val isPrinterConnected: Boolean = false,
     val isTestingPrinter: Boolean = false,
@@ -83,6 +86,7 @@ class AdminViewModel(
     init {
         observeActiveShift()
         observeUnsyncedOutbox()
+        observeFailedOutbox()
         observePrinterStatus()
     }
 
@@ -104,6 +108,23 @@ class AdminViewModel(
             outboxDao.observeUnsyncedCount().collect { count ->
                 _uiState.update { state ->
                     state.copy(unsyncedOutboxCount = count)
+                }
+            }
+        }
+    }
+
+    private fun observeFailedOutbox() {
+        viewModelScope.launch {
+            outboxDao.observeFailedCount().collect { count ->
+                _uiState.update { state ->
+                    state.copy(failedOutboxCount = count)
+                }
+            }
+        }
+        viewModelScope.launch {
+            outboxDao.observeLastFailedError().collect { err ->
+                _uiState.update { state ->
+                    state.copy(lastFailedError = err)
                 }
             }
         }
@@ -208,6 +229,33 @@ class AdminViewModel(
                 enteredPin = "",
                 pinError = null
             )
+        }
+    }
+
+    fun retryAllFailedSync(currentDeviceId: String? = null, fallbackShiftId: String? = null, onAfterRetry: (() -> Unit)? = null) {
+        viewModelScope.launch(ioDispatcher) {
+            _uiState.update { it.copy(isRetryingSync = true) }
+            try {
+                if (!currentDeviceId.isNullOrBlank()) {
+                    outboxDao.retryAllFailedWithDeviceId(currentDeviceId, fallbackShiftId)
+                } else {
+                    outboxDao.retryAllFailed(fallbackShiftId)
+                }
+                onAfterRetry?.invoke()
+                _uiState.update {
+                    it.copy(
+                        statusMessage = "Antrean bermasalah telah direset ke antrean tunggu.",
+                        isRetryingSync = false
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        statusMessage = "Gagal mereset antrean: ${e.message}",
+                        isRetryingSync = false
+                    )
+                }
+            }
         }
     }
 

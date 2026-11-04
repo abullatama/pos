@@ -15,7 +15,8 @@ import id.a3.feature.laundry.repository.DefaultLaundryOrderRepository
 class LaundryViewModelFactory(
     private val context: Context,
     private val printerService: PrinterService? = null,
-    private val syncApiService: SyncApiService? = null
+    private val syncApiService: SyncApiService? = null,
+    private val deviceCodeProvider: (() -> String?)? = null
 ) : ViewModelProvider.Factory {
 
     @Suppress("UNCHECKED_CAST")
@@ -32,7 +33,7 @@ class LaundryViewModelFactory(
 
         return when {
             modelClass.isAssignableFrom(LaundryOrderViewModel::class.java) -> {
-                LaundryOrderViewModel(repository, printerService) as T
+                LaundryOrderViewModel(repository, printerService, deviceCodeProvider = deviceCodeProvider) as T
             }
             modelClass.isAssignableFrom(LaundryScanViewModel::class.java) -> {
                 LaundryScanViewModel(repository, printerService) as T

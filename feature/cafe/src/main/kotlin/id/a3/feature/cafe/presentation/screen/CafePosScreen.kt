@@ -216,6 +216,7 @@ fun CafePosScreen(
             CafeDiscountDialog(
                 subtotal = uiState.calculation.subtotal,
                 currentDiscount = uiState.appliedDiscount,
+                presets = uiState.discountPresets,
                 onDismissRequest = { viewModel.dismissDiscountDialog() },
                 onApplyDiscount = { viewModel.applyAppliedDiscount(it) },
                 onRemoveDiscount = { viewModel.removeDiscount() },

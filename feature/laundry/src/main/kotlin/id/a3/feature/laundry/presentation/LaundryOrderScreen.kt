@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.LocalLaundryService
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
@@ -48,6 +50,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,11 +97,19 @@ fun LaundryOrderScreen(
     shiftId: String? = null,
     cashierId: String = "u-cashier-2",
     cashierName: String = "Kasir Laundry",
-    storeName: String = "ATHIA LAUNDRY HOUSE"
+    storeName: String = "ATHIA LAUNDRY HOUSE",
+    onSyncServices: (() -> Unit)? = null
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
     var showShiftRequiredDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.availableServices.isEmpty()) {
+        if (uiState.availableServices.isEmpty()) {
+            viewModel.refreshServices()
+            onSyncServices?.invoke()
+        }
+    }
 
     if (!hasActiveShift) {
         Box(
@@ -177,7 +188,11 @@ fun LaundryOrderScreen(
                 ServiceCatalogRow(
                     services = uiState.filteredServices,
                     selectedService = uiState.selectedServiceForInput,
-                    onServiceSelected = viewModel::selectServiceForInput
+                    onServiceSelected = viewModel::selectServiceForInput,
+                    onSyncServices = {
+                        viewModel.refreshServices()
+                        onSyncServices?.invoke()
+                    }
                 )
 
                 // 4. Form Konfigurasi Layanan Terpilih
@@ -441,32 +456,74 @@ private fun CategoryFilterTabs(
 private fun ServiceCatalogRow(
     services: List<LaundryServiceEntity>,
     selectedService: LaundryServiceEntity?,
-    onServiceSelected: (LaundryServiceEntity) -> Unit
+    onServiceSelected: (LaundryServiceEntity) -> Unit,
+    onSyncServices: (() -> Unit)? = null
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
 
-    LazyRow(
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        items(services, key = { it.id }) { service ->
-            val isSelected = selectedService?.id == service.id
-            val isKiloan = service.unit.lowercase() == "kg"
-
-            Box(
-                modifier = Modifier
-                    .width(180.dp)
-                    .clip(shapes.cardShape)
-                    .background(if (isSelected) colors.surfaceAlt else colors.surface)
-                    .border(
-                        width = if (isSelected) 1.5.dp else 1.dp,
-                        color = if (isSelected) colors.accent else colors.border,
-                        shape = shapes.cardShape
-                    )
-                    .clickable { onServiceSelected(service) }
-                    .padding(14.dp)
+    if (services.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(shapes.cardShape)
+                .background(colors.surfaceAlt)
+                .border(1.dp, colors.border, shapes.cardShape)
+                .padding(20.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Sync,
+                        contentDescription = null,
+                        tint = colors.accent,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(
+                        text = "Memuat layanan dari server atau data master belum tersinkronkan.",
+                        style = A3Theme.typography.body,
+                        color = colors.inkMuted
+                    )
+                }
+
+                if (onSyncServices != null) {
+                    A3Button(
+                        label = "Sinkronkan Sekarang",
+                        variant = ButtonVariant.SECONDARY,
+                        onClick = onSyncServices
+                    )
+                }
+            }
+        }
+    } else {
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(services, key = { it.id }) { service ->
+                val isSelected = selectedService?.id == service.id
+                val isKiloan = service.unit.lowercase() in listOf("kg", "kilo", "kiloan")
+
+                Box(
+                    modifier = Modifier
+                        .width(180.dp)
+                        .clip(shapes.cardShape)
+                        .background(if (isSelected) colors.surfaceAlt else colors.surface)
+                        .border(
+                            width = if (isSelected) 1.5.dp else 1.dp,
+                            color = if (isSelected) colors.accent else colors.border,
+                            shape = shapes.cardShape
+                        )
+                        .clickable { onServiceSelected(service) }
+                        .padding(14.dp)
+                ) {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
@@ -531,6 +588,7 @@ private fun ServiceCatalogRow(
             }
         }
     }
+}
 }
 
 @Composable
@@ -919,7 +977,13 @@ private fun OrderReceiptPanel(
                     itemsIndexed(uiState.lines) { index, line ->
                         val billedWeight = uiState.calculation.billedWeights.getOrNull(index) ?: line.weightKg
                         val lineTotal = uiState.calculation.lineTotals.getOrNull(index) ?: 0L
-                        val isPcs = line.service.unit.lowercase() == "pcs"
+                        val isPcs = line.service.unit.lowercase().trim() in listOf("pcs", "satuan", "potong", "buah", "lembar", "pc")
+                        val effectiveRate = if (line.isExpress && line.service.expressRate > 0) {
+                            line.service.expressRate
+                        } else {
+                            line.service.rate
+                        }
+                        val expressSuffix = if (line.isExpress) " (Express)" else ""
 
                         Row(
                             modifier = Modifier
@@ -928,15 +992,17 @@ private fun OrderReceiptPanel(
                                 .background(colors.canvas)
                                 .padding(10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
                             Column(
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(end = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(2.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Text(
                                         text = line.service.name,
@@ -951,9 +1017,14 @@ private fun OrderReceiptPanel(
 
                                 Text(
                                     text = if (isPcs) {
-                                        "${line.pieces} pcs @ ${formatRupiah(line.service.rate)}"
+                                        "${line.pieces} pcs @ ${formatRupiah(effectiveRate)}$expressSuffix"
                                     } else {
-                                        "${String.format(java.util.Locale.US, "%.1f", line.weightKg)} kg → dibulatkan ${String.format(java.util.Locale.US, "%.1f", billedWeight)} kg"
+                                        val weightStr = if (line.weightKg != billedWeight) {
+                                            "${String.format(java.util.Locale.US, "%.1f", line.weightKg)} kg → dibulatkan ${String.format(java.util.Locale.US, "%.1f", billedWeight)} kg"
+                                        } else {
+                                            "${String.format(java.util.Locale.US, "%.1f", line.weightKg)} kg"
+                                        }
+                                        "$weightStr @ ${formatRupiah(effectiveRate)}/${line.service.unit.lowercase()}$expressSuffix"
                                     },
                                     style = A3Theme.typography.bodySmall,
                                     color = colors.inkMuted

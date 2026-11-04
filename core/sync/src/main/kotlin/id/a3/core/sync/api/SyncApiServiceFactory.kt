@@ -1,7 +1,9 @@
 package id.a3.core.sync.api
 
+import id.a3.core.auth.AuthManager
 import id.a3.core.domain.config.AppConfig
 import kotlinx.serialization.json.Json
+import okhttp3.Authenticator
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -15,10 +17,17 @@ object SyncApiServiceFactory {
         appConfig: AppConfig,
         baseUrl: String = appConfig.apiBaseUrl,
         deviceCredentialProvider: (() -> String?)? = null,
-        authTokenProvider: (() -> String?)? = null
+        authTokenProvider: (() -> String?)? = null,
+        authManager: AuthManager? = null,
+        authenticator: Authenticator? = null
     ): SyncApiService {
-        val json = Json { ignoreUnknownKeys = true }
-        val okHttpClient = OkHttpClient.Builder()
+        val json = Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+            coerceInputValues = true
+        }
+        val clientBuilder = OkHttpClient.Builder()
+            .dns(RobustDns)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .addInterceptor(
@@ -30,10 +39,16 @@ object SyncApiServiceFactory {
             )
             .addInterceptor(
                 HttpLoggingInterceptor().apply {
-                    level = HttpLoggingInterceptor.Level.BASIC
+                    level = HttpLoggingInterceptor.Level.BODY
                 }
             )
-            .build()
+
+        val effectiveAuth = authenticator ?: authManager?.let { TokenAuthenticator(it, deviceCredentialProvider) }
+        if (effectiveAuth != null) {
+            clientBuilder.authenticator(effectiveAuth)
+        }
+
+        val okHttpClient = clientBuilder.build()
 
         val normalizedUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
         val retrofit = Retrofit.Builder()
@@ -43,5 +58,52 @@ object SyncApiServiceFactory {
             .build()
 
         return retrofit.create(SyncApiService::class.java)
+    }
+
+    fun createMasterApiService(
+        appConfig: AppConfig,
+        baseUrl: String = appConfig.apiBaseUrl,
+        deviceCredentialProvider: (() -> String?)? = null,
+        authTokenProvider: (() -> String?)? = null,
+        authManager: AuthManager? = null,
+        authenticator: Authenticator? = null
+    ): SyncMasterApiService {
+        val json = Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = true
+            coerceInputValues = true
+        }
+        val clientBuilder = OkHttpClient.Builder()
+            .dns(RobustDns)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .addInterceptor(
+                AppHeaderInterceptor(
+                    appConfig = appConfig,
+                    deviceCredentialProvider = deviceCredentialProvider,
+                    authTokenProvider = authTokenProvider
+                )
+            )
+            .addInterceptor(
+                HttpLoggingInterceptor().apply {
+                    level = HttpLoggingInterceptor.Level.BODY
+                }
+            )
+
+        val effectiveAuth = authenticator ?: authManager?.let { TokenAuthenticator(it, deviceCredentialProvider) }
+        if (effectiveAuth != null) {
+            clientBuilder.authenticator(effectiveAuth)
+        }
+
+        val okHttpClient = clientBuilder.build()
+
+        val normalizedUrl = if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/"
+        val retrofit = Retrofit.Builder()
+            .baseUrl(normalizedUrl)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+
+        return retrofit.create(SyncMasterApiService::class.java)
     }
 }

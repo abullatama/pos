@@ -236,4 +236,282 @@ class MasterDataSyncManagerTest {
         // Verify delta cursor was updated to fresh-delta-1
         assertEquals("fresh-delta-1", database.syncStateDao().get(MasterDataSyncManager.KEY_DELTA_CURSOR))
     }
+
+    @Test
+    fun `bootstrap saves menu_options and delta sync updates them`() = runBlocking {
+        val bootJson = """
+            {
+                "section": "menu_options",
+                "records": [
+                    { "id": "1", "menu_item_id": "1", "kind": "varian", "name": "Large", "price_delta": 5000, "active": true },
+                    { "id": "2", "menu_item_id": "1", "kind": "addon", "name": "Extra Shot", "price_delta": 6000, "active": true }
+                ],
+                "done": true,
+                "delta_cursor": "delta-opt-1"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(bootJson))
+
+        val bootResult = syncManager.syncBootstrap()
+        assertTrue(bootResult is BootstrapResult.Completed)
+
+        val options = database.masterDataDao().getActiveOptionsForMenuItem("1")
+        assertEquals(2, options.size)
+        val largeOpt = options.find { it.id == "1" }
+        assertNotNull(largeOpt)
+        assertEquals("Large", largeOpt!!.name)
+        assertEquals("variant", largeOpt.kind)
+        assertEquals(5000L, largeOpt.priceDelta)
+
+        // Delta sync update: add Oat Milk, delete Extra Shot (id: 2)
+        val deltaJson = """
+            {
+                "changes": [
+                    {
+                        "table": "menu_options",
+                        "op": "upsert",
+                        "record": { "id": "3", "menu_item_id": "1", "kind": "addon", "name": "Oat Milk", "price_delta": 7000, "active": true }
+                    },
+                    {
+                        "table": "menu_options",
+                        "op": "delete",
+                        "record": { "id": "2" }
+                    }
+                ],
+                "next_cursor": "delta-opt-2",
+                "has_more": false
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(deltaJson))
+
+        val deltaResult = syncManager.syncDelta()
+        assertTrue(deltaResult is DeltaResult.Success)
+
+        val updatedOptions = database.masterDataDao().getActiveOptionsForMenuItem("1")
+        assertEquals(2, updatedOptions.size)
+        val names = updatedOptions.map { it.name }
+        assertTrue(names.contains("Large"))
+        assertTrue(names.contains("Oat Milk"))
+    }
+
+    @Test
+    fun `syncBootstrap downloads discount presets and saves to Room`() = runBlocking {
+        val bootstrapPage = """
+            {
+                "section": "discount_presets",
+                "records": [
+                    { "id": "pre-1", "name": "Diskon Member 10%", "type": "percent", "value": 10, "active": true },
+                    { "id": "pre-2", "name": "Voucher Kopi Rp10.000", "type": "amount", "value": 10000, "active": true }
+                ],
+                "next_cursor": null,
+                "done": true,
+                "delta_cursor": "delta-pre-1"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(bootstrapPage))
+
+        val result = syncManager.syncBootstrap()
+        assertTrue(result is BootstrapResult.Completed)
+
+        val presets = database.masterDataDao().getActiveDiscountPresets()
+        assertEquals(2, presets.size)
+        assertEquals("Diskon Member 10%", presets[0].name)
+        assertEquals("Voucher Kopi Rp10.000", presets[1].name)
+    }
+
+    @Test
+    fun `syncConfig fetches remote settings and saves tax and service charge to sync_state in Room`() = runBlocking {
+        val configResponse = """
+            {
+                "settings": {
+                    "tax_percent": 10,
+                    "tax_mode": "added",
+                    "service_charge_percent": 5,
+                    "rounding_step": 100
+                },
+                "feature_flags": {},
+                "min_app_version": "1.0.0",
+                "labels": {}
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(configResponse))
+
+        val success = syncManager.syncConfig()
+        assertTrue(success)
+
+        val tax = database.syncStateDao().get("tax_percent")
+        val mode = database.syncStateDao().get("tax_mode")
+        val service = database.syncStateDao().get("service_charge_percent")
+
+        assertEquals("10", tax)
+        assertEquals("added", mode)
+        assertEquals("5", service)
+    }
+
+    @Test
+    fun `syncServerTime fetches server time and saves offset to sync_state`() = runBlocking {
+        val serverTimeIso = "2026-11-03T10:15:30Z"
+        val timeResponse = """
+            {
+                "server_time": "$serverTimeIso",
+                "timezone": "UTC"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(timeResponse))
+
+        val offset = syncManager.syncServerTime()
+        assertNotNull(offset)
+
+        val savedOffset = database.syncStateDao().get(MasterDataSyncManager.KEY_SERVER_CLOCK_OFFSET)
+        assertNotNull(savedOffset)
+        assertEquals(offset.toString(), savedOffset)
+    }
+
+    @Test
+    fun `bootstrap with section 'services' and implicit active flag saves active laundry services`() = runBlocking {
+        val pageJson = """
+            {
+                "section": "services",
+                "records": [
+                    { "id": "svc-express-kilo", "name": "Kiloan Kilat", "unit": "kiloan", "price": 12000, "express_price": 15000 }
+                ],
+                "next_cursor": null,
+                "done": true,
+                "delta_cursor": "delta-services-1"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(pageJson))
+
+        val result = syncManager.syncBootstrap()
+        assertTrue("Bootstrap must complete", result is BootstrapResult.Completed)
+
+        val svc = database.masterDataDao().getLaundryService("svc-express-kilo")
+        assertNotNull(svc)
+        assertEquals("Kiloan Kilat", svc!!.name)
+        assertEquals("kg", svc.unit)
+        assertEquals(12000L, svc.rate)
+        assertEquals(15000L, svc.expressRate)
+        assertTrue(svc.active)
+    }
+
+    @Test
+    fun `delta sync with table 'services' and string price applies upsert without crashing`() = runBlocking {
+        database.syncStateDao().set(id.a3.core.data.local.entity.SyncStateEntity(key = MasterDataSyncManager.KEY_BOOTSTRAP_DONE, value = "true"))
+        database.syncStateDao().set(id.a3.core.data.local.entity.SyncStateEntity(key = MasterDataSyncManager.KEY_DELTA_CURSOR, value = "cursor-1"))
+
+        val deltaJson = """
+            {
+                "changes": [
+                    {
+                        "table": "services",
+                        "op": "upsert",
+                        "record": {
+                            "id": "svc-jas-1",
+                            "name": "Jas Kantor",
+                            "unit": "satuan",
+                            "price": "35000",
+                            "is_active": true
+                        }
+                    }
+                ],
+                "next_cursor": "cursor-2",
+                "has_more": false,
+                "server_time": "2026-11-03T12:00:00Z"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(deltaJson))
+
+        val result = syncManager.syncDelta()
+        assertTrue(result is DeltaResult.Success)
+
+        val svc = database.masterDataDao().getLaundryService("svc-jas-1")
+        assertNotNull(svc)
+        assertEquals("Jas Kantor", svc!!.name)
+        assertEquals("pcs", svc.unit)
+        assertEquals(35000L, svc.rate)
+        assertTrue(svc.active)
+    }
+
+    @Test
+    fun `bootstrap with section 'Laundry' mixed case and service_id saves active laundry services`() = runBlocking {
+        val pageJson = """
+            {
+                "section": "Laundry",
+                "records": [
+                    { "service_id": "svc-bedcover-super", "title": "Bed Cover Super", "unit": "pcs", "tarif": "45.000", "tarif_express": "60.000" }
+                ],
+                "next_cursor": null,
+                "done": true,
+                "delta_cursor": "delta-laundry-1"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(pageJson))
+
+        val result = syncManager.syncBootstrap()
+        assertTrue("Bootstrap must complete", result is BootstrapResult.Completed)
+
+        val svc = database.masterDataDao().getLaundryService("svc-bedcover-super")
+        assertNotNull(svc)
+        assertEquals("Bed Cover Super", svc!!.name)
+        assertEquals("pcs", svc.unit)
+        assertEquals(45000L, svc.rate)
+        assertEquals(60000L, svc.expressRate)
+        assertTrue(svc.active)
+    }
+
+    @Test
+    fun `bootstrap with null section but laundry fields parses and saves active services`() = runBlocking {
+        val pageJson = """
+            {
+                "section": null,
+                "records": [
+                    { "id": "svc-cuci-lipat", "name": "Cuci Lipat", "unit": "kg", "rate": 6000, "min_weight": 2.0 }
+                ],
+                "next_cursor": null,
+                "done": true,
+                "delta_cursor": "delta-laundry-2"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(pageJson))
+
+        val result = syncManager.syncBootstrap()
+        assertTrue("Bootstrap must complete", result is BootstrapResult.Completed)
+
+        val svc = database.masterDataDao().getLaundryService("svc-cuci-lipat")
+        assertNotNull(svc)
+        assertEquals("Cuci Lipat", svc!!.name)
+        assertEquals("kg", svc.unit)
+        assertEquals(6000L, svc.rate)
+        assertEquals(2.0, svc.minWeight, 0.01)
+        assertTrue(svc.active)
+    }
+
+    @Test
+    fun `bootstrap with settings section containing JsonArray for discount_presets completes without crash`() = runBlocking {
+        val pageJson = """
+            {
+                "section": "settings",
+                "records": [
+                    { "id": 1, "key": "opening_cash_default", "value": 200000 },
+                    { "id": 4, "key": "discount_presets", "value": [{"name":"Promo 10%","type":"percent","value":1000}] },
+                    { "id": 5, "key": "tax_rate", "value": 1000 }
+                ],
+                "next_cursor": null,
+                "done": true,
+                "delta_cursor": "delta-settings-done"
+            }
+        """.trimIndent()
+        mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(pageJson))
+
+        val result = syncManager.syncBootstrap()
+        assertTrue("Bootstrap must complete", result is BootstrapResult.Completed)
+
+        val taxVal = database.syncStateDao().get(MasterDataSyncManager.KEY_TAX_PERCENT)
+        assertEquals("1000", taxVal)
+
+        val presets = database.masterDataDao().getActiveDiscountPresets()
+        assertNotNull(presets)
+        assertEquals(1, presets.size)
+        assertEquals("Promo 10%", presets[0].name)
+    }
 }

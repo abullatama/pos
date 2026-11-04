@@ -12,7 +12,9 @@ import id.a3.core.printer.PrinterStatus
 import id.a3.feature.cafe.model.AppliedDiscount
 import id.a3.feature.cafe.model.CafeCartLine
 import id.a3.feature.cafe.model.CafeProduct
+import id.a3.feature.cafe.model.DiscountPreset
 import id.a3.feature.cafe.model.MenuOptionItem
+import id.a3.feature.cafe.repository.TaxAndServiceSettings
 import id.a3.feature.cafe.model.OptionKind
 import id.a3.feature.cafe.presentation.screen.formatOrderDuration
 import id.a3.feature.cafe.repository.CafeMenuRepository
@@ -84,6 +86,10 @@ class FakeCafeMenuRepository : CafeMenuRepository {
     private val _productsFlow = MutableStateFlow(sampleProducts)
 
     override fun observeProducts(): Flow<List<CafeProduct>> = _productsFlow.asStateFlow()
+
+    override fun observeDiscountPresets(): Flow<List<DiscountPreset>> = kotlinx.coroutines.flow.flowOf(emptyList())
+
+    override fun observeTaxAndService(): Flow<TaxAndServiceSettings> = kotlinx.coroutines.flow.flowOf(TaxAndServiceSettings())
 
     override suspend fun getProductById(id: String): CafeProduct? = sampleProducts.find { it.id == id }
 

@@ -85,7 +85,8 @@ class FakeLaundryScanRepository : LaundryOrderRepository {
         targetStatus: String,
         rework: Boolean,
         reworkReason: String?,
-        reworkApprovedBy: String?
+        reworkApprovedBy: String?,
+        userId: String?
     ): Result<OutboxEntity> {
         val existing = orders[orderId] ?: return Result.failure(Exception("Not found"))
         orders[orderId] = existing.copy(order = existing.order.copy(status = targetStatus))

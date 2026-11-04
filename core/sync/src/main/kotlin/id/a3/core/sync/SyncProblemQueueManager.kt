@@ -44,19 +44,29 @@ class SyncProblemQueueManager(
         return outboxDao.getFailedOutbox().map { it.toProblemBundle() }
     }
 
-    suspend fun retryBundle(bundleId: String) {
+    suspend fun retryBundle(bundleId: String, currentDeviceId: String? = null) {
         outboxDao.retryFailedBundle(bundleId)
+        if (!currentDeviceId.isNullOrBlank()) {
+            outboxDao.updateDeviceId(bundleId, currentDeviceId)
+        }
     }
 
-    suspend fun retryAllProblems() {
-        outboxDao.retryAllFailed()
+    suspend fun retryAllProblems(currentDeviceId: String? = null, fallbackShiftId: String? = null) {
+        if (!currentDeviceId.isNullOrBlank()) {
+            outboxDao.retryAllFailedWithDeviceId(currentDeviceId, fallbackShiftId)
+        } else {
+            outboxDao.retryAllFailed(fallbackShiftId)
+        }
     }
 
-    suspend fun retryAndSync(bundleId: String? = null): SyncSendSummary? {
+    suspend fun retryAndSync(bundleId: String? = null, currentDeviceId: String? = null, fallbackShiftId: String? = null): SyncSendSummary? {
         if (bundleId != null) {
             outboxDao.retryFailedBundle(bundleId)
+            if (!currentDeviceId.isNullOrBlank()) {
+                outboxDao.updateDeviceId(bundleId, currentDeviceId)
+            }
         } else {
-            outboxDao.retryAllFailed()
+            retryAllProblems(currentDeviceId, fallbackShiftId)
         }
         return syncSender?.sendPendingBundles()
     }

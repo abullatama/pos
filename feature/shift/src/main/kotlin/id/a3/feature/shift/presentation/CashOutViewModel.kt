@@ -148,13 +148,13 @@ class CashOutViewModel(
         _uiState.update { it.copy(reason = reason, errorMessage = null) }
     }
 
-    fun setReceiptPhoto(bitmap: Bitmap?, filePath: String? = null) {
-        val fileId = if (bitmap != null || filePath != null) UUID.randomUUID().toString() else null
+    fun setReceiptPhoto(bitmap: Bitmap?, filePath: String? = null, fileId: String? = null) {
+        val effectiveFileId = fileId ?: if (bitmap != null || filePath != null) UUID.randomUUID().toString() else null
         _uiState.update {
             it.copy(
                 receiptBitmap = bitmap,
                 receiptFilePath = filePath,
-                receiptFileId = fileId,
+                receiptFileId = effectiveFileId,
                 errorMessage = null
             )
         }
@@ -318,13 +318,24 @@ class CashOutViewModel(
             _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
             val state = _uiState.value
 
+            val currentShift = repository.getActiveShift()
+            val effectiveShiftId = currentShift?.shiftId ?: state.activeShiftId
+            val currentDeviceId = currentShift?.deviceId ?: "dev-1"
+            val effectiveCashierName = currentShift?.cashierName ?: state.cashierName
+
+            if (state.activeShiftId == null && effectiveShiftId != null) {
+                _uiState.update { it.copy(activeShiftId = effectiveShiftId, cashierName = effectiveCashierName) }
+                observeShiftHistory(effectiveShiftId)
+            }
+
             val result = repository.recordCashOut(
                 amount = state.amount,
                 category = state.category,
                 reason = state.reason.trim(),
                 receiptFileId = state.receiptFileId,
                 receiptFilePath = state.receiptFilePath,
-                approvedBy = approvedBy
+                approvedBy = approvedBy,
+                deviceId = currentDeviceId
             )
 
             if (result.isSuccess) {
@@ -336,8 +347,8 @@ class CashOutViewModel(
                     storeAddress = state.storeAddress,
                     storePhone = state.storePhone,
                     cashoutId = cashoutId,
-                    shiftId = state.activeShiftId ?: "shift-1",
-                    cashierName = state.cashierName,
+                    shiftId = effectiveShiftId ?: "shift-1",
+                    cashierName = effectiveCashierName,
                     occurredAt = dateStr,
                     category = state.category,
                     reason = state.reason.trim(),

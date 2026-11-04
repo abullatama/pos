@@ -68,9 +68,12 @@ class FakeLaundryOrderRepository : LaundryOrderRepository {
     var lastCreatedOrder: OrderEntity? = null
     var lastCreatedCustomer: CustomerEntity? = null
     var lastIsNewCustomer: Boolean? = null
+    var seedInitialServicesCalled = false
 
     override fun observeServices(): Flow<List<LaundryServiceEntity>> = flowOf(sampleServices)
-    override suspend fun seedInitialServicesIfEmpty() {}
+    override suspend fun seedInitialServicesIfEmpty() {
+        seedInitialServicesCalled = true
+    }
     override fun observeOrders(): Flow<List<OrderEntity>> = flowOf(emptyList())
     override fun observeOrdersByStatus(status: String): Flow<List<OrderEntity>> = flowOf(emptyList())
     override suspend fun getOrderWithLines(orderId: String): OrderWithLines? = null
@@ -83,7 +86,8 @@ class FakeLaundryOrderRepository : LaundryOrderRepository {
         targetStatus: String,
         rework: Boolean,
         reworkReason: String?,
-        reworkApprovedBy: String?
+        reworkApprovedBy: String?,
+        userId: String?
     ): Result<OutboxEntity> = Result.success(
         OutboxEntity(
             bundleId = UUID.randomUUID().toString(),
@@ -390,6 +394,33 @@ class LaundryOrderViewModelTest {
 
         viewModel.setDpAmount(25000L)
         assertEquals(25000L, viewModel.uiState.value.dpAmount)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `refreshServices triggers seedInitialServicesIfEmpty`() = runTest {
+        viewModel.refreshServices()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(fakeRepository.seedInitialServicesCalled)
+    }
+
+    @Test
+    fun `submitOrder uses deviceCodeProvider prefix when provided`() = runTest {
+        val vmWithCode = LaundryOrderViewModel(
+            repository = fakeRepository,
+            printerService = null,
+            ioDispatcher = testDispatcher,
+            deviceCodeProvider = { "L2" }
+        )
+        val collectJob = launch(testDispatcher) { vmWithCode.uiState.collect {} }
+
+        vmWithCode.addLine(fakeRepository.sampleServices.first())
+        vmWithCode.createAndSelectNewCustomer("Siti", "081234567899")
+
+        val result = vmWithCode.submitOrder()
+        assertTrue(result.isSuccess)
+        assertEquals("L2-0001", fakeRepository.lastCreatedOrder?.displayNumber)
 
         collectJob.cancel()
     }

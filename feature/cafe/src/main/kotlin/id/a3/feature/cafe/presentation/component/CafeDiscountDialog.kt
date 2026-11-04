@@ -81,6 +81,7 @@ private enum class DiscountDialogTab {
 fun CafeDiscountDialog(
     subtotal: Long,
     currentDiscount: AppliedDiscount?,
+    presets: List<DiscountPreset> = emptyList(),
     onDismissRequest: () -> Unit,
     onApplyDiscount: (AppliedDiscount) -> Unit,
     onRemoveDiscount: () -> Unit,
@@ -89,21 +90,27 @@ fun CafeDiscountDialog(
 ) {
     val colors = A3Theme.colors
 
-    var activeTab by remember {
+    var activeTab by remember(presets) {
         mutableStateOf(
-            if (currentDiscount != null && !currentDiscount.isPreset) DiscountDialogTab.MANUAL else DiscountDialogTab.PRESET
+            if (currentDiscount != null && !currentDiscount.isPreset) {
+                DiscountDialogTab.MANUAL
+            } else if (presets.isEmpty()) {
+                DiscountDialogTab.MANUAL
+            } else {
+                DiscountDialogTab.PRESET
+            }
         )
     }
 
     // State Tab Preset
-    var selectedPreset by remember {
+    var selectedPreset by remember(presets, currentDiscount) {
         mutableStateOf(
             if (currentDiscount != null && currentDiscount.isPreset) {
-                DEFAULT_DISCOUNT_PRESETS.find {
+                presets.find {
                     it.type == currentDiscount.discount.type && it.value == currentDiscount.discount.value
-                } ?: DEFAULT_DISCOUNT_PRESETS.first()
+                } ?: presets.firstOrNull()
             } else {
-                DEFAULT_DISCOUNT_PRESETS.first()
+                presets.firstOrNull()
             }
         )
     }
@@ -223,8 +230,10 @@ fun CafeDiscountDialog(
                     DiscountDialogTab.PRESET -> {
                         PresetSplitView(
                             subtotal = subtotal,
+                            presets = presets,
                             selectedPreset = selectedPreset,
-                            onSelectPreset = { selectedPreset = it }
+                            onSelectPreset = { selectedPreset = it },
+                            onSwitchToManual = { activeTab = DiscountDialogTab.MANUAL }
                         )
                     }
                     DiscountDialogTab.MANUAL -> {
@@ -276,19 +285,23 @@ fun CafeDiscountDialog(
                         )
                     }
 
+                    val canApply = if (activeTab == DiscountDialogTab.PRESET) selectedPreset != null else true
+
                     A3Button(
                         label = if (activeTab == DiscountDialogTab.PRESET) "Terapkan Diskon" else "Verifikasi & Terapkan",
                         variant = ButtonVariant.PRIMARY,
+                        enabled = canApply,
                         onClick = {
                             if (activeTab == DiscountDialogTab.PRESET) {
+                                val preset = selectedPreset ?: return@A3Button
                                 val discount = OrderDiscount(
-                                    type = selectedPreset.type,
-                                    value = selectedPreset.value
+                                    type = preset.type,
+                                    value = preset.value
                                 )
                                 onApplyDiscount(
                                     AppliedDiscount(
                                         discount = discount,
-                                        label = selectedPreset.name,
+                                        label = preset.name,
                                         isPreset = true
                                     )
                                 )
@@ -349,101 +362,144 @@ fun CafeDiscountDialog(
 @Composable
 private fun PresetSplitView(
     subtotal: Long,
-    selectedPreset: DiscountPreset,
-    onSelectPreset: (DiscountPreset) -> Unit
+    presets: List<DiscountPreset>,
+    selectedPreset: DiscountPreset?,
+    onSelectPreset: (DiscountPreset) -> Unit,
+    onSwitchToManual: () -> Unit
 ) {
     val colors = A3Theme.colors
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        // Sisi Kiri: Daftar Kartu Preset Resmi
-        Column(
-            modifier = Modifier.weight(1.1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = "PILIHAN PRESET RESMI",
-                color = colors.ink,
-                style = A3Theme.typography.label.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            )
-
-            DEFAULT_DISCOUNT_PRESETS.forEach { preset ->
-                val isSelected = selectedPreset.id == preset.id
-                val calcValue = when (preset.type) {
-                    DiscountType.PERCENT -> MoneyMath.pct(subtotal, preset.value.toInt())
-                    DiscountType.AMOUNT -> min(preset.value, subtotal)
-                }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (isSelected) colors.surfaceAlt else Color.White)
-                        .border(
-                            width = if (isSelected) 1.5.dp else 1.dp,
-                            color = if (isSelected) colors.accent else Color(0xFFE5E7EB),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .clickable { onSelectPreset(preset) }
-                        .padding(horizontal = 14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(22.dp)
-                                .clip(CircleShape)
-                                .background(if (isSelected) colors.accent else colors.surfaceAlt),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isSelected) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Check,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                            }
-                        }
-                        Text(
-                            text = preset.name,
-                            color = colors.ink,
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-
-                    Text(
-                        text = "-${formatRupiah(calcValue)}",
-                        color = if (isSelected) colors.status.danger.text else colors.inkMuted,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        // Sisi Kanan: Live Calculation Summary Card
-        val discountVal = when (selectedPreset.type) {
-            DiscountType.PERCENT -> MoneyMath.pct(subtotal, selectedPreset.value.toInt())
-            DiscountType.AMOUNT -> min(selectedPreset.value, subtotal)
-        }
-        val dpp = (subtotal - discountVal).coerceAtLeast(0L)
-
+    if (presets.isEmpty()) {
         Box(
             modifier = Modifier
-                .weight(0.9f)
+                .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(colors.surfaceAlt.copy(alpha = 0.6f))
-                .padding(14.dp)
+                .background(colors.surfaceAlt.copy(alpha = 0.5f))
+                .border(1.dp, colors.border, RoundedCornerShape(14.dp))
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
         ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = null,
+                    tint = colors.inkMuted,
+                    modifier = Modifier.size(32.dp)
+                )
+                Text(
+                    text = "Belum Ada Preset Diskon Resmi",
+                    style = A3Theme.typography.title,
+                    color = colors.ink,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "Owner belum menambahkan preset diskon di Web Dashboard. Anda dapat menggunakan tab 'Diskon Manual' dengan PIN Manager.",
+                    style = A3Theme.typography.bodySmall,
+                    color = colors.inkMuted,
+                    textAlign = TextAlign.Center
+                )
+                A3Button(
+                    label = "Buka Diskon Manual",
+                    variant = ButtonVariant.SECONDARY,
+                    onClick = onSwitchToManual
+                )
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            // Sisi Kiri: Daftar Kartu Preset Resmi
+            Column(
+                modifier = Modifier.weight(1.1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "PILIHAN PRESET RESMI",
+                    color = colors.ink,
+                    style = A3Theme.typography.label.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                )
+
+                presets.forEach { preset ->
+                    val isSelected = selectedPreset?.id == preset.id
+                    val calcValue = when (preset.type) {
+                        DiscountType.PERCENT -> MoneyMath.pct(subtotal, preset.value.toInt())
+                        DiscountType.AMOUNT -> min(preset.value, subtotal)
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) colors.surfaceAlt else Color.White)
+                            .border(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                color = if (isSelected) colors.accent else Color(0xFFE5E7EB),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable { onSelectPreset(preset) }
+                            .padding(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSelected) colors.accent else colors.surfaceAlt),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Check,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = preset.name,
+                                color = colors.ink,
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+
+                        Text(
+                            text = "-${formatRupiah(calcValue)}",
+                            color = if (isSelected) colors.status.danger.text else colors.inkMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            // Sisi Kanan: Live Calculation Summary Card
+            val activePreset = selectedPreset ?: presets.first()
+            val discountVal = when (activePreset.type) {
+                DiscountType.PERCENT -> MoneyMath.pct(subtotal, activePreset.value.toInt())
+                DiscountType.AMOUNT -> min(activePreset.value, subtotal)
+            }
+            val dpp = (subtotal - discountVal).coerceAtLeast(0L)
+
+            Box(
+                modifier = Modifier
+                    .weight(0.9f)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(colors.surfaceAlt.copy(alpha = 0.6f))
+                    .padding(14.dp)
+            ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     text = "RINCIAN PERHITUNGAN",
@@ -510,6 +566,7 @@ private fun PresetSplitView(
             }
         }
     }
+}
 }
 
 /**

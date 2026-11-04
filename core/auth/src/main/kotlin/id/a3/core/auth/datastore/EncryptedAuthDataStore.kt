@@ -16,7 +16,8 @@ import java.util.UUID
 
 class EncryptedAuthDataStore(
     private val dataStore: DataStore<Preferences>,
-    private val cryptoManager: TinkCryptoManager
+    private val cryptoManager: TinkCryptoManager,
+    private val hardwareIdProvider: (() -> String)? = null
 ) {
 
     companion object {
@@ -116,7 +117,19 @@ class EncryptedAuthDataStore(
 
     suspend fun clearAuth() {
         dataStore.edit { prefs ->
-            prefs.clear()
+            prefs.remove(KEY_ACCESS_TOKEN_CIPHER)
+            prefs.remove(KEY_REFRESH_TOKEN_CIPHER)
+            prefs.remove(KEY_PIN_HASH_CIPHER)
+            prefs.remove(KEY_USER_ID)
+            prefs.remove(KEY_USER_NAME)
+            prefs.remove(KEY_USER_ROLE)
+        }
+    }
+
+    suspend fun clearTokens() {
+        dataStore.edit { prefs ->
+            prefs.remove(KEY_ACCESS_TOKEN_CIPHER)
+            prefs.remove(KEY_REFRESH_TOKEN_CIPHER)
         }
     }
 
@@ -131,6 +144,8 @@ class EncryptedAuthDataStore(
 
     /**
      * Mengambil ID perangkat yang tersimpan atau membuat UUID baru dan menyimpannya permanen.
+     * Jika hardwareIdProvider disediakan, menggunakan identitas hardware konsisten (Settings.Secure.ANDROID_ID)
+     * agar device_id tidak berubah bahkan setelah aplikasi dihapus datanya (Clear Data).
      */
     suspend fun getOrCreateDeviceId(): String {
         val prefs = dataStore.data.first()
@@ -138,6 +153,17 @@ class EncryptedAuthDataStore(
         if (!existing.isNullOrBlank()) {
             return existing
         }
+        val generated = UUID.randomUUID().toString()
+        dataStore.edit { p ->
+            p[KEY_DEVICE_ID] = generated
+        }
+        return generated
+    }
+
+    /**
+     * Memperbarui ID perangkat dengan UUID unik baru (digunakan saat terjadi konflik 409 DEVICE_ALREADY_REGISTERED).
+     */
+    suspend fun regenerateDeviceId(): String {
         val generated = UUID.randomUUID().toString()
         dataStore.edit { p ->
             p[KEY_DEVICE_ID] = generated

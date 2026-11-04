@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -77,9 +78,12 @@ import id.a3.core.ui.component.ButtonVariant
 import id.a3.core.ui.component.ManagerPinApprovalDialog
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
+import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 const val CASH_OUT_SCREEN_TAG = "cash_out_screen_tag"
 
@@ -107,6 +111,7 @@ fun CashOutScreen(
 
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val uiState by viewModel.uiState.collectAsState()
 
@@ -115,7 +120,17 @@ fun CashOutScreen(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap: Bitmap? ->
         if (bitmap != null) {
-            viewModel.setReceiptPhoto(bitmap)
+            val fileId = UUID.randomUUID().toString()
+            val receiptsDir = File(context.filesDir, "receipts").apply { mkdirs() }
+            val photoFile = File(receiptsDir, "receipt_$fileId.jpg")
+            try {
+                FileOutputStream(photoFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                }
+                viewModel.setReceiptPhoto(bitmap = bitmap, filePath = photoFile.absolutePath, fileId = fileId)
+            } catch (_: Exception) {
+                viewModel.setReceiptPhoto(bitmap = bitmap, filePath = null, fileId = fileId)
+            }
         }
     }
 

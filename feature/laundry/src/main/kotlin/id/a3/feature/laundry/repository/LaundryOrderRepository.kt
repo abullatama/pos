@@ -13,10 +13,12 @@ import id.a3.core.data.local.entity.OutboxEntity
 import id.a3.core.data.local.entity.OutboxStatus
 import id.a3.core.data.repository.LaundryPickupItem
 import id.a3.core.data.repository.OrderTransactionManager
+import id.a3.core.data.util.PhoneNumberUtil
 import id.a3.core.sync.api.SyncApiService
 import id.a3.core.sync.model.OrderNotificationStatusResponse
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onStart
 import java.util.UUID
 
@@ -35,7 +37,8 @@ interface LaundryOrderRepository {
         targetStatus: String,
         rework: Boolean = false,
         reworkReason: String? = null,
-        reworkApprovedBy: String? = null
+        reworkApprovedBy: String? = null,
+        userId: String? = null
     ): Result<OutboxEntity>
     suspend fun saveOrderWithOutbox(
         order: OrderEntity,
@@ -92,13 +95,16 @@ interface LaundryOrderRepository {
 
     // Status Notifikasi WhatsApp (F42)
     suspend fun getNotificationStatus(orderId: String): Result<OrderNotificationStatusResponse>
+
+    // Pemulihan baris pakaian yang hilang (Self-healing)
+    suspend fun repairMissingOrderLines(orderId: String): List<OrderLineEntity> = emptyList()
 }
 
 class DefaultLaundryOrderRepository(
     private val masterDataDao: MasterDataDao,
     private val orderDao: OrderDao,
-    private val transactionManager: OrderTransactionManager,
-    private val customerDao: CustomerDao = transactionManager.customerDao,
+    private val transactionManager: OrderTransactionManager? = null,
+    private val customerDao: CustomerDao = transactionManager?.customerDao ?: throw IllegalArgumentException("customerDao required when transactionManager is null"),
     private val syncApiService: SyncApiService? = null
 ) : LaundryOrderRepository {
 
@@ -179,17 +185,11 @@ class DefaultLaundryOrderRepository(
 
     override fun observeServices(): Flow<List<LaundryServiceEntity>> {
         return masterDataDao.observeActiveLaundryServices()
-            .onStart { seedInitialServicesIfEmpty() }
     }
 
     override suspend fun seedInitialServicesIfEmpty() {
-        try {
-            val existing = masterDataDao.observeActiveLaundryServices().first()
-            if (existing.isEmpty()) {
-                masterDataDao.upsertLaundryServices(INITIAL_LAUNDRY_SERVICES)
-            }
-        } catch (_: Exception) {
-            // Ignore if already populated or DB locked
+        if (masterDataDao.countLaundryServices() == 0) {
+            masterDataDao.upsertLaundryServices(INITIAL_LAUNDRY_SERVICES)
         }
     }
 
@@ -231,15 +231,18 @@ class DefaultLaundryOrderRepository(
         targetStatus: String,
         rework: Boolean,
         reworkReason: String?,
-        reworkApprovedBy: String?
+        reworkApprovedBy: String?,
+        userId: String?
     ): Result<OutboxEntity> {
+        val tm = transactionManager ?: return Result.failure(IllegalStateException("OrderTransactionManager required"))
         return try {
-            val outbox = transactionManager.advanceLaundryOrderStatus(
+            val outbox = tm.advanceLaundryOrderStatus(
                 orderId = orderId,
                 targetStatus = targetStatus,
                 rework = rework,
                 reworkReason = reworkReason,
-                reworkApprovedBy = reworkApprovedBy
+                reworkApprovedBy = reworkApprovedBy,
+                userId = userId
             )
             Result.success(outbox)
         } catch (e: Exception) {
@@ -252,6 +255,7 @@ class DefaultLaundryOrderRepository(
         lines: List<OrderLineEntity>,
         eventsJson: String
     ): Result<Unit> {
+        val tm = transactionManager ?: return Result.failure(IllegalStateException("OrderTransactionManager required"))
         val outbox = OutboxEntity(
             bundleId = UUID.randomUUID().toString(),
             deviceId = order.deviceId,
@@ -260,7 +264,7 @@ class DefaultLaundryOrderRepository(
             status = OutboxStatus.PENDING
         )
         return try {
-            transactionManager.createOrderWithOutbox(
+            tm.createOrderWithOutbox(
                 order = order,
                 lines = lines,
                 outbox = outbox
@@ -272,7 +276,33 @@ class DefaultLaundryOrderRepository(
     }
 
     override fun searchCustomers(query: String): Flow<List<CustomerEntity>> {
-        return customerDao.searchCustomers(query)
+        val clean = query.trim()
+        val localFlow = customerDao.searchCustomers(clean)
+        val api = syncApiService
+        if (clean.length < 2 || api == null) {
+            return localFlow
+        }
+
+        return localFlow.onStart {
+            try {
+                val response = api.searchCustomers(clean)
+                if (response.isSuccessful && response.body() != null) {
+                    val remoteList = response.body()!!.customers
+                    for (remote in remoteList) {
+                        val normPhone = PhoneNumberUtil.normalize(remote.phone)
+                        val customerId = remote.idString.ifBlank { UUID.randomUUID().toString() }
+                        val entity = CustomerEntity(
+                            id = customerId,
+                            name = remote.name,
+                            phone = normPhone
+                        )
+                        customerDao.insertCustomer(entity)
+                    }
+                }
+            } catch (_: Exception) {
+                // Offline fallback: abaikan galat jaringan, tetap memancarkan data lokal dari Room
+            }
+        }
     }
 
     override fun observeRecentCustomers(limit: Int): Flow<List<CustomerEntity>> {
@@ -300,8 +330,9 @@ class DefaultLaundryOrderRepository(
         deviceId: String,
         shiftId: String?
     ): Result<OutboxEntity> {
+        val tm = transactionManager ?: return Result.failure(IllegalStateException("OrderTransactionManager required"))
         return try {
-            val outbox = transactionManager.createLaundryOrderWithCustomer(
+            val outbox = tm.createLaundryOrderWithCustomer(
                 order = order,
                 lines = lines,
                 customer = customer,
@@ -316,11 +347,13 @@ class DefaultLaundryOrderRepository(
     }
 
     override fun observeLaundryOrders(statusFilter: String?): Flow<List<OrderWithLines>> {
-        return transactionManager.observeLaundryOrders(statusFilter)
+        val tm = transactionManager ?: return flowOf(emptyList())
+        return tm.observeLaundryOrders(statusFilter)
     }
 
     override fun observePickups(orderId: String): Flow<List<LaundryPickupEntity>> {
-        return transactionManager.observePickupsForOrder(orderId)
+        val tm = transactionManager ?: return flowOf(emptyList())
+        return tm.observePickupsForOrder(orderId)
     }
 
     override suspend fun recordPickups(
@@ -330,8 +363,9 @@ class DefaultLaundryOrderRepository(
         approvedBy: String?,
         deviceId: String
     ): Result<OutboxEntity> {
+        val tm = transactionManager ?: return Result.failure(IllegalStateException("OrderTransactionManager required"))
         return try {
-            val outbox = transactionManager.recordLaundryPickups(
+            val outbox = tm.recordLaundryPickups(
                 orderId = orderId,
                 items = items,
                 userId = userId,
@@ -350,8 +384,9 @@ class DefaultLaundryOrderRepository(
         approvedBy: String,
         deviceId: String
     ): Result<OutboxEntity> {
+        val tm = transactionManager ?: return Result.failure(IllegalStateException("OrderTransactionManager required"))
         return try {
-            val outbox = transactionManager.reworkLaundryOrder(
+            val outbox = tm.reworkLaundryOrder(
                 orderId = orderId,
                 reason = reason,
                 approvedBy = approvedBy,
@@ -371,8 +406,9 @@ class DefaultLaundryOrderRepository(
         approvedBy: String,
         note: String?
     ): Result<Unit> {
+        val tm = transactionManager ?: return Result.failure(IllegalStateException("OrderTransactionManager required"))
         return try {
-            transactionManager.recordCorrection(
+            tm.recordCorrection(
                 orderId = orderId,
                 type = type,
                 amount = amount,
@@ -423,5 +459,10 @@ class DefaultLaundryOrderRepository(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    override suspend fun repairMissingOrderLines(orderId: String): List<OrderLineEntity> {
+        val tm = transactionManager ?: return emptyList()
+        return tm.repairMissingOrderLines(orderId)
     }
 }

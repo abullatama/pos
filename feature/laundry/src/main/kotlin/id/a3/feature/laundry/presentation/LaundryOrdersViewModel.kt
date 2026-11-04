@@ -315,6 +315,11 @@ class LaundryOrdersViewModel(
 
     fun selectOrder(order: OrderWithLines) {
         _selectedOrderId.value = order.order.id
+        if (order.lines.isEmpty()) {
+            viewModelScope.launch {
+                repository.repairMissingOrderLines(order.order.id)
+            }
+        }
         fetchNotificationStatus(order.order.id)
     }
 
@@ -373,6 +378,12 @@ class LaundryOrdersViewModel(
     }
 
     fun openPickupDialog() {
+        val current = uiState.value.selectedOrder
+        if (current != null && current.lines.isEmpty()) {
+            viewModelScope.launch {
+                repository.repairMissingOrderLines(current.order.id)
+            }
+        }
         _isPickupDialogOpen.value = true
     }
 
@@ -424,15 +435,25 @@ class LaundryOrdersViewModel(
 
     fun submitAllItemsFinalPickup() {
         val current = uiState.value.selectedOrder ?: return
-        val items = current.lines.map { line ->
-            LaundryPickupItem(
-                orderLineId = line.id,
-                quantity = line.quantity,
-                isFinal = true,
-                note = "Penyerahan lengkap"
-            )
+        viewModelScope.launch {
+            var lines = current.lines
+            if (lines.isEmpty()) {
+                lines = repository.repairMissingOrderLines(current.order.id)
+            }
+            if (lines.isEmpty()) {
+                _errorMessage.value = "Daftar pakaian tidak ditemukan untuk pesanan ini"
+                return@launch
+            }
+            val items = lines.map { line ->
+                LaundryPickupItem(
+                    orderLineId = line.id,
+                    quantity = line.quantity,
+                    isFinal = true,
+                    note = "Penyerahan lengkap"
+                )
+            }
+            submitPickup(items)
         }
-        submitPickup(items)
     }
 
     fun verifyManagerPinAndExecute(pin: String) {

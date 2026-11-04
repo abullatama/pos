@@ -21,12 +21,24 @@ import id.a3.core.data.local.entity.OrderWithLines
 import id.a3.core.data.local.entity.OutboxEntity
 import id.a3.core.data.local.entity.PaymentEntity
 import id.a3.core.data.local.entity.ShiftEntity
+import id.a3.core.data.util.CorrectionReasonMapper
+import id.a3.core.data.util.LaundryStatusMapper
+import id.a3.core.data.util.PhoneNumberUtil
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
 /**
@@ -82,8 +94,102 @@ class OrderTransactionManager(
 
     /**
      * Mengambil satu pesanan beserta baris itemnya berdasarkan ID.
+     * Jika pesanan kehilangan baris item (misal akibat anomali transaksi),
+     * dilakukan perbaikan otomatis (self-healing) dari outbox / fallback.
      */
-    suspend fun getOrderWithLines(orderId: String): OrderWithLines? = orderDao.getOrderWithLines(orderId)
+    suspend fun getOrderWithLines(orderId: String): OrderWithLines? {
+        val orderWithLines = orderDao.getOrderWithLines(orderId) ?: return null
+        if (orderWithLines.lines.isEmpty()) {
+            val repaired = repairMissingOrderLines(orderId)
+            if (repaired.isNotEmpty()) {
+                return orderWithLines.copy(lines = repaired)
+            }
+        }
+        return orderWithLines
+    }
+
+    /**
+     * Memulihkan order_lines yang hilang akibat anomali transaksi / cascade delete lama.
+     * Pertama, mencari payload order.created di tabel outbox lokal.
+     * Jika tidak ditemukan, membuat 1 baris fallback proporsional sesuai nilai subtotal pesanan.
+     */
+    suspend fun repairMissingOrderLines(orderId: String): List<OrderLineEntity> {
+        val existingLines = orderDao.getLinesForOrder(orderId)
+        if (existingLines.isNotEmpty()) {
+            return existingLines
+        }
+
+        val order = orderDao.getOrderById(orderId) ?: return emptyList()
+        val recoveredLines = mutableListOf<OrderLineEntity>()
+
+        // 1. Coba pulihkan dari outbox bundle order.created
+        val bundles = outboxDao.findBundlesByOrderId(orderId)
+        for (bundle in bundles) {
+            try {
+                val eventsArray = Json.parseToJsonElement(bundle.eventsJson).jsonArray
+                for (event in eventsArray) {
+                    val evObj = event.jsonObject
+                    val type = evObj["type"]?.jsonPrimitive?.content
+                    if (type == "order.created") {
+                        val payload = evObj["payload"]?.jsonObject ?: continue
+                        val payloadOrderId = payload["order_id"]?.jsonPrimitive?.content
+                        if (payloadOrderId == orderId) {
+                            val linesArray = payload["lines"]?.jsonArray
+                            if (linesArray != null && linesArray.isNotEmpty()) {
+                                for (l in linesArray) {
+                                    val lineObj = l.jsonObject
+                                    val lineId = lineObj["line_id"]?.jsonPrimitive?.content ?: UUID.randomUUID().toString()
+                                    val itemRef = lineObj["item_ref_id"]?.jsonPrimitive?.content ?: "svc-recovered"
+                                    val name = lineObj["name"]?.jsonPrimitive?.content ?: "Layanan Laundry"
+                                    val qty = lineObj["quantity"]?.jsonPrimitive?.intOrNull ?: 1
+                                    val weightGrams = lineObj["weight_grams"]?.jsonPrimitive?.doubleOrNull
+                                    val weightKg = weightGrams?.let { it / 1000.0 } ?: lineObj["weight"]?.jsonPrimitive?.doubleOrNull
+                                    val price = lineObj["unit_price"]?.jsonPrimitive?.longOrNull
+                                        ?: lineObj["rate"]?.jsonPrimitive?.longOrNull
+                                        ?: 0L
+                                    val note = lineObj["note"]?.jsonPrimitive?.contentOrNull
+
+                                    recoveredLines.add(
+                                        OrderLineEntity(
+                                            id = lineId,
+                                            orderId = orderId,
+                                            itemRefId = itemRef,
+                                            nameSnapshot = name,
+                                            quantity = qty,
+                                            weight = weightKg,
+                                            unitPriceSnapshot = price,
+                                            note = note
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Abaikan kesalahan parsing bundle individual
+            }
+            if (recoveredLines.isNotEmpty()) break
+        }
+
+        // 2. Jika outbox tidak ditemukan / sudah terhapus, buat baris fallback sintetis
+        if (recoveredLines.isEmpty()) {
+            val fallbackLine = OrderLineEntity(
+                id = UUID.randomUUID().toString(),
+                orderId = orderId,
+                itemRefId = "svc-recovery",
+                nameSnapshot = "Layanan Laundry (${order.displayNumber})",
+                quantity = 1,
+                weight = null,
+                unitPriceSnapshot = order.subtotal,
+                note = "Dipulihkan otomatis oleh sistem"
+            )
+            recoveredLines.add(fallbackLine)
+        }
+
+        orderDao.insertLines(recoveredLines)
+        return recoveredLines
+    }
 
     /**
      * Mengambil satu pesanan beserta baris itemnya berdasarkan nomor tampil (misal: L1-0012).
@@ -168,12 +274,20 @@ class OrderTransactionManager(
             orderDao.updateTableLabel(orderId, toTable)
             val eventId = UUID.randomUUID().toString()
             val bundleId = UUID.randomUUID().toString()
-            val occurredAt = Instant.now().toString()
+            val existingOrder = orderDao.getOrderById(orderId)
+            val minInstant = existingOrder?.let { Instant.ofEpochMilli(it.createdAt).plusMillis(1000) }
+            val nowInstant = Instant.now()
+            val occurredAt = if (minInstant != null && nowInstant.isBefore(minInstant)) {
+                minInstant.toString()
+            } else {
+                nowInstant.toString()
+            }
 
             val payload = buildJsonObject {
                 put("order_id", orderId)
                 put("from_table", fromTable)
                 put("to_table", toTable)
+                put("table_label", toTable)
             }
             val eventObj = buildJsonObject {
                 put("event_id", eventId)
@@ -203,10 +317,18 @@ class OrderTransactionManager(
         order: OrderEntity,
         lines: List<OrderLineEntity>,
         deviceId: String = "dev-cafe-1",
-        shiftId: String? = null
+        shiftId: String? = null,
+        discountPresetName: String? = null
     ): OutboxEntity {
         return database.withTransaction {
-            orderDao.insertOrder(order.copy(status = "open"))
+            val activeShift = shiftDao.getActiveShift()
+            val effectiveShiftId = shiftId ?: order.shiftId ?: activeShift?.id
+            val finalOrder = if (order.shiftId.isNullOrBlank() && effectiveShiftId != null) {
+                order.copy(shiftId = effectiveShiftId)
+            } else {
+                order
+            }
+            orderDao.insertOrder(finalOrder.copy(status = "open"))
             if (lines.isNotEmpty()) {
                 orderDao.insertLines(lines)
             }
@@ -231,11 +353,28 @@ class OrderTransactionManager(
                 }
             }
 
+            val normalizedOrderType = when (order.orderType.lowercase()) {
+                "take_away" -> "takeaway"
+                else -> order.orderType.lowercase()
+            }
+
             val createdPayload = buildJsonObject {
                 put("order_id", order.id)
                 put("display_number", order.displayNumber)
-                put("order_type", order.orderType)
-                order.tableLabel?.let { put("table_label", it) }
+                put("order_type", normalizedOrderType)
+                val effectiveTable = (order.tableLabel?.trim()?.takeIf { it.isNotEmpty() } ?: if (normalizedOrderType == "takeaway") "Bungkus" else "Meja 01").take(64)
+                put("table_label", effectiveTable)
+                if (order.discount > 0L) {
+                    val resolvedPreset = discountPresetName?.takeIf { it.isNotBlank() } ?: when {
+                        order.subtotal > 0L && order.discount == (order.subtotal * 10 / 100) -> "Diskon 10%"
+                        order.subtotal > 0L && order.discount == (order.subtotal * 5 / 100) -> "Diskon 5%"
+                        order.discount == 5000L -> "Potongan Rp5.000"
+                        else -> "Diskon 10%"
+                    }
+                    put("discount_rule", buildJsonObject {
+                        put("preset", resolvedPreset)
+                    })
+                }
                 put("lines", orderLinesArray)
                 put("subtotal", order.subtotal)
                 put("discount", order.discount)
@@ -275,7 +414,7 @@ class OrderTransactionManager(
             val outbox = OutboxEntity(
                 bundleId = bundleId,
                 deviceId = deviceId,
-                shiftId = shiftId,
+                shiftId = effectiveShiftId,
                 eventsJson = eventsArray.toString()
             )
             outboxDao.insert(outbox)
@@ -296,9 +435,12 @@ class OrderTransactionManager(
         newRounding: Long,
         newTotal: Long,
         deviceId: String = "dev-cafe-1",
-        shiftId: String? = null
+        shiftId: String? = null,
+        discountPresetName: String? = null
     ): OutboxEntity {
         return database.withTransaction {
+            val currentOrder = orderDao.getOrderById(orderId)
+            val effectiveShiftId = shiftId ?: currentOrder?.shiftId ?: shiftDao.getActiveShift()?.id
             if (newLines.isNotEmpty()) {
                 orderDao.insertLines(newLines)
             }
@@ -337,6 +479,17 @@ class OrderTransactionManager(
                 put("lines", newLinesArray)
                 put("subtotal", newSubtotal)
                 put("discount", newDiscount)
+                if (newDiscount > 0L) {
+                    val resolvedPreset = discountPresetName?.takeIf { it.isNotBlank() } ?: when {
+                        newSubtotal > 0L && newDiscount == (newSubtotal * 10 / 100) -> "Diskon 10%"
+                        newSubtotal > 0L && newDiscount == (newSubtotal * 5 / 100) -> "Diskon 5%"
+                        newDiscount == 5000L -> "Potongan Rp5.000"
+                        else -> "Diskon 10%"
+                    }
+                    put("discount_rule", buildJsonObject {
+                        put("preset", resolvedPreset)
+                    })
+                }
                 put("service_charge", newServiceCharge)
                 put("tax", newTax)
                 put("rounding", newRounding)
@@ -373,7 +526,7 @@ class OrderTransactionManager(
             val outbox = OutboxEntity(
                 bundleId = bundleId,
                 deviceId = deviceId,
-                shiftId = shiftId,
+                shiftId = effectiveShiftId,
                 eventsJson = eventsArray.toString()
             )
             outboxDao.insert(outbox)
@@ -454,7 +607,7 @@ class OrderTransactionManager(
             val outbox = OutboxEntity(
                 bundleId = bundleId,
                 deviceId = deviceId,
-                shiftId = shiftId,
+                shiftId = effectiveShiftId,
                 eventsJson = eventsArray.toString()
             )
             outboxDao.insert(outbox)
@@ -474,7 +627,8 @@ class OrderTransactionManager(
         paymentId: String = UUID.randomUUID().toString(),
         idempotencyKey: String = UUID.randomUUID().toString(),
         deviceId: String = "dev-cafe-1",
-        shiftId: String? = null
+        shiftId: String? = null,
+        discountPresetName: String? = null
     ): OutboxEntity {
         return database.withTransaction {
             val activeShift = shiftDao.getActiveShift()
@@ -510,21 +664,39 @@ class OrderTransactionManager(
                     add(
                         buildJsonObject {
                             put("line_id", line.id)
-                            put("item_ref_id", line.itemRefId)
+                            put("item_ref_id", line.itemRefId.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(line.itemRefId))
                             put("name", line.nameSnapshot)
                             put("quantity", line.quantity)
                             put("unit_price", line.unitPriceSnapshot)
+                            put("options", buildJsonArray {})
                             line.note?.let { put("note", it) }
                         }
                     )
                 }
             }
 
+            val normalizedOrderType = when (paidOrder.orderType.lowercase()) {
+                "take_away" -> "takeaway"
+                else -> paidOrder.orderType.lowercase()
+            }
+
             val createdPayload = buildJsonObject {
                 put("order_id", paidOrder.id)
                 put("display_number", paidOrder.displayNumber)
-                put("order_type", paidOrder.orderType)
-                paidOrder.tableLabel?.let { put("table_label", it) }
+                put("order_type", normalizedOrderType)
+                val effectiveTable = (paidOrder.tableLabel?.trim()?.takeIf { it.isNotEmpty() } ?: if (normalizedOrderType == "takeaway") "Bungkus" else "Meja 01").take(64)
+                put("table_label", effectiveTable)
+                if (paidOrder.discount > 0L) {
+                    val resolvedPreset = discountPresetName?.takeIf { it.isNotBlank() } ?: when {
+                        paidOrder.subtotal > 0L && paidOrder.discount == (paidOrder.subtotal * 10 / 100) -> "Diskon 10%"
+                        paidOrder.subtotal > 0L && paidOrder.discount == (paidOrder.subtotal * 5 / 100) -> "Diskon 5%"
+                        paidOrder.discount == 5000L -> "Potongan Rp5.000"
+                        else -> "Diskon 10%"
+                    }
+                    put("discount_rule", buildJsonObject {
+                        put("preset", resolvedPreset)
+                    })
+                }
                 put("lines", orderLinesArray)
                 put("subtotal", paidOrder.subtotal)
                 put("discount", paidOrder.discount)
@@ -566,7 +738,7 @@ class OrderTransactionManager(
             val outbox = OutboxEntity(
                 bundleId = bundleId,
                 deviceId = deviceId,
-                shiftId = shiftId,
+                shiftId = effectiveShiftId,
                 eventsJson = eventsArray.toString()
             )
             outboxDao.insert(outbox)
@@ -612,7 +784,7 @@ class OrderTransactionManager(
                     val customerPayload = buildJsonObject {
                         put("customer_id", customer.id)
                         put("name", customer.name)
-                        put("phone", customer.phone)
+                        put("phone", PhoneNumberUtil.normalize(customer.phone))
                     }
                     val customerEvent = buildJsonObject {
                         put("event_id", UUID.randomUUID().toString())
@@ -633,12 +805,13 @@ class OrderTransactionManager(
                                 put("name", line.nameSnapshot)
                                 val isKg = line.weight != null || line.nameSnapshot.contains("kg", ignoreCase = true)
                                 if (isKg) {
-                                    val grams = line.weight?.let { (it * 1000).toLong() } ?: 1000L
+                                    val grams = line.weight?.let { Math.round(it * 1000.0) } ?: 1000L
                                     put("unit", "kg")
                                     put("weight_grams", grams)
                                     put("express", line.nameSnapshot.contains("express", ignoreCase = true))
                                     put("rate", line.unitPriceSnapshot)
-                                    put("line_total", line.unitPriceSnapshot)
+                                    val calcLineTotal = line.weight?.let { Math.round(it * line.unitPriceSnapshot) } ?: line.unitPriceSnapshot
+                                    put("line_total", if (lines.size == 1) finalOrder.subtotal else calcLineTotal)
                                 } else {
                                     put("unit", "pcs")
                                     put("rate", line.unitPriceSnapshot)
@@ -656,12 +829,17 @@ class OrderTransactionManager(
                     put("order_id", finalOrder.id)
                     put("display_number", finalOrder.displayNumber)
                     put("order_type", finalOrder.orderType)
-                    finalOrder.customerId?.let { put("customer_id", it) }
+                    // Aturan Server: payload.customer dan payload.customer_id TIDAK BOLEH BERSAMAAN.
+                    // Pelanggan baru dikirim inline via 'customer', sedangkan pelanggan lama dikirim via 'customer_id'.
                     if (customer != null) {
-                        put("customer", buildJsonObject {
-                            put("name", customer.name)
-                            put("phone", customer.phone)
-                        })
+                        if (isNewCustomer) {
+                            put("customer", buildJsonObject {
+                                put("name", customer.name)
+                                put("phone", PhoneNumberUtil.normalize(customer.phone))
+                            })
+                        } else {
+                            finalOrder.customerId?.let { put("customer_id", it) }
+                        }
                     }
                     put("lines", orderLinesArray)
                     put("subtotal", finalOrder.subtotal)
@@ -703,7 +881,8 @@ class OrderTransactionManager(
         deviceId: String = "dev-laundry-1",
         rework: Boolean = false,
         reworkReason: String? = null,
-        reworkApprovedBy: String? = null
+        reworkApprovedBy: String? = null,
+        userId: String? = null
     ): OutboxEntity {
         return database.withTransaction {
             val existing = orderDao.getOrderById(orderId)
@@ -736,13 +915,25 @@ class OrderTransactionManager(
             val bundleId = UUID.randomUUID().toString()
             val occurredAt = Instant.now().toString()
 
+            val openApiStatus = LaundryStatusMapper.toOpenApi(targetStatus)
+            val backendStatus = LaundryStatusMapper.toBackend(targetStatus)
+            val numericUserId = LaundryStatusMapper.normalizeNumericUserId(userId) ?: 4L
+            val numericApprovedBy = reworkApprovedBy?.let { LaundryStatusMapper.normalizeNumericUserId(it) }
+
             val payload = buildJsonObject {
                 put("order_id", orderId)
-                put("status", targetStatus)
+                put("status", openApiStatus)
+                put("backend_status", backendStatus)
+                put("user_id", JsonPrimitive(numericUserId))
                 if (rework) {
                     put("rework", true)
                     reworkReason?.let { put("reason", it) }
-                    reworkApprovedBy?.let { put("approved_by", it) }
+                    reworkApprovedBy?.let {
+                        put("approved_by", it)
+                        if (numericApprovedBy != null) {
+                            put("approved_by_id", JsonPrimitive(numericApprovedBy))
+                        }
+                    }
                 }
             }
 
@@ -829,13 +1020,21 @@ class OrderTransactionManager(
             // 3. Susun event outbox laundry.picked_up untuk tiap item pengambilan
             val eventsArray = buildJsonArray {
                 items.forEach { item ->
+                    val numericApprovedBy = approvedBy?.let { LaundryStatusMapper.normalizeNumericUserId(it) }
                     val payload = buildJsonObject {
                         put("order_id", orderId)
                         put("order_line_id", item.orderLineId)
+                        put("line_ids", buildJsonArray { add(JsonPrimitive(item.orderLineId)) })
                         put("quantity", item.quantity)
                         put("is_final", item.isFinal)
+                        put("status", "diambil")
                         item.note?.let { put("note", it) }
-                        approvedBy?.let { put("approved_by", it) }
+                        if (approvedBy != null) {
+                            put("approved_by", approvedBy)
+                            if (numericApprovedBy != null) {
+                                put("approved_by_id", JsonPrimitive(numericApprovedBy))
+                            }
+                        }
                     }
                     val eventObj = buildJsonObject {
                         put("event_id", UUID.randomUUID().toString())
@@ -921,7 +1120,8 @@ class OrderTransactionManager(
             }
 
             val payload = buildJsonObject {
-                put("shift_id", shift.id)
+                val numericUserId = shift.cashierId.toLongOrNull() ?: 2L
+                put("user_id", JsonPrimitive(numericUserId))
                 put("opening_cash", shift.openingCash)
                 put("opening_cash_breakdown", breakdownJsonObj)
                 differenceReason?.let { put("difference_reason", it) }
@@ -978,6 +1178,16 @@ class OrderTransactionManager(
                 throw IllegalStateException("Alokasi kas ($totalAllocated) tidak sama dengan kas dihitung ($countedCash) dan tidak ada alasan selisih (TUP-06)")
             }
 
+            // Hitung kas yang seharusnya di laci (K1) sesuai rumus domain:
+            // K1 = opening_cash + cash_sales + cash_dp - cash_refunds - cash_outs
+            val payments = paymentDao.getPaymentsForShift(shiftId)
+            val cashPayments = payments.filter { it.method == "cash" }.sumOf { it.amount }
+            val corrections = correctionDao.getCorrectionsForShift(shiftId)
+            val cashRefunds = corrections.filter { it.refundMethod == "cash" }.sumOf { it.amount }
+            val cashOuts = cashOutDao.getCashOutsForShift(shiftId).sumOf { it.amount }
+            val expectedCash = shift.openingCash + cashPayments - cashRefunds - cashOuts
+            val difference = countedCash - expectedCash
+
             // Perbarui entitas shift ke status closed
             val closedShift = shift.copy(
                 status = "closed",
@@ -1003,6 +1213,8 @@ class OrderTransactionManager(
             val payload = buildJsonObject {
                 put("shift_id", shiftId)
                 put("counted_cash", countedCash)
+                put("expected_cash", expectedCash)
+                put("difference", difference)
                 differenceReason?.let { put("difference_reason", it) }
                 put("cash_left", cashLeft)
                 put("cash_deposited", cashDeposited)
@@ -1071,10 +1283,13 @@ class OrderTransactionManager(
             val bundleId = UUID.randomUUID().toString()
             val occurredAt = Instant.ofEpochMilli(closedAt).toString()
 
+            val numericApprovedBy = LaundryStatusMapper.normalizeNumericUserId(approvedBy) ?: 4L
+
             val payload = buildJsonObject {
                 put("shift_id", shiftId)
                 put("note", note.trim())
-                put("approved_by", approvedBy.trim())
+                put("approved_by", JsonPrimitive(numericApprovedBy))
+                put("approved_by_label", approvedBy.trim())
             }
 
             val event = buildJsonObject {
@@ -1125,10 +1340,11 @@ class OrderTransactionManager(
         currentShiftId: String? = null,
         occurredAtMs: Long = System.currentTimeMillis()
     ): OutboxEntity {
-        val validReasons = setOf("wrong_input", "customer_cancelled", "quality_complaint", "wrong_made", "promo", "other")
+        val validReasons = CorrectionReasonMapper.VALID_REASONS
         require(reasonCode in validReasons) { "Kode alasan '$reasonCode' tidak valid (COR-01)" }
-        if (reasonCode == "other") {
-            require(!note.isNullOrBlank()) { "Alasan 'other' wajib menyertakan catatan (note)" }
+        val backendReason = CorrectionReasonMapper.toBackend(reasonCode)
+        if (backendReason == "lainnya" || reasonCode == "other") {
+            require(!note.isNullOrBlank()) { "Alasan 'other' / 'lainnya' wajib menyertakan catatan (note)" }
         }
         require(approvedBy.isNotBlank()) { "Otorisasi PIN Manager (approved_by) wajib diisi (COR-01, COR-07)" }
         require(amount > 0L) { "Nominal koreksi harus lebih besar dari 0" }
@@ -1221,19 +1437,46 @@ class OrderTransactionManager(
                 orderLineIds.forEach { add(JsonPrimitive(it)) }
             }
 
+            val backendReason = CorrectionReasonMapper.toBackend(reasonCode)
+            val effectiveReasonNote = note?.trim()?.takeIf { it.isNotEmpty() }
+                ?: if (backendReason == "lainnya") "Koreksi kasir" else null
+
+            val numericApprovedBy = when {
+                approvedBy.toLongOrNull() != null -> approvedBy.toLong()
+                approvedBy.contains("manager", ignoreCase = true) -> 4L
+                else -> 2L
+            }
+
             val payload = buildJsonObject {
                 put("correction_id", correctionId)
                 put("type", type)
                 put("order_id", orderId)
+                if (orderLineIds.isNotEmpty()) {
+                    put("order_line_id", orderLineIds.first())
+                } else {
+                    put("order_line_id", JsonNull)
+                }
                 put("order_line_ids", lineIdsJsonArray)
-                originalPaymentId?.let { put("original_payment_id", it) }
+                if (originalPaymentId != null) {
+                    put("payment_id", originalPaymentId)
+                    put("original_payment_id", originalPaymentId)
+                } else {
+                    put("payment_id", JsonNull)
+                    put("original_payment_id", JsonNull)
+                }
                 put("amount", amount)
                 if (type == "refund") {
                     put("refund_method", "cash")
                 }
-                put("reason_code", reasonCode)
-                note?.let { put("note", it) }
-                put("approved_by", approvedBy)
+                put("reason_code", backendReason)
+                if (effectiveReasonNote != null) {
+                    put("reason_note", effectiveReasonNote)
+                    put("note", effectiveReasonNote)
+                } else {
+                    put("reason_note", JsonNull)
+                    put("note", JsonNull)
+                }
+                put("approved_by", JsonPrimitive(numericApprovedBy))
             }
 
             val event = buildJsonObject {
@@ -1287,6 +1530,7 @@ class OrderTransactionManager(
         val activeShift = shiftDao.getActiveShift()
         val effectiveShiftId = shiftId ?: activeShift?.id
             ?: throw IllegalStateException("Kas keluar memerlukan shift yang sedang aktif (KAS-01)")
+        val effectiveDeviceId = if (deviceId != "dev-1") deviceId else activeShift?.deviceId?.takeIf { it.isNotBlank() } ?: deviceId
 
         val threshold = 50_000L
         if (amount > threshold) {
@@ -1322,8 +1566,16 @@ class OrderTransactionManager(
                 put("amount", amount)
                 put("category", category)
                 put("reason", reason)
-                receiptFileId?.let { put("receipt_file_id", it) }
-                approvedBy?.let { put("approved_by", it) }
+                if (receiptFileId != null) {
+                    put("receipt_file_id", receiptFileId)
+                } else {
+                    put("receipt_file_id", JsonNull)
+                }
+                if (approvedBy != null) {
+                    put("approved_by", approvedBy)
+                } else {
+                    put("approved_by", JsonNull)
+                }
             }
 
             val event = buildJsonObject {
@@ -1339,7 +1591,7 @@ class OrderTransactionManager(
 
             val outbox = OutboxEntity(
                 bundleId = bundleId,
-                deviceId = deviceId,
+                deviceId = effectiveDeviceId,
                 shiftId = effectiveShiftId,
                 eventsJson = eventsArray.toString()
             )

@@ -57,11 +57,14 @@ fun TopBar(
     shiftInfo: String? = null,
     syncStatus: SyncStatus = SyncStatus.SYNCED,
     pendingSyncCount: Int = 0,
+    failedSyncCount: Int = 0,
     isPrinterConnected: Boolean = false,
     isPrinterConnecting: Boolean = false,
     pendingPrintCount: Int = 0,
     onPrinterClick: (() -> Unit)? = null,
+    onSyncClick: (() -> Unit)? = null,
     onAdminClick: (() -> Unit)? = null,
+    onProfileClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = A3Theme.colors
@@ -126,7 +129,9 @@ fun TopBar(
                     shape = RoundedCornerShape(9999.dp),
                     color = colors.surface,
                     shadowElevation = 1.dp,
-                    modifier = Modifier.border(0.5.dp, colors.border, RoundedCornerShape(9999.dp))
+                    modifier = Modifier
+                        .border(0.5.dp, colors.border, RoundedCornerShape(9999.dp))
+                        .then(if (onProfileClick != null) Modifier.clickable { onProfileClick() } else Modifier)
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -169,7 +174,9 @@ fun TopBar(
                 // 2. Kapsul Status Sinkronisasi
                 SyncStatusBadge(
                     status = syncStatus,
-                    pendingCount = pendingSyncCount
+                    pendingCount = pendingSyncCount,
+                    failedCount = failedSyncCount,
+                    onClick = onSyncClick
                 )
 
                 // 3. Kapsul Status Printer Termal (Interaktif: dapat diketuk untuk cek ulang koneksi)
@@ -219,6 +226,8 @@ fun TopBar(
 fun SyncStatusBadge(
     status: SyncStatus,
     pendingCount: Int,
+    failedCount: Int = 0,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = A3Theme.colors
@@ -229,14 +238,23 @@ fun SyncStatusBadge(
             statusColors.warning.text,
             if (pendingCount > 0) "$pendingCount Menunggu" else "Menunggu"
         )
-        SyncStatus.ERROR -> Pair(statusColors.danger.text, "Bermasalah")
+        SyncStatus.ERROR -> Pair(
+            statusColors.danger.text,
+            if (failedCount > 0) "$failedCount Bermasalah" else "Bermasalah"
+        )
     }
 
     Surface(
         shape = RoundedCornerShape(9999.dp),
         color = colors.surface,
         shadowElevation = 1.dp,
-        modifier = modifier.border(0.5.dp, colors.border, RoundedCornerShape(9999.dp))
+        modifier = modifier
+            .border(0.5.dp, colors.border, RoundedCornerShape(9999.dp))
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else Modifier
+            )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),

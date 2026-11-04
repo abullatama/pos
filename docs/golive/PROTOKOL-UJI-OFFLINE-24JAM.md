@@ -114,7 +114,7 @@ Penguji menjalankan aktivitas operasional normal di kedua aplikasi. Catat setiap
 
 ## 4. LEMBAR KERJA REKONSILIASI & AUDIT HASIL UJI
 
-Bandingkan angka fisik dari Laporan Z tablet dengan data di Web Dashboard / Server (`https://a3-api.sidik.cloud`):
+Bandingkan angka fisik dari Laporan Z tablet dengan data di Web Dashboard / Server (`https://a3-api.nen.asia`):
 
 ### A. Rekonsiliasi Usaha Cafe (a3coffeeshop)
 

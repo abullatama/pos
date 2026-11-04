@@ -58,12 +58,30 @@ class OutboxSyncManagerTest {
             }
         }
 
+        override suspend fun uploadFile(
+            file: okhttp3.MultipartBody.Part,
+            fileId: okhttp3.RequestBody,
+            kind: okhttp3.RequestBody,
+            appId: String?,
+            appVersion: String?
+        ): Response<id.a3.core.sync.model.FileUploadResponse> {
+            return Response.success(id.a3.core.sync.model.FileUploadResponse(fileId = "test-file"))
+        }
+
         override suspend fun getOrderNotificationStatus(
             orderId: String,
             appId: String?,
             appVersion: String?
         ): Response<OrderNotificationStatusResponse> {
             return Response.success(OrderNotificationStatusResponse(status = "sent"))
+        }
+
+        override suspend fun searchCustomers(
+            query: String,
+            appId: String?,
+            appVersion: String?
+        ): Response<id.a3.core.sync.model.CustomerSearchResponse> {
+            return Response.success(id.a3.core.sync.model.CustomerSearchResponse())
         }
     }
 

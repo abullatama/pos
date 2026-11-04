@@ -1,90 +1,101 @@
-# HANDOFF: Rebranding Identitas (a3coffeeshop & athialoundry), Logo Launcher & Struk 58mm, Sanitasi Keamanan UI, dan Kesiapan Go-Live
+# HANDOFF: Tuntas 4 Tahap Penyelarasan Sinkronisasi Backend Laravel 12 & Kesiapan Uji Offline 24 Jam (F43)
 
 ## 1. Ringkasan Perubahan Sesi Ini
 
-Sesi ini menyelesaikan pembaruan menyeluruh identitas merek aplikasi kasir, eliminasi tuntas nama kode sementara (*placeholder*) `"tenang"`, pembaruan aset peluncur Android, format cetak struk kasir termal 58 mm, dan sanitasi keamanan antarmuka kasir menjelang fase *Go-Live*:
-
-### A. Rebranding Total Nama Usaha & Eliminasi Kata "Tenang"
-1. **Identitas Aplikasi Resmi:**
-   - **Cafe:** Nama aplikasi di layar/launcher Android resmi diubah menjadi **`a3coffeeshop`**.
-   - **Laundry:** Nama aplikasi di layar/launcher Android resmi diubah menjadi **`athialoundry`**.
-2. **Eliminasi Total Package ID "Tenang":**
-   - Menghapus package name sementara `id.tenang.kasir.*` (OQ-01 resmi ditutup).
-   - `app-cafe/build.gradle.kts`: `namespace = "id.a3coffeeshop"` dan `applicationId = "id.a3coffeeshop"`.
-   - `app-laundry/build.gradle.kts`: `namespace = "id.athialoundry"` dan `applicationId = "id.athialoundry"`.
-   - Struktur folder dan deklarasi package kelas cangkang (`MainActivity`, `NavHost`, `AppConfig`) dimigrasi sepenuhnya ke `id.a3coffeeshop` dan `id.athialoundry`.
-   - Pesan otomatis WhatsApp notifikasi cucian di `feature:laundry` diperbarui menyebut *"athialoundry"*.
+Sesi ini menuntaskan **Rencana 4 Tahap Penyelarasan Sinkronisasi & Integrasi Backend Laravel 12** (`https://a3-api.nen.asia/v1/` dan `docs/API_DOCUMENTATION.md`) secara menyeluruh, mencakup seluruh 14 jenis event outbox, mekanisme autentikasi tangguh, dan kesiapan operasional offline-first:
 
 ---
 
-### B. Ikon Peluncur Aplikasi Baru (Android Adaptive Icon)
-1. **`app-cafe` (`a3coffeeshop`):**
-   - Menggantikan foreground vektor cangkir kopi lama dengan **Logo Resmi A3** (*triple-A interlocking*) beresolusi tinggi dengan safe zone 68 dp pada seluruh kepadatan layar (*mipmap* mdpi, hdpi, xhdpi, xxhdpi, xxxhdpi).
-   - Latar belakang launcher bertekstur *Warm Cream* (`#F4F2E6`).
-2. **`app-laundry` (`athialoundry`):**
-   - Menggantikan foreground vektor drum mesin cuci lama dengan **Logo Resmi Laundry** (*hanger-house*) beresolusi tinggi dengan safe zone 68 dp.
-   - Latar belakang launcher bertekstur *Crisp Linen* (`#FAFAFB`).
+### A. Tahap 1: Ketahanan Autentikasi & Idempotensi Retriabel (F11, F28, F29, SYN-05, SYN-06)
+1. **`TokenAuthenticator` OkHttp (`:core:sync`):**
+   - Mengatasi potensi dead-lock dan infinite refresh loop: loop protection maksimal 3 percobaan beruntun (`priorResponse`).
+   - Concurrency-safe: deteksi pergantian token otomatis oleh thread lain dan sinkronisasi `Mutex` saat memanggil `AuthManager.refreshToken()`.
+2. **Proteksi HTTP 401 Unauthorized:**
+   - Respon 401 tidak lagi menandai data kasir sebagai `FAILED`, melainkan tetap berstatus `PENDING` dengan `incrementAttempts()`.
+   - Menjamin fakta transaksi uang kasir tidak masuk Antrean Bermasalah saat token sesi habis dan otomatis terkirim begitu kasir login kembali.
+3. **Preservasi Idempotensi `bundle_id` pada Retry:**
+   - `OutboxDao.retryAllFailedWithDeviceId` hanya meregenerasi `bundle_id` jika ID perangkat fisik berubah.
+   - Pada percobaan kirim ulang di perangkat yang sama, `bundle_id` asli tetap dipertahankan agar respons `DUPLICATE` server bekerja secara idempoten.
 
 ---
 
-### C. Pembaruan Kepala Struk & Nota Termal 58 mm (`:core:printer`)
-Pada `CustomerReceiptFormatter`, `RefundReceiptFormatter`, `CashOutReceiptFormatter`, dan `ZReportFormatter`:
-1. **Logo Grafis Bitmap Terpusat:**
-   - Dicetak otomatis di bagian paling atas struk menggunakan perintah ESC/POS raster bitmap standar (`GS v 0`) pada lebar 384 dot dengan proteksi transparansi alpha.
-2. **Identitas Usaha, Owner, dan Alamat Resmi (OQ-25 Ditutup):**
-   - **Nama Toko:** `A3 COFFEESHOP` / `ATHIA LOUNDRY`.
-   - **Nama Owner:** `DEVENTRI SILAMATITI BULUT` (panjang tepat 31 karakter, muat rapi dalam 1 baris kertas thermal tanpa text wrap).
-   - **Alamat:** `Jl. Trans Sulawesi Kelurahan Bintauna`.
-   - **Kontak/WA:** `0823-4778-5986` untuk kedua unit usaha.
+### B. Tahap 2: Koreksi Transaksi, Void, & Refund (`correction.recorded`, F35, F36, COR-01)
+1. **`CorrectionReasonMapper` (`:core:data`):**
+   - Pemetaan dwiarah kode alasan koreksi antara domain OpenAPI (`wrong_input`, `customer_cancelled`, `quality_complaint`, `wrong_made`, `promo`, `other`) dan validator Laravel 12 (`salah_input`, `pelanggan_batal`, `komplain_kualitas`, `salah_buat`, `promo`, `lainnya`).
+2. **Dual-Compatibility Payload di `OrderTransactionManager` & `SyncSender`:**
+   - Menyertakan pasangan field kompatibel:
+     - `order_line_id` (single) dan `order_line_ids` (array UUID).
+     - `payment_id` dan `original_payment_id`.
+     - `reason_note` dan `note` (wajib terisi jika `lainnya`).
+     - `approved_by` numerik `Long` (User ID).
 
 ---
 
-### D. Sanitasi Keamanan Antarmuka (UI) & Anti-Bocor Kredensial
-1. **Eliminasi Bocoran PIN Owner di Layar Admin (`AdminMenuScreen.kt`):**
-   - Menghapus teks developer hardcoded `text = "PIN default bawaan: 9999"`.
-   - Menggantinya dengan instruksi netral: `"Masukkan 4 digit PIN otorisasi"`.
-2. **Koreksi Label Kas Keluar (`CashOutScreen.kt`):**
-   - Mengubah label ambigu `PIN: ${item.approvedBy}` menjadi `Disetujui: ${item.approvedBy}` (*Disetujui: Manager*).
-3. **Penyelarasan Dokumen Go-Live (`docs/golive/`):**
-   - Menyelaraskan nama usaha dan nama owner pada seluruh dokumen persiapan:
-     - `CHECKLIST-HARI-PERTAMA.md`
-     - `SOP-DARURAT-OPERASIONAL.md`
-     - `BUKU-NOTA-CADANGAN.md`
-     - `PANDUAN-PELATIHAN-STAF.md`
-     - `PROTOKOL-UJI-OFFLINE-24JAM.md`
+### C. Tahap 3: Siklus Shift Kasir & Siklus Cucian Laundry (F30-F32, F38, F21, F22, F24)
+1. **`LaundryStatusMapper` (`:core:data`):**
+   - Pemetaan dwiarah status cucian antara OpenAPI (`received`, `processing`, `ready`, `picked_up`) dan backend Laravel 12 (`diterima`, `diproses`, `siap`, `diambil`).
+   - Normalisasi `user_id` dan `approved_by` menjadi numerik `Long`.
+2. **Penyelarasan Siklus Shift di `OrderTransactionManager` & `SyncSender`:**
+   - `shift.closed`: Otomatis menghitung dan menyertakan `expected_cash` (K1: modal + penjualan tunai + DP tunai - refund tunai - kas keluar) dan `difference`, serta jaminan array `qris_checked_payment_ids` dan `handover_order_ids`.
+   - `shift.force_closed`: Menyertakan `approved_by` numerik dan jaminan field `note` non-kosong.
+3. **Penyelarasan Siklus Laundry:**
+   - `advanceLaundryOrderStatus`: Menyertakan `user_id` numerik staf dan `backend_status`.
+   - `recordLaundryPickups`: Dual-compatibility `line_ids` array dan status `"diambil"`.
+
+---
+
+### D. Tahap 4: Endpoint Pendukung Tablet, Pelanggan, & Kalibrasi Waktu Server (F19, F12, LDR-01, SYN-06)
+1. **Pencarian Pelanggan Laundry Online & Offline-First (`GET /v1/customers/search`):**
+   - Endpoint `GET /v1/customers/search?q={query}` di `SyncApiService` dengan DTO `CustomerSearchResponse` dan `RemoteCustomerDto` (`LenientIdStringSerializer`).
+   - `DefaultLaundryOrderRepository.searchCustomers` memancarkan Flow Room lokal secara instan, memanggil server live di background, dan meng-upsert pelanggan baru ke Room dengan nomor HP ternormalisasi `08...` (`PhoneNumberUtil`).
+2. **Kalibrasi Waktu Server & Pencegahan Karantina `CLOCK_SKEW` (`GET /v1/time`):**
+   - Endpoint `GET /v1/time` di `SyncMasterApiService` dan `MasterDataSyncManager.syncServerTime()`.
+   - Menghitung offset jam tablet terhadap UTC server (`server_clock_offset_ms`) dan menyimpannya ke `sync_state`.
+   - `SyncSender` mengalibrasikan `occurred_at` otomatis menggunakan offset server saat terjadi penolakan `CLOCK_SKEW`.
+3. **Penyelarasan Seluruh Event Sekunder:**
+   - `customer.created`: UUID deterministik dan nomor telepon bersih `08...`.
+   - `menu.sold_out_changed`: tipe boolean murni (`true`/`false`).
+   - `order.sent_to_kitchen`: jaminan keberadaan array `line_ids`.
+   - Penanganan deteksi error dan regenerasi hash untuk seluruh 14 jenis event outbox.
 
 ---
 
 ## 2. File yang Dimodifikasi dan Dibuat
 
-1. **Konfigurasi & Cangkang Aplikasi:**
-   - `app-cafe/build.gradle.kts` & `app-laundry/build.gradle.kts`: Pembaruan namespace & applicationId.
-   - `app-cafe/src/main/res/values/strings.xml` & `app-laundry/src/main/res/values/strings.xml`: Pembaruan `app_name`.
-   - `app-cafe/src/main/java/id/a3coffeeshop/*`: Refaktor package dari `id.tenang.kasir.cafe`.
-   - `app-laundry/src/main/java/id/athialoundry/*`: Refaktor package dari `id.tenang.kasir.laundry`.
-   - `app-cafe/src/main/res/drawable/` & `app-laundry/src/main/res/drawable/`: Pembaruan background adaptive icon.
-   - `app-cafe/src/main/res/mipmap-*/` & `app-laundry/src/main/res/mipmap-*/`: Pembuatan aset ikon launcher resmi.
-2. **Modul Printer & Layar Transaksi:**
-   - `core/printer/src/main/kotlin/id/a3/core/printer/escpos/EscPosBuilder.kt`: Dukungan raster centered bitmap dengan penanganan transparansi.
-   - `core/printer/src/main/kotlin/id/a3/core/printer/format/*`: Integrasi logo bitmap, owner, dan alamat baru pada 4 formatter struk.
-   - `feature/payment/src/main/kotlin/id/a3/feature/payment/presentation/PaymentViewModel.kt`: Default store profile baru.
-   - `feature/shift/src/main/kotlin/id/a3/feature/shift/presentation/*`: Penyelarasan profil toko dan sanitasi label `Disetujui:`.
-   - `feature/admin/src/main/kotlin/id/a3/feature/admin/presentation/*`: Sanitasi teks PIN bawaan dan format uji printer/SOP.
-   - `feature/laundry/src/main/kotlin/id/a3/feature/laundry/presentation/LaundryOrdersViewModel.kt`: Pesan WhatsApp athialoundry.
-3. **Dokumentasi & Pengujian:**
-   - `docs/open-questions.md`: Penutupan OQ-01 dan OQ-25 (Selesai).
-   - `docs/golive/*`: Penyelarasan 5 dokumen go-live.
-   - `progress.md`: Pencatatan log rekayasa perangkat lunak.
-   - Seluruh unit test terkait di `:core:printer`, `:feature:payment`, `:feature:shift`, `:feature:admin`, `:core:sync`, `:core:ui`, dan `:build-logic`.
+1. **Modul Inti & Arsitektur (`:core`):**
+   - `core/data/src/main/kotlin/id/a3/core/data/util/LaundryStatusMapper.kt` (Dibuat)
+   - `core/data/src/main/kotlin/id/a3/core/data/util/CorrectionReasonMapper.kt` (Dibuat)
+   - `core/data/src/main/kotlin/id/a3/core/data/repository/OrderTransactionManager.kt` (Dimodifikasi)
+   - `core/sync/src/main/kotlin/id/a3/core/sync/api/TokenAuthenticator.kt` (Dibuat)
+   - `core/sync/src/main/kotlin/id/a3/core/sync/api/SyncApiService.kt` & `SyncMasterApiService.kt` (Dimodifikasi)
+   - `core/sync/src/main/kotlin/id/a3/core/sync/model/SyncModels.kt` (Dimodifikasi)
+   - `core/sync/src/main/kotlin/id/a3/core/sync/MasterDataSyncManager.kt` (Dimodifikasi)
+   - `core/sync/src/main/kotlin/id/a3/core/sync/SyncSender.kt` (Dimodifikasi)
+2. **Modul Fitur & Cangkang (`:feature` & `:app`):**
+   - `feature/laundry/src/main/kotlin/id/a3/feature/laundry/repository/LaundryOrderRepository.kt` (Dimodifikasi)
+   - `feature/laundry/src/main/kotlin/id/a3/feature/laundry/presentation/LaundryOrdersViewModel.kt` (Dimodifikasi)
+   - `app-cafe/src/main/java/id/a3coffeeshop/MainActivity.kt` (Dimodifikasi)
+   - `app-laundry/src/main/java/id/athialoundry/MainActivity.kt` (Dimodifikasi)
+3. **Pengujian Unit Baru & Terperinci:**
+   - `core/data/src/test/kotlin/id/a3/core/data/util/LaundryStatusMapperTest.kt` (5 skenario, Lulus)
+   - `core/data/src/test/kotlin/id/a3/core/data/util/CorrectionReasonMapperTest.kt` (4 skenario, Lulus)
+   - `feature/laundry/src/test/kotlin/id/a3/feature/laundry/repository/CustomerSearchSyncTest.kt` (Lulus)
+   - `core/sync/src/test/kotlin/id/a3/core/sync/MasterDataSyncManagerTest.kt` (5 skenario, Lulus)
+   - `core/sync/src/test/kotlin/id/a3/core/sync/SyncSenderIdempotencyTest.kt` (53 skenario, Lulus)
+   - `core/sync/src/test/kotlin/id/a3/core/sync/api/TokenAuthenticatorTest.kt` (4 skenario, Lulus)
+4. **Dokumentasi & Pelacakan:**
+   - `progress.md`: Pencatatan log implementasi Tahap 1 s/d Tahap 4.
 
 ---
 
 ## 3. Status Pengujian & Kompilasi APK
 
-- **Unit Test Modul Terkait:**
-  `./gradlew :core:printer:testDebugUnitTest :feature:payment:testDebugUnitTest :feature:admin:testDebugUnitTest :feature:shift:testDebugUnitTest :build-logic:test` $\rightarrow$ **BUILD SUCCESSFUL** (100% lulus tanpa kegagalan).
+- **Unit Test Seluruh Modul:**
+  `./gradlew test` $\rightarrow$ **BUILD SUCCESSFUL** (282 test lulus 100%).
+- **Uji Dependensi Arsitektur:**
+  `./gradlew verifyModuleDependencies` $\rightarrow$ **BUILD SUCCESSFUL** (Isolasi modul F07 valid 100%).
 - **Compile APK Debug Kedua Aplikasi:**
-  `./gradlew :app-cafe:assembleDebug :app-laundry:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL** (sukses dibangun dalam 6 detik).
+  `./gradlew :app-cafe:assembleDebug :app-laundry:assembleDebug` $\rightarrow$ **BUILD SUCCESSFUL** (sukses tanpa galat).
 - **Lokasi Berkas APK Siap Pasang:**
   - Cafe: `app-cafe/build/outputs/apk/debug/app-cafe-debug.apk`
   - Laundry: `app-laundry/build/outputs/apk/debug/app-laundry-debug.apk`
@@ -93,17 +104,17 @@ Pada `CustomerReceiptFormatter`, `RefundReceiptFormatter`, `CashOutReceiptFormat
 
 ## 4. Panduan untuk Sesi Baru (Instruksi Pengujian & Operasional)
 
-1. **Pemasangan APK ke Tablet Fisik (Redmi Pad 2):**
-   - Pasang kedua file APK debug ke tablet kasir.
-   - Periksa tampilan home screen / app drawer tablet: ikon logo A3 dan Laundry harus tampil tajam, proporsional, dan berlabel `a3coffeeshop` serta `athialoundry`.
-2. **Verifikasi Mode Demo (Bypass) & Cetak Struk Fisik:**
-   - Buka aplikasi; jika muncul layar registrasi perangkat, tekan tombol `"Masuk Mode Demo / Lewati"`.
-   - Buka shift kasir dengan modal awal Rp 200.000.
-   - Hubungkan Bluetooth ke printer iWare C58BT dan lakukan transaksi uji.
-   - Periksa hasil cetak kertas struk thermal 58 mm:
-     - Logo toko tercetak di atas.
-     - Nama usaha (`A3 COFFEESHOP` atau `ATHIA LOUNDRY`).
-     - Teks `Owner: DEVENTRI SILAMATITI BULUT` pas 1 baris tanpa wrap.
-     - Alamat `Jl. Trans Sulawesi Kelurahan Bintauna` dan kontak `0823-4778-5986`.
-3. **Penyelesaian Fitur Terakhir F43 (Uji Offline 24 Jam):**
-   - F43 adalah satu-satunya fitur yang berstatus `"passes": false` di `feature_list.json` karena menunggu pengujian fisik 24 jam dengan panduan di `docs/golive/PROTOKOL-UJI-OFFLINE-24JAM.md`.
+1. **Deploy APK ke Tablet Fisik (Redmi Pad 2):**
+   ```powershell
+   adb install -r app-cafe\build\outputs\apk\debug\app-cafe-debug.apk
+   adb install -r app-laundry\build\outputs\apk\debug\app-laundry-debug.apk
+   ```
+2. **Pemeriksaan Status Awal:**
+   - Buka aplikasi `a3coffeeshop` dan `athialoundry`.
+   - Pastikan perangkat terdaftar berstatus **ACTIVE**.
+   - Login kasir dengan PIN staf.
+   - Amati TopBar: Indikator Sinkron wajib berwarna **Hijau ("Tersinkron")** dan antrean outbox bernilai 0.
+3. **Eksekusi Pengujian Terakhir: Uji Offline 24 Jam (F43):**
+   - Ikuti instruksi pada `docs/golive/PROTOKOL-UJI-OFFLINE-24JAM.md`.
+   - Aktifkan Mode Pesawat (Airplane Mode) pada tablet dan jalankan operasional penjualan selama 24 jam.
+   - Sambungkan kembali ke internet pada T+24 jam dan pastikan seluruh transaksi outbox terkirim (ACCEPTED) ke live server tanpa ada yang masuk antrean bermasalah.

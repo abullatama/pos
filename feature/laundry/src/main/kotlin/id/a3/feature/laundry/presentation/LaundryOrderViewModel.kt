@@ -86,8 +86,15 @@ data class LaundryOrderUiState(
 class LaundryOrderViewModel(
     private val repository: LaundryOrderRepository,
     private val printerService: PrinterService? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val deviceCodeProvider: (() -> String?)? = null
 ) : ViewModel() {
+
+    val devicePrefix: String
+        get() {
+            val code = deviceCodeProvider?.invoke()?.takeIf { it.isNotBlank() }
+            return if (code != null) "$code-" else "L1-"
+        }
 
     private val _lines = MutableStateFlow<List<LaundrySelectedLine>>(emptyList())
     private val _selectedCustomer = MutableStateFlow<CustomerEntity?>(null)
@@ -103,6 +110,18 @@ class LaundryOrderViewModel(
     private val _inputIsExpress = MutableStateFlow(false)
     private val _inputNote = MutableStateFlow("")
     private val _orderSuccessNotification = MutableStateFlow<String?>(null)
+
+    init {
+        viewModelScope.launch(ioDispatcher) {
+            repository.seedInitialServicesIfEmpty()
+        }
+    }
+
+    fun refreshServices() {
+        viewModelScope.launch(ioDispatcher) {
+            repository.seedInitialServicesIfEmpty()
+        }
+    }
 
     private val _customerSearchResults: StateFlow<List<CustomerEntity>> = _customerSearchQuery
         .flatMapLatest { query ->
@@ -183,13 +202,20 @@ class LaundryOrderViewModel(
 
         val filteredServices = when (category) {
             LaundryCategoryFilter.ALL -> services
-            LaundryCategoryFilter.KILOAN -> services.filter { it.unit.lowercase() == "kg" }
-            LaundryCategoryFilter.SATUAN -> services.filter { it.unit.lowercase() == "pcs" }
+            LaundryCategoryFilter.KILOAN -> services.filter {
+                val u = it.unit.lowercase().trim()
+                u == "kg" || u == "kilo" || u == "kiloan" || u == "kilogram"
+            }
+            LaundryCategoryFilter.SATUAN -> services.filter {
+                val u = it.unit.lowercase().trim()
+                u == "pcs" || u == "satuan" || u == "potong" || u == "buah" || u == "lembar" || u == "pc"
+            }
         }
 
         // Domain lines calculation
         val domainLines = lines.map { selected ->
-            val isPcs = selected.service.unit.lowercase() == "pcs"
+            val u = selected.service.unit.lowercase().trim()
+            val isPcs = u in listOf("pcs", "satuan", "potong", "buah", "lembar", "pc")
             val effectiveRate = if (selected.isExpress && selected.service.expressRate > 0) {
                 selected.service.expressRate
             } else {
@@ -417,7 +443,7 @@ class LaundryOrderViewModel(
         val finalDisplayNumber = if (!displayNumber.isNullOrBlank()) {
             displayNumber
         } else {
-            repository.getNextDisplayNumber("L1-")
+            repository.getNextDisplayNumber(devicePrefix)
         }
         val currentState = uiState.value
         val orderId = UUID.randomUUID().toString()
@@ -448,7 +474,8 @@ class LaundryOrderViewModel(
                 itemRefId = selected.service.id,
                 nameSnapshot = selected.service.name + if (selected.isExpress) " (Express)" else "",
                 quantity = if (isPcs) selected.pieces else 1,
-                unitPriceSnapshot = if (isPcs) selected.service.rate else (lineTotal / billedWeight).toLong(),
+                weight = if (isPcs) null else billedWeight,
+                unitPriceSnapshot = if (isPcs) selected.service.rate else (if (billedWeight > 0.0) (lineTotal / billedWeight).toLong() else selected.service.rate),
                 note = selected.note.ifBlank { null }
             )
         }

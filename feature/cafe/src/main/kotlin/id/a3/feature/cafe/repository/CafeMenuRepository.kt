@@ -1,16 +1,29 @@
 package id.a3.feature.cafe.repository
 
 import id.a3.core.data.local.dao.MasterDataDao
+import id.a3.core.data.local.dao.SyncStateDao
 import id.a3.core.data.local.entity.MenuItemEntity
 import id.a3.core.data.repository.OrderTransactionManager
+import id.a3.core.domain.cafe.DiscountType
+import id.a3.core.domain.cafe.TaxMode
 import id.a3.feature.cafe.model.CafeProduct
+import id.a3.feature.cafe.model.DiscountPreset
 import id.a3.feature.cafe.model.MenuOptionItem
 import id.a3.feature.cafe.model.OptionKind
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+
+data class TaxAndServiceSettings(
+    val taxPercent: Int = 0,
+    val taxMode: TaxMode = TaxMode.ADDED,
+    val servicePercent: Int = 0
+)
 
 interface CafeMenuRepository {
     fun observeProducts(): Flow<List<CafeProduct>>
+    fun observeDiscountPresets(): Flow<List<DiscountPreset>>
+    fun observeTaxAndService(): Flow<TaxAndServiceSettings>
     suspend fun getProductById(id: String): CafeProduct?
     suspend fun seedInitialMenuIfEmpty()
     suspend fun setProductSoldOut(id: String, soldOut: Boolean)
@@ -18,7 +31,8 @@ interface CafeMenuRepository {
 
 class DefaultCafeMenuRepository(
     private val masterDataDao: MasterDataDao,
-    private val transactionManager: OrderTransactionManager? = null
+    private val transactionManager: OrderTransactionManager? = null,
+    private val syncStateDao: SyncStateDao? = null
 ) : CafeMenuRepository {
 
     companion object {
@@ -150,63 +164,104 @@ class DefaultCafeMenuRepository(
     }
 
     override suspend fun seedInitialMenuIfEmpty() {
-        val sample = masterDataDao.getMenuItem("menu-latte")
-        if (sample == null) {
-            val entities = INITIAL_MENU_CATALOG.map { prod ->
-                MenuItemEntity(
-                    id = prod.id,
-                    name = prod.name,
-                    category = prod.category,
-                    price = prod.basePrice,
-                    active = true,
-                    soldOut = prod.soldOut
-                )
-            }
-            masterDataDao.upsertMenuItems(entities)
-        }
+        // Mode produksi / live server: tidak menyuntikkan menu dummy. Seluruh menu murni berasal dari server.
     }
 
     override fun observeProducts(): Flow<List<CafeProduct>> {
-        return masterDataDao.observeActiveMenuItems().map { entities ->
-            if (entities.isEmpty()) {
-                INITIAL_MENU_CATALOG
-            } else {
-                entities.map { entity ->
-                    val defaultItem = INITIAL_MENU_CATALOG.find { it.id == entity.id }
-                    CafeProduct(
-                        id = entity.id,
-                        name = entity.name,
-                        category = entity.category,
-                        basePrice = entity.price,
-                        soldOut = entity.soldOut,
-                        options = defaultItem?.options ?: emptyList()
+        return combine(
+            masterDataDao.observeActiveMenuItems(),
+            masterDataDao.observeAllActiveMenuOptions()
+        ) { menuEntities, optionEntities ->
+            val optionsByMenuItem = optionEntities.groupBy { it.menuItemId }
+            menuEntities.map { entity ->
+                val options = optionsByMenuItem[entity.id].orEmpty().map { optEntity ->
+                    MenuOptionItem(
+                        id = optEntity.id,
+                        kind = if (optEntity.kind.equals("variant", ignoreCase = true) || optEntity.kind.equals("varian", ignoreCase = true)) {
+                            OptionKind.VARIANT
+                        } else {
+                            OptionKind.ADDON
+                        },
+                        name = optEntity.name,
+                        priceDelta = optEntity.priceDelta
                     )
                 }
+                CafeProduct(
+                    id = entity.id,
+                    name = entity.name,
+                    category = entity.category,
+                    basePrice = entity.price,
+                    soldOut = entity.soldOut,
+                    options = options
+                )
             }
+        }
+    }
+
+    override fun observeDiscountPresets(): Flow<List<DiscountPreset>> {
+        return masterDataDao.observeActiveDiscountPresets().map { list ->
+            list.map { entity ->
+                val type = if (entity.type.equals("amount", ignoreCase = true) || entity.type.equals("nominal", ignoreCase = true)) {
+                    DiscountType.AMOUNT
+                } else {
+                    DiscountType.PERCENT
+                }
+                DiscountPreset(
+                    id = entity.id,
+                    name = entity.name,
+                    type = type,
+                    value = entity.value
+                )
+            }
+        }
+    }
+
+    override fun observeTaxAndService(): Flow<TaxAndServiceSettings> {
+        val dao = syncStateDao ?: return kotlinx.coroutines.flow.flowOf(TaxAndServiceSettings())
+        return combine(
+            dao.observe("tax_percent"),
+            dao.observe("tax_mode"),
+            dao.observe("service_charge_percent")
+        ) { taxStr, modeStr, serviceStr ->
+            val taxPercent = taxStr?.toIntOrNull() ?: 0
+            val taxMode = if (modeStr?.equals("included", ignoreCase = true) == true) TaxMode.INCLUDED else TaxMode.ADDED
+            val servicePercent = serviceStr?.toIntOrNull() ?: 0
+            TaxAndServiceSettings(
+                taxPercent = taxPercent,
+                taxMode = taxMode,
+                servicePercent = servicePercent
+            )
         }
     }
 
     override suspend fun getProductById(id: String): CafeProduct? {
-        val entity = masterDataDao.getMenuItem(id)
-        if (entity != null) {
-            val defaultItem = INITIAL_MENU_CATALOG.find { it.id == entity.id }
-            return CafeProduct(
-                id = entity.id,
-                name = entity.name,
-                category = entity.category,
-                basePrice = entity.price,
-                soldOut = entity.soldOut,
-                options = defaultItem?.options ?: emptyList()
+        val entity = masterDataDao.getMenuItem(id) ?: return null
+        val options = masterDataDao.getActiveOptionsForMenuItem(id).map { optEntity ->
+            MenuOptionItem(
+                id = optEntity.id,
+                kind = if (optEntity.kind.equals("variant", ignoreCase = true) || optEntity.kind.equals("varian", ignoreCase = true)) {
+                    OptionKind.VARIANT
+                } else {
+                    OptionKind.ADDON
+                },
+                name = optEntity.name,
+                priceDelta = optEntity.priceDelta
             )
         }
-        return INITIAL_MENU_CATALOG.find { it.id == id }
+        return CafeProduct(
+            id = entity.id,
+            name = entity.name,
+            category = entity.category,
+            basePrice = entity.price,
+            soldOut = entity.soldOut,
+            options = options
+        )
     }
 
     override suspend fun setProductSoldOut(id: String, soldOut: Boolean) {
-        if (transactionManager != null) {
-            transactionManager.recordSoldOutChanged(id, soldOut)
-        } else {
-            masterDataDao.updateMenuItemSoldOut(id, soldOut)
-        }
+        // Mode Sementara (Opsi B2): Hanya perbarui ketersediaan menu di Room database lokal.
+        // Penulisan event outbox 'menu.sold_out_changed' dinonaktifkan sementara karena server backend
+        // belum mendaftarkan tipe event tersebut pada POST /v1/sync/bundles.
+        masterDataDao.updateMenuItemSoldOut(id, soldOut)
     }
 }

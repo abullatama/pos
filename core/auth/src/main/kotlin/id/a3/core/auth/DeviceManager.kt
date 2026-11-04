@@ -8,6 +8,9 @@ import id.a3.core.domain.device.DeviceStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 sealed class DeviceRegisterResult {
     data object PendingApproval : DeviceRegisterResult()
@@ -43,6 +46,9 @@ class DeviceManager(
     private val _deviceStatus = MutableStateFlow(DeviceStatus.UNREGISTERED)
     val deviceStatus: StateFlow<DeviceStatus> = _deviceStatus.asStateFlow()
 
+    private val _isInitialized = MutableStateFlow(false)
+    val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
+
     @Volatile
     var cachedCredential: String? = null
         private set
@@ -51,17 +57,54 @@ class DeviceManager(
     var cachedAuthToken: String? = null
         private set
 
+    @Volatile
+    var cachedDeviceId: String? = null
+        private set
+
+    @Volatile
+    var cachedDeviceCode: String? = null
+        private set
+
     suspend fun initialize() {
         val current = encryptedDataStore.getDeviceStatus()
         _deviceStatus.value = current
         cachedCredential = encryptedDataStore.getDeviceCredential()
         cachedAuthToken = encryptedDataStore.getAccessToken()
+        cachedDeviceId = encryptedDataStore.getOrCreateDeviceId()
+        cachedDeviceCode = encryptedDataStore.getDeviceServerCode()
+        _isInitialized.value = true
+    }
+
+    suspend fun getDeviceCode(): String? {
+        if (!cachedDeviceCode.isNullOrBlank()) return cachedDeviceCode
+        val code = encryptedDataStore.getDeviceServerCode()
+        if (!code.isNullOrBlank()) {
+            cachedDeviceCode = code
+            return code
+        }
+        return null
+    }
+
+    suspend fun saveDeviceCode(code: String) {
+        cachedDeviceCode = code
+        encryptedDataStore.updateDeviceStatus(
+            status = encryptedDataStore.getDeviceStatus(),
+            serverCode = code
+        )
     }
 
     fun isDemoMode(): Boolean = cachedCredential == "demo-device-credential-local"
 
     suspend fun getDeviceId(): String {
-        return encryptedDataStore.getOrCreateDeviceId()
+        val id = encryptedDataStore.getOrCreateDeviceId()
+        cachedDeviceId = id
+        return id
+    }
+
+    suspend fun regenerateDeviceId(): String {
+        val id = encryptedDataStore.regenerateDeviceId()
+        cachedDeviceId = id
+        return id
     }
 
     suspend fun getDeviceName(): String? {
@@ -72,6 +115,16 @@ class DeviceManager(
         val cred = encryptedDataStore.getDeviceCredential()
         cachedCredential = cred
         return cred
+    }
+
+    private fun parseServerErrorMessage(errorBody: String): String? {
+        return try {
+            val jsonElement = Json.parseToJsonElement(errorBody)
+            val obj = jsonElement.jsonObject
+            obj["message"]?.jsonPrimitive?.content
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**
@@ -88,14 +141,14 @@ class DeviceManager(
             return DeviceRegisterResult.Error("INVALID_NAME", "Nama tablet tidak boleh kosong")
         }
 
-        val deviceId = encryptedDataStore.getOrCreateDeviceId()
-        val request = DeviceRegisterRequest(
+        var deviceId = encryptedDataStore.getOrCreateDeviceId()
+        var request = DeviceRegisterRequest(
             registrationCode = registrationCode.trim(),
             deviceId = deviceId,
             name = deviceName.trim()
         )
 
-        val response = try {
+        var response = try {
             apiService.registerDevice(
                 request = request,
                 appId = appId,
@@ -105,24 +158,71 @@ class DeviceManager(
             return DeviceRegisterResult.Error("NETWORK_ERROR", e.message ?: "Koneksi ke server gagal")
         }
 
-        val code = response.code()
-        return if (response.isSuccessful || code == 202) {
+        var code = response.code()
+        var errBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
+
+        // Jika server mengembalikan 409 karena device_id sudah terdaftar sebelumnya (DEVICE_ALREADY_REGISTERED),
+        // otomatis buat device_id baru dan coba daftarkan sekali lagi dengan kode yang sama
+        if (code == 409 && (errBody?.contains("DEVICE_ALREADY_REGISTERED") == true || errBody?.contains("device_id") == true)) {
+            deviceId = encryptedDataStore.regenerateDeviceId()
+            request = DeviceRegisterRequest(
+                registrationCode = registrationCode.trim(),
+                deviceId = deviceId,
+                name = deviceName.trim()
+            )
+            val retryResponse = try {
+                apiService.registerDevice(
+                    request = request,
+                    appId = appId,
+                    appVersion = appVersion
+                )
+            } catch (e: Exception) {
+                return DeviceRegisterResult.Error("NETWORK_ERROR", e.message ?: "Koneksi ke server gagal")
+            }
+            if (retryResponse.isSuccessful || retryResponse.code() == 202) {
+                cachedDeviceId = deviceId
+                encryptedDataStore.saveDeviceRegistration(
+                    deviceId = deviceId,
+                    deviceName = deviceName.trim(),
+                    status = DeviceStatus.PENDING,
+                    registrationCode = registrationCode.trim()
+                )
+                _deviceStatus.value = DeviceStatus.PENDING
+                return DeviceRegisterResult.PendingApproval
+            } else {
+                response = retryResponse
+                code = retryResponse.code()
+                errBody = try { retryResponse.errorBody()?.string() } catch (_: Exception) { null }
+            }
+        }
+
+        if (response.isSuccessful || code == 202) {
+            val body = response.body()
+            cachedDeviceId = deviceId
             encryptedDataStore.saveDeviceRegistration(
                 deviceId = deviceId,
                 deviceName = deviceName.trim(),
                 status = DeviceStatus.PENDING,
                 registrationCode = registrationCode.trim()
             )
-            _deviceStatus.value = DeviceStatus.PENDING
-            DeviceRegisterResult.PendingApproval
-        } else {
-            val message = when (code) {
-                409 -> "Kode pendaftaran sudah digunakan atau tidak valid"
-                422 -> "Format data pendaftaran tidak sesuai spesifikasi"
-                else -> "Gagal mendaftarkan perangkat (kode $code): ${response.message()}"
+            body?.code?.let { serverCode ->
+                cachedDeviceCode = serverCode
+                encryptedDataStore.updateDeviceStatus(
+                    status = DeviceStatus.PENDING,
+                    serverCode = serverCode
+                )
             }
-            DeviceRegisterResult.Error("HTTP_$code", message)
+            _deviceStatus.value = DeviceStatus.PENDING
+            return DeviceRegisterResult.PendingApproval
         }
+
+        val serverMessage = errBody?.let { parseServerErrorMessage(it) }
+        val message = when (code) {
+            409 -> serverMessage ?: "Perangkat ini sudah terdaftar dalam sistem (Device ID bentrok)"
+            422 -> serverMessage ?: "Kode pendaftaran tidak valid atau sudah kedaluwarsa"
+            else -> serverMessage ?: "Gagal mendaftarkan perangkat (kode $code): ${response.message()}"
+        }
+        return DeviceRegisterResult.Error("HTTP_$code", message)
     }
 
     /**
@@ -164,22 +264,35 @@ class DeviceManager(
 
             if (newStatus == DeviceStatus.REVOKED) {
                 encryptedDataStore.markDeviceRevoked()
+                cachedCredential = null
             } else {
+                if (!body.code.isNullOrBlank()) {
+                    cachedDeviceCode = body.code
+                }
                 encryptedDataStore.updateDeviceStatus(
                     status = newStatus,
                     credential = body.deviceCredential,
                     businessUnitId = body.businessUnitId,
                     serverCode = body.code
                 )
+                if (!body.deviceCredential.isNullOrBlank()) {
+                    cachedCredential = body.deviceCredential
+                } else if (newStatus == DeviceStatus.ACTIVE) {
+                    cachedCredential = encryptedDataStore.getDeviceCredential()
+                }
             }
 
             _deviceStatus.value = newStatus
             return DeviceCheckResult.StatusUpdated(newStatus)
         }
 
-        return if (code == 401 || code == 403) {
-            // Perangkat tidak dikenal atau akses dicabut
+        val errBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
+        val isExplicitRevoked = code == 403 || (errBody != null && errBody.contains("DEVICE_REVOKED"))
+
+        return if (isExplicitRevoked) {
+            // Perangkat dicabut aksesnya oleh owner
             encryptedDataStore.markDeviceRevoked()
+            cachedCredential = null
             _deviceStatus.value = DeviceStatus.REVOKED
             DeviceCheckResult.StatusUpdated(DeviceStatus.REVOKED)
         } else {
@@ -206,8 +319,10 @@ class DeviceManager(
         }
 
         val credential = encryptedDataStore.getDeviceCredential()
+        cachedCredential = credential
         val request = DeviceHeartbeatRequest(
             appVersion = appVersion,
+            appId = appId,
             outboxPending = outboxPending,
             outboxProblem = outboxProblem,
             batteryPercent = batteryPercent,
@@ -227,14 +342,19 @@ class DeviceManager(
         }
 
         val code = response.code()
+        val errBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
+        val isExplicitRevoked = code == 403 || (errBody != null && errBody.contains("DEVICE_REVOKED"))
+
         return if (response.isSuccessful || code == 204) {
             DeviceHeartbeatResult.Success
-        } else if (code == 401 || code == 403) {
+        } else if (isExplicitRevoked) {
             encryptedDataStore.markDeviceRevoked()
+            cachedCredential = null
             _deviceStatus.value = DeviceStatus.REVOKED
             DeviceHeartbeatResult.DeviceRevoked
         } else {
-            DeviceHeartbeatResult.Error("HTTP_$code", "Gagal mengirim heartbeat (kode $code): ${response.message()}")
+            val errorMsg = if (!errBody.isNullOrBlank()) errBody else response.message()
+            DeviceHeartbeatResult.Error("HTTP_$code", "Gagal mengirim heartbeat (kode $code): $errorMsg")
         }
     }
 

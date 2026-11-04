@@ -317,17 +317,17 @@ fun ManagerPinApprovalDialog(
                             color = colors.ink
                         )
 
-                        // 4 Indikator Digit PIN Bulat
+                        // 6 Indikator Digit PIN Fleksibel (4-6 Digit)
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(vertical = 4.dp)
                         ) {
-                            repeat(4) { idx ->
+                            repeat(6) { idx ->
                                 val isFilled = idx < pinInput.length
                                 Box(
                                     modifier = Modifier
-                                        .size(16.dp)
+                                        .size(14.dp)
                                         .clip(CircleShape)
                                         .background(if (isFilled) colors.accent else colors.canvas)
                                         .border(1.5.dp, if (isFilled) colors.accent else colors.border, CircleShape)
@@ -370,7 +370,7 @@ fun ManagerPinApprovalDialog(
                         // Keypad Numerik 3x4
                         A3Keypad(
                             onDigitClick = { digit ->
-                                if (!isManagerLocked && pinInput.length < 4) {
+                                if (!isManagerLocked && pinInput.length < 6) {
                                     pinInput += digit
                                     inlineError = null
                                 }
@@ -407,7 +407,7 @@ fun ManagerPinApprovalDialog(
                                 onClick = {
                                     if (isManagerLocked) return@A3Button
                                     if (pinInput.length < 4) {
-                                        inlineError = "Masukkan 4 digit PIN lengkap"
+                                        inlineError = "Masukkan 4-6 digit PIN lengkap"
                                         return@A3Button
                                     }
                                     if (showAuditReasons && selectedReasonCode == "other" && noteInput.trim().isBlank()) {
@@ -421,7 +421,7 @@ fun ManagerPinApprovalDialog(
                                     )
                                 },
                                 variant = ButtonVariant.DANGER,
-                                enabled = !isManagerLocked && pinInput.length == 4,
+                                enabled = !isManagerLocked && pinInput.length in 4..6,
                                 modifier = Modifier.weight(1f)
                             )
                         }

@@ -69,11 +69,11 @@ fun CafeVariantBottomSheet(
     val shapes = A3Theme.shapes
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // State varian (default varian pertama jika ada)
-    var selectedVariant by remember { mutableStateOf(product.variants.firstOrNull()) }
+    // State varian (default null / ukuran reguler tanpa tambahan biaya, dapat dipilih & dibatalkan)
+    var selectedVariant by remember(product) { mutableStateOf<MenuOptionItem?>(null) }
 
     // State add-ons (multi-selection)
-    val selectedAddons = remember { mutableStateOf(setOf<MenuOptionItem>()) }
+    val selectedAddons = remember(product) { mutableStateOf(setOf<MenuOptionItem>()) }
 
     // State catatan dan kuantitas
     var note by remember { mutableStateOf("") }
@@ -161,7 +161,9 @@ fun CafeVariantBottomSheet(
                                 title = variant.name,
                                 priceDelta = variant.priceDelta,
                                 isSelected = isSelected,
-                                onClick = { selectedVariant = variant }
+                                onClick = {
+                                    selectedVariant = if (selectedVariant == variant) null else variant
+                                }
                             )
                         }
                     }

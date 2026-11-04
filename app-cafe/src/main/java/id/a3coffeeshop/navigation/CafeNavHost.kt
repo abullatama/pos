@@ -95,6 +95,7 @@ fun CafeNavHost(
     ),
     startDestination: String = CafeDestinations.KASIR,
     deviceId: String = "dev-cafe-1",
+    deviceCodeProvider: (() -> String?)? = null,
     businessUnitId: String = "bu-cafe-01",
     cashierName: String = "Kasir Cafe",
     cashierId: String = "u-cashier-1"
@@ -103,7 +104,7 @@ fun CafeNavHost(
     val coroutineScope = rememberCoroutineScope()
 
     val menuViewModel: CafeMenuViewModel = viewModel(
-        factory = CafeMenuViewModelFactory(context, printerService)
+        factory = CafeMenuViewModelFactory(context, printerService, deviceCodeProvider)
     )
     val paymentViewModel: PaymentViewModel = viewModel(
         factory = PaymentViewModelFactory(context, printerService)

@@ -101,9 +101,13 @@ fun LaundryNavHost(
     ),
     startDestination: String = LaundryDestinations.BERANDA,
     deviceId: String = "dev-laundry-1",
+    deviceCodeProvider: (() -> String?)? = null,
     businessUnitId: String = "bu-laundry-01",
     cashierName: String = "Kasir Laundry",
-    cashierId: String = "u-cashier-2"
+    cashierId: String = "u-cashier-2",
+    userRole: String? = null,
+    onSwitchAccount: (() -> Unit)? = null,
+    onSyncMasterData: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -112,8 +116,8 @@ fun LaundryNavHost(
             appConfig = LaundryAppConfig
         )
     }
-    val laundryViewModelFactory = remember(context, printerService) {
-        LaundryViewModelFactory(context, printerService, syncApiService)
+    val laundryViewModelFactory = remember(context, printerService, deviceCodeProvider) {
+        LaundryViewModelFactory(context, printerService, syncApiService, deviceCodeProvider)
     }
 
     val laundryViewModel: LaundryOrderViewModel = viewModel(
@@ -227,10 +231,14 @@ fun LaundryNavHost(
                 viewModel = laundryViewModel,
                 hasActiveShift = activeShift != null,
                 deviceId = deviceId,
-                shiftId = activeShift?.shiftId,
+                shiftId = null,
                 cashierId = activeShift?.cashierId ?: cashierId,
                 cashierName = activeShift?.cashierName ?: cashierName,
                 storeName = "ATHIA LOUNDRY",
+                onSyncServices = {
+                    laundryViewModel.refreshServices()
+                    onSyncMasterData?.invoke()
+                },
                 onNavigateToShift = {
                     navController.navigate(LaundryDestinations.SHIFT) {
                         popUpTo(navController.graph.findStartDestination().id) {
@@ -251,7 +259,7 @@ fun LaundryNavHost(
                         storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
                         storePhone = "0823-4778-5986",
                         isDp = isDp,
-                        shiftId = activeShift?.shiftId
+                        shiftId = null
                     )
                     navController.navigate(LaundryDestinations.PEMBAYARAN)
                 },
@@ -303,7 +311,7 @@ fun LaundryNavHost(
                         storeAddress = "Jl. Trans Sulawesi Kelurahan Bintauna",
                         storePhone = "0823-4778-5986",
                         isDp = false,
-                        shiftId = activeShift?.shiftId
+                        shiftId = null
                     )
                     navController.navigate(LaundryDestinations.PEMBAYARAN)
                 }
@@ -412,6 +420,17 @@ fun LaundryNavHost(
                     cashierId = cashierId,
                     businessUnitId = businessUnitId,
                     deviceId = deviceId,
+                    userRole = userRole,
+                    onSwitchAccount = onSwitchAccount,
+                    onNavigateToOperations = {
+                        navController.navigate(LaundryDestinations.CUCIAN) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     onShiftOpened = {
                         navController.navigate(LaundryDestinations.BERANDA) {
                             popUpTo(navController.graph.findStartDestination().id) {

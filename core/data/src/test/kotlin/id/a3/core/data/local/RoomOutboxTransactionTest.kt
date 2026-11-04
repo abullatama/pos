@@ -13,6 +13,10 @@ import id.a3.core.data.repository.OrderTransactionManager
 import id.a3.core.data.util.PhoneNumberUtil
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -272,10 +276,41 @@ class RoomOutboxTransactionTest {
         // Verify Outbox events
         val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
         assertNotNull(savedOutbox)
-        assertTrue(savedOutbox!!.eventsJson.contains("\"type\":\"order.created\""))
+        assertEquals("shift-001", savedOutbox!!.shiftId)
+        assertTrue(savedOutbox.eventsJson.contains("\"type\":\"order.created\""))
         assertTrue(savedOutbox.eventsJson.contains("\"type\":\"order.sent_to_kitchen\""))
         assertTrue(savedOutbox.eventsJson.contains(line1Id))
         assertTrue(savedOutbox.eventsJson.contains(line2Id))
+    }
+
+    @Test
+    fun `createOpenOrderWithKitchenTicket with discount includes discount_rule preset in payload`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "C1-0015",
+            businessUnitId = "bu-cafe-01",
+            shiftId = "shift-001",
+            deviceId = "dev-cafe-1",
+            cashierId = "cashier-1",
+            orderType = "take_away",
+            status = "open",
+            subtotal = 50000L,
+            discount = 5000L,
+            total = 45000L
+        )
+
+        val outbox = transactionManager.createOpenOrderWithKitchenTicket(
+            order = order,
+            lines = emptyList(),
+            discountPresetName = "Diskon 10%"
+        )
+
+        val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
+        assertNotNull(savedOutbox)
+        assertTrue(savedOutbox!!.eventsJson.contains("\"discount_rule\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"preset\":\"Diskon 10%\""))
+        assertTrue(savedOutbox.eventsJson.contains("\"order_type\":\"takeaway\""))
     }
 
     @Test
@@ -509,7 +544,8 @@ class RoomOutboxTransactionTest {
         // Verifikasi outbox memuat kedua event
         val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
         assertNotNull(savedOutbox)
-        assertTrue(savedOutbox!!.eventsJson.contains("\"type\":\"order.created\""))
+        assertEquals("shift-001", savedOutbox!!.shiftId)
+        assertTrue(savedOutbox.eventsJson.contains("\"type\":\"order.created\""))
         assertTrue(savedOutbox.eventsJson.contains("\"type\":\"payment.recorded\""))
         assertTrue(savedOutbox.eventsJson.contains("\"method\":\"qris_static\""))
         assertTrue(savedOutbox.eventsJson.contains("\"amount\":26000"))
@@ -629,7 +665,13 @@ class RoomOutboxTransactionTest {
 
         assertTrue(savedOutbox.eventsJson.contains("\"type\":\"order.created\""))
         assertTrue(savedOutbox.eventsJson.contains("\"order_id\":\"$orderId\""))
-        assertTrue(savedOutbox.eventsJson.contains("\"customer_id\":\"$customerId\""))
+
+        // Best Practice Server: payload.customer dan payload.customer_id tidak boleh bersamaan
+        val eventsArray = Json.parseToJsonElement(savedOutbox.eventsJson).jsonArray
+        val orderCreatedPayload = eventsArray.first { it.jsonObject["type"]?.jsonPrimitive?.content == "order.created" }
+            .jsonObject["payload"]!!.jsonObject
+        assertTrue("Order payload harus memiliki objek customer untuk pelanggan baru", orderCreatedPayload.containsKey("customer"))
+        assertFalse("Order payload tidak boleh memiliki customer_id jika customer inline ada", orderCreatedPayload.containsKey("customer_id"))
     }
 
     @Test
@@ -672,6 +714,13 @@ class RoomOutboxTransactionTest {
         assertFalse("Tidak boleh ada customer.created untuk pelanggan lama", savedOutbox!!.eventsJson.contains("\"type\":\"customer.created\""))
         assertTrue(savedOutbox.eventsJson.contains("\"type\":\"order.created\""))
         assertTrue(savedOutbox.eventsJson.contains("\"customer_id\":\"$existingCustomerId\""))
+
+        // Best Practice Server: Pelanggan lama menggunakan customer_id dan tidak membawa objek customer inline
+        val eventsArray = Json.parseToJsonElement(savedOutbox.eventsJson).jsonArray
+        val orderCreatedPayload = eventsArray.first { it.jsonObject["type"]?.jsonPrimitive?.content == "order.created" }
+            .jsonObject["payload"]!!.jsonObject
+        assertTrue("Order payload harus memiliki customer_id untuk pelanggan lama", orderCreatedPayload.containsKey("customer_id"))
+        assertFalse("Order payload tidak boleh memiliki objek customer untuk pelanggan lama", orderCreatedPayload.containsKey("customer"))
     }
 
     @Test
@@ -718,6 +767,126 @@ class RoomOutboxTransactionTest {
         val lookupByNumber = transactionManager.getOrderByDisplayNumber("L1-0003")
         assertNotNull(lookupByNumber)
         assertEquals(orderId, lookupByNumber!!.id)
+    }
+
+    @Test
+    fun `advanceLaundryOrderStatus preserves order lines without cascade deleting them`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val lineId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0099",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "open",
+            subtotal = 53000L,
+            total = 53000L
+        )
+        val line = OrderLineEntity(
+            id = lineId,
+            orderId = orderId,
+            itemRefId = "svc-kiloan",
+            nameSnapshot = "Cuci Kiloan",
+            quantity = 2,
+            unitPriceSnapshot = 26500L
+        )
+        database.orderDao().insertOrder(order)
+        database.orderDao().insertLines(listOf(line))
+
+        // 1. Transisi ke processing
+        transactionManager.advanceLaundryOrderStatus(orderId, "processing")
+        val orderWithLines1 = database.orderDao().getOrderWithLines(orderId)
+        assertNotNull(orderWithLines1)
+        assertEquals("processing", orderWithLines1!!.order.status)
+        assertEquals(1, orderWithLines1.lines.size)
+        assertEquals(lineId, orderWithLines1.lines.first().id)
+
+        // 2. Transisi ke ready
+        transactionManager.advanceLaundryOrderStatus(orderId, "ready")
+        val orderWithLines2 = database.orderDao().getOrderWithLines(orderId)
+        assertNotNull(orderWithLines2)
+        assertEquals("ready", orderWithLines2!!.order.status)
+        assertEquals(1, orderWithLines2.lines.size)
+        assertEquals(lineId, orderWithLines2.lines.first().id)
+    }
+
+    @Test
+    fun `repairMissingOrderLines restores lines from outbox order_created event`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val lineId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0088",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "ready",
+            subtotal = 35000L,
+            total = 35000L,
+            paidAmount = 35000L
+        )
+        val line = OrderLineEntity(
+            id = lineId,
+            orderId = orderId,
+            itemRefId = "svc-kiloan",
+            nameSnapshot = "Cuci Kiloan Reguler",
+            quantity = 5,
+            unitPriceSnapshot = 7000L
+        )
+        // Buat order dan outbox menggunakan createLaundryOrderWithCustomer
+        transactionManager.createLaundryOrderWithCustomer(
+            order = order,
+            lines = listOf(line),
+            customer = null,
+            isNewCustomer = false
+        )
+
+        // Simulasikan baris pakaian terhapus secara anomali
+        database.openHelper.writableDatabase.execSQL("DELETE FROM order_lines WHERE orderId = '$orderId'")
+        assertEquals(0, database.orderDao().getLinesForOrder(orderId).size)
+
+        // getOrderWithLines harus memulihkan baris pakaian dari outbox secara otomatis
+        val recovered = transactionManager.getOrderWithLines(orderId)
+        assertNotNull(recovered)
+        assertEquals(1, recovered!!.lines.size)
+        assertEquals(lineId, recovered.lines.first().id)
+        assertEquals("Cuci Kiloan Reguler", recovered.lines.first().nameSnapshot)
+        assertEquals(5, recovered.lines.first().quantity)
+        assertEquals(7000L, recovered.lines.first().unitPriceSnapshot)
+    }
+
+    @Test
+    fun `repairMissingOrderLines without outbox creates synthetic fallback line`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "L1-0089",
+            businessUnitId = "bu-laundry-01",
+            shiftId = null,
+            deviceId = "dev-laundry-1",
+            cashierId = "cashier-1",
+            orderType = "laundry",
+            status = "ready",
+            subtotal = 25000L,
+            total = 25000L,
+            paidAmount = 25000L
+        )
+        database.orderDao().insertOrder(order)
+        assertEquals(0, database.orderDao().getLinesForOrder(orderId).size)
+
+        // getOrderWithLines harus membuat fallback line sintetis
+        val recovered = transactionManager.getOrderWithLines(orderId)
+        assertNotNull(recovered)
+        assertEquals(1, recovered!!.lines.size)
+        val fallback = recovered.lines.first()
+        assertEquals(orderId, fallback.orderId)
+        assertTrue(fallback.nameSnapshot.contains("L1-0089"))
+        assertEquals(25000L, fallback.unitPriceSnapshot)
     }
 
     @Test
@@ -950,6 +1119,16 @@ class RoomOutboxTransactionTest {
 
         org.junit.Assert.assertNull(database.outboxDao().getByBundleId(bundle1))
         assertNotNull(database.outboxDao().getByBundleId(bundle2)) // bundle2 PRESERVED
+
+        // 5. Verify retryAllFailedWithDeviceId regenerates bundleId and aligns device/shift
+        database.outboxDao().retryAllFailedWithDeviceId(currentDeviceId = "new-dev-555", fallbackShiftId = "shift-auto-999")
+        org.junit.Assert.assertNull("Old bundle2 ID must be deleted and replaced", database.outboxDao().getByBundleId(bundle2))
+        val pendingList = database.outboxDao().getOutboxByStatus(OutboxStatus.PENDING)
+        assertEquals(1, pendingList.size)
+        org.junit.Assert.assertNotEquals(bundle2, pendingList[0].bundleId)
+        assertEquals("new-dev-555", pendingList[0].deviceId)
+        assertEquals("shift-auto-999", pendingList[0].shiftId)
+        assertEquals(OutboxStatus.PENDING, pendingList[0].status)
     }
 
     @Test
@@ -1197,11 +1376,14 @@ class RoomOutboxTransactionTest {
         val refundTotal = database.correctionDao().getCashRefundTotalForShift(shiftId)
         assertEquals(50000L, refundTotal)
 
-        // 4. Verifikasi event outbox 'correction.recorded'
+        // 4. Verifikasi event outbox 'correction.recorded' dengan skema Laravel 12
         assertNotNull(outbox)
         assertTrue(outbox.eventsJson.contains("correction.recorded"))
-        assertTrue(outbox.eventsJson.contains("quality_complaint"))
-        assertTrue(outbox.eventsJson.contains("u-manager-1"))
+        assertTrue(outbox.eventsJson.contains("komplain_kualitas"))
+        assertTrue(outbox.eventsJson.contains("reason_note"))
+        assertTrue(outbox.eventsJson.contains("payment_id"))
+        assertTrue(outbox.eventsJson.contains("order_line_id"))
+        assertTrue(outbox.eventsJson.contains(""""approved_by":4"""))
         assertTrue(outbox.eventsJson.contains(""""amount":50000"""))
         assertTrue(outbox.eventsJson.contains(""""refund_method":"cash""""))
     }

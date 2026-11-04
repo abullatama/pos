@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import id.a3.core.data.local.entity.OrderEntity
 import id.a3.core.data.local.entity.OrderLineEntity
 import id.a3.core.data.local.entity.OrderWithLines
@@ -18,6 +19,9 @@ interface OrderDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertLines(lines: List<OrderLineEntity>)
+
+    @Query("SELECT * FROM order_lines WHERE orderId = :orderId")
+    suspend fun getLinesForOrder(orderId: String): List<OrderLineEntity>
 
     @Transaction
     @Query("SELECT * FROM orders WHERE id = :orderId")
@@ -63,8 +67,11 @@ interface OrderDao {
     @Query("SELECT * FROM orders WHERE orderType = 'laundry' AND status = :status ORDER BY createdAt DESC")
     fun observeLaundryOrdersWithLinesByStatus(status: String): Flow<List<OrderWithLines>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Update
     suspend fun updateOrder(order: OrderEntity)
+
+    @Query("UPDATE orders SET displayNumber = :newDisplayNumber WHERE id = :orderId")
+    suspend fun updateDisplayNumber(orderId: String, newDisplayNumber: String)
 
     @Query("UPDATE orders SET tableLabel = :newTableLabel WHERE id = :orderId")
     suspend fun updateTableLabel(orderId: String, newTableLabel: String)

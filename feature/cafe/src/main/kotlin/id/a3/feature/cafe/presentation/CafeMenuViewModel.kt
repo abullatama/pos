@@ -27,6 +27,7 @@ import id.a3.feature.cafe.model.AppliedDiscount
 import id.a3.feature.cafe.model.CafeCartLine
 import id.a3.feature.cafe.model.CafeOrderType
 import id.a3.feature.cafe.model.CafeProduct
+import id.a3.feature.cafe.model.DiscountPreset
 import id.a3.feature.cafe.repository.CafeMenuRepository
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -75,6 +76,7 @@ data class CafeMenuUiState(
         total = 0L
     ),
     val sheetProduct: CafeProduct? = null,
+    val discountPresets: List<DiscountPreset> = emptyList(),
     val isLoading: Boolean = false
 )
 
@@ -82,8 +84,15 @@ class CafeMenuViewModel(
     private val menuRepository: CafeMenuRepository,
     private val transactionManager: OrderTransactionManager? = null,
     val printerService: PrinterService? = null,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val deviceCodeProvider: (() -> String?)? = null
 ) : ViewModel() {
+
+    val devicePrefix: String
+        get() {
+            val code = deviceCodeProvider?.invoke()?.takeIf { it.isNotBlank() }
+            return if (code != null) "$code-" else "C1-"
+        }
 
     private val _selectedCategory = MutableStateFlow("Semua")
     private val _searchQuery = MutableStateFlow("")
@@ -104,7 +113,7 @@ class CafeMenuViewModel(
     private var failedPinAttempts = 0
     private var isManagerLockedUntilMs = 0L
 
-    suspend fun generateNextReceiptId(prefix: String = "C1-"): String {
+    suspend fun generateNextReceiptId(prefix: String = devicePrefix): String {
         val tm = transactionManager ?: return prefix + "0001"
         return withContext(ioDispatcher) {
             val zone = java.time.ZoneId.systemDefault()
@@ -116,11 +125,25 @@ class CafeMenuViewModel(
         }
     }
 
+    fun refreshReceiptIdWithPrefix(prefix: String = devicePrefix) {
+        viewModelScope.launch {
+            val nextReceipt = generateNextReceiptId(prefix)
+            _orderHeader.update { it.copy(receiptId = nextReceipt) }
+        }
+    }
+
     init {
         viewModelScope.launch {
             menuRepository.seedInitialMenuIfEmpty()
-            val nextReceipt = generateNextReceiptId("C1-")
+            val nextReceipt = generateNextReceiptId()
             _orderHeader.update { it.copy(receiptId = nextReceipt) }
+        }
+        viewModelScope.launch {
+            menuRepository.observeTaxAndService().collect { settings ->
+                _servicePercent.value = settings.servicePercent
+                _taxPercent.value = settings.taxPercent
+                _taxMode.value = settings.taxMode
+            }
         }
     }
 
@@ -134,11 +157,16 @@ class CafeMenuViewModel(
 
     val uiState: StateFlow<CafeMenuUiState> = combine(
         menuRepository.observeProducts(),
+        menuRepository.observeDiscountPresets(),
         _filterState,
         _cartState,
-        _dialogUiState,
-        _sheetProduct
-    ) { products, (category, query), (cart, discount, header), (appliedDisc, isDiscOpen, isMoveOpen), sheetProd ->
+        combine(_dialogUiState, _sheetProduct) { dialogs, sheet -> dialogs to sheet }
+    ) { products, presets, filter, cartTriple, dialogAndSheet ->
+        val (category, query) = filter
+        val (cart, discount, header) = cartTriple
+        val (dialogs, sheetProd) = dialogAndSheet
+        val (appliedDisc, isDiscOpen, isMoveOpen) = dialogs
+
         val filtered = products.filter { prod ->
             val matchesCategory = (category == "Semua") || (prod.category.equals(category, ignoreCase = true))
             val matchesQuery = query.isBlank() || prod.name.contains(query.trim(), ignoreCase = true)
@@ -178,6 +206,7 @@ class CafeMenuViewModel(
             isMoveTableDialogOpen = isMoveOpen,
             calculation = calculation,
             sheetProduct = sheetProd,
+            discountPresets = presets,
             isLoading = false
         )
     }.stateIn(
@@ -295,7 +324,7 @@ class CafeMenuViewModel(
         _appliedDiscount.value = null
         _isCheckingOut.value = false
         viewModelScope.launch {
-            val nextReceipt = generateNextReceiptId("C1-")
+            val nextReceipt = generateNextReceiptId()
             _orderHeader.value = CafeOrderHeader(receiptId = nextReceipt)
         }
     }
@@ -394,12 +423,17 @@ class CafeMenuViewModel(
         _orderHeader.value = currentHeader.copy(tableOrQueueLabel = newTableLabel)
         _isMoveTableDialogOpen.value = false
 
+        val currentShiftId = activeShift.value?.id
         viewModelScope.launch {
-            transactionManager?.recordTableMoved(
-                orderId = currentHeader.orderId,
-                fromTable = fromTable,
-                toTable = newTableLabel
-            )
+            val existingOrder = transactionManager?.orderDao?.getOrderById(currentHeader.orderId)
+            if (existingOrder != null) {
+                transactionManager?.recordTableMoved(
+                    orderId = currentHeader.orderId,
+                    fromTable = fromTable,
+                    toTable = newTableLabel,
+                    shiftId = currentShiftId
+                )
+            }
         }
     }
 
@@ -433,7 +467,7 @@ class CafeMenuViewModel(
             deviceId = "dev-cafe-1",
             cashierId = currentCashierId,
             orderType = header.orderType.name.lowercase(),
-            tableLabel = header.tableOrQueueLabel,
+            tableLabel = header.tableOrQueueLabel.trim().takeIf { it.isNotEmpty() } ?: if (header.isDineIn) "Meja 01" else "Bungkus",
             status = "open",
             subtotal = calc.subtotal,
             discount = calc.discount,
@@ -461,7 +495,9 @@ class CafeMenuViewModel(
         try {
             transactionManager?.createOpenOrderWithKitchenTicket(
                 order = orderEntity,
-                lines = lineEntities
+                lines = lineEntities,
+                shiftId = currentShiftId,
+                discountPresetName = _appliedDiscount.value?.label
             )
         } catch (e: Exception) {
             return Result.failure(e)
@@ -498,7 +534,7 @@ class CafeMenuViewModel(
         _cartLines.value = emptyList()
         _discount.value = null
         _appliedDiscount.value = null
-        val nextReceipt = generateNextReceiptId("C1-")
+        val nextReceipt = generateNextReceiptId()
         _orderHeader.value = CafeOrderHeader(receiptId = nextReceipt)
 
         return Result.success(sentOrderId)
@@ -528,7 +564,7 @@ class CafeMenuViewModel(
             deviceId = "dev-cafe-1",
             cashierId = currentCashierId,
             orderType = header.orderType.name.lowercase(),
-            tableLabel = header.tableOrQueueLabel,
+            tableLabel = header.tableOrQueueLabel.trim().takeIf { it.isNotEmpty() } ?: if (header.isDineIn) "Meja 01" else "Bungkus",
             status = "open",
             subtotal = calculation.subtotal,
             discount = calculation.discount,
@@ -556,7 +592,9 @@ class CafeMenuViewModel(
         try {
             transactionManager?.createOpenOrderWithKitchenTicket(
                 order = orderEntity,
-                lines = lineEntities
+                lines = lineEntities,
+                shiftId = currentShiftId,
+                discountPresetName = _appliedDiscount.value?.label
             )
         } catch (e: Exception) {
             return Result.failure(e)
@@ -749,6 +787,7 @@ class CafeMenuViewModel(
         )
 
         try {
+            val currentShiftId = activeShift.value?.id ?: transactionManager.shiftDao.getActiveShift()?.id
             transactionManager.addItemsToOpenOrder(
                 orderId = orderId,
                 newLines = newLineEntities,
@@ -757,7 +796,9 @@ class CafeMenuViewModel(
                 newServiceCharge = calculation.serviceCharge,
                 newTax = calculation.tax,
                 newRounding = calculation.rounding,
-                newTotal = calculation.total
+                newTotal = calculation.total,
+                shiftId = currentShiftId,
+                discountPresetName = _appliedDiscount.value?.label
             )
         } catch (e: Exception) {
             return Result.failure(e)

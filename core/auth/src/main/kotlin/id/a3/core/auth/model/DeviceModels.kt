@@ -50,6 +50,8 @@ data class DeviceMeResponse(
 data class DeviceHeartbeatRequest(
     @SerialName("app_version")
     val appVersion: String,
+    @SerialName("app_id")
+    val appId: String? = null,
     @SerialName("outbox_pending")
     val outboxPending: Int = 0,
     @SerialName("outbox_problem")

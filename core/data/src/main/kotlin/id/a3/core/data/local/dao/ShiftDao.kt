@@ -31,4 +31,10 @@ interface ShiftDao {
 
     @Query("SELECT * FROM shifts ORDER BY openedAt DESC")
     fun observeAllShifts(): Flow<List<ShiftEntity>>
+
+    @Query("DELETE FROM shifts WHERE id = :shiftId")
+    suspend fun deleteShift(shiftId: String)
+
+    @Query("DELETE FROM shifts WHERE status = 'open'")
+    suspend fun deleteAllOpenShifts()
 }

@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import id.a3.core.ui.component.A3Button
@@ -75,11 +76,97 @@ fun OpenShiftScreen(
     businessUnitId: String,
     deviceId: String,
     onShiftOpened: (ActiveShift) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    userRole: String? = null,
+    onSwitchAccount: (() -> Unit)? = null,
+    onNavigateToOperations: (() -> Unit)? = null
 ) {
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
     val uiState by viewModel.uiState.collectAsState()
+
+    if (userRole?.lowercase() == "staf_laundry") {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(colors.canvas)
+                .padding(32.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(520.dp)
+                    .clip(shapes.cardShape)
+                    .background(colors.surface)
+                    .border(1.dp, colors.border, shapes.cardShape)
+                    .padding(28.dp)
+            ) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                            .background(colors.surfaceAlt),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Info,
+                            contentDescription = null,
+                            tint = colors.accent,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Text(
+                        text = "Staf Laundry Tidak Mengelola Kas",
+                        style = A3Theme.typography.title,
+                        color = colors.ink,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = "Akun Anda bertugas memproses cucian (scan tag, ubah status cucian, dan serah-terima). Operasional cucian dapat langsung digunakan tanpa membuka shift kasir.\n\nPembukaan kas awal shift hanya dilakukan oleh Kasir atau Manager.",
+                        style = A3Theme.typography.body,
+                        color = colors.inkMuted,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        if (onNavigateToOperations != null) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                A3Button(
+                                    label = "Buka Cucian",
+                                    variant = ButtonVariant.PRIMARY,
+                                    onClick = onNavigateToOperations,
+                                    fillWidth = true
+                                )
+                            }
+                        }
+                        if (onSwitchAccount != null) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                A3Button(
+                                    label = "Ganti Akun Kasir",
+                                    variant = ButtonVariant.SECONDARY,
+                                    onClick = onSwitchAccount,
+                                    fillWidth = true
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
 
     Box(
         modifier = modifier

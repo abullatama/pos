@@ -7,6 +7,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import id.a3.core.data.local.entity.CashOutEntity
 import id.a3.core.data.local.entity.CorrectionEntity
+import id.a3.core.data.local.entity.DiscountPresetEntity
 import id.a3.core.data.local.entity.OutboxEntity
 import id.a3.core.data.local.entity.OutboxStatus
 import id.a3.core.data.local.entity.PaymentEntity
@@ -250,7 +251,9 @@ class RoomMigrationTest {
                 AppDatabase.MIGRATION_2_3,
                 AppDatabase.MIGRATION_3_4,
                 AppDatabase.MIGRATION_4_5,
-                AppDatabase.MIGRATION_5_6
+                AppDatabase.MIGRATION_5_6,
+                AppDatabase.MIGRATION_6_7,
+                AppDatabase.MIGRATION_7_8
             )
             .fallbackToDestructiveMigration(false)
             .build()
@@ -366,6 +369,20 @@ class RoomMigrationTest {
         )
         assertEquals(2, appDb.outboxDao().getUnsyncedCount())
 
+        // Masukkan discount preset baru di v8
+        appDb.masterDataDao().upsertDiscountPreset(
+            DiscountPresetEntity(
+                id = "preset-001",
+                name = "Diskon Pelajar 10%",
+                type = "percent",
+                value = 10L,
+                active = true
+            )
+        )
+        val savedPresets = appDb.masterDataDao().getActiveDiscountPresets()
+        assertEquals(1, savedPresets.size)
+        assertEquals("Diskon Pelajar 10%", savedPresets[0].name)
+
         appDb.close()
     }
 
@@ -410,6 +427,18 @@ class RoomMigrationTest {
         val cursorCash = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='cash_outs'")
         assertTrue(cursorCash.moveToFirst())
         cursorCash.close()
+
+        // 6 -> 7
+        AppDatabase.MIGRATION_6_7.migrate(db)
+        val cursorOpt = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='menu_options'")
+        assertTrue(cursorOpt.moveToFirst())
+        cursorOpt.close()
+
+        // 7 -> 8
+        AppDatabase.MIGRATION_7_8.migrate(db)
+        val cursorPreset = db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='discount_presets'")
+        assertTrue(cursorPreset.moveToFirst())
+        cursorPreset.close()
 
         db.close()
     }
