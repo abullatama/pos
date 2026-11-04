@@ -29,6 +29,9 @@ interface MasterDataDao {
     @Query("SELECT * FROM menu_items WHERE id = :id")
     suspend fun getMenuItem(id: String): MenuItemEntity?
 
+    @Query("SELECT * FROM menu_items")
+    suspend fun getAllMenuItems(): List<MenuItemEntity>
+
     @Query("SELECT COUNT(*) FROM menu_items")
     suspend fun countMenuItems(): Int
 

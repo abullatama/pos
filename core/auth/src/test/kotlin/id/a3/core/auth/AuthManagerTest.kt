@@ -340,4 +340,14 @@ class AuthManagerTest {
         assertEquals("dev-test-123", encryptedDataStore.getOrCreateDeviceId())
         assertEquals("Tablet Kasir Utama", encryptedDataStore.getDeviceName())
     }
+
+    @Test
+    fun `unlockWithPinOffline succeeds with manager pin even if no cashier was logged in`() = runBlocking {
+        authManager.lock()
+        assertFalse(authManager.isUnlocked.value)
+
+        val unlocked = authManager.unlockWithPinOffline("4444")
+        assertTrue("Buka kunci offline harus berhasil dengan PIN manager bawaan", unlocked)
+        assertTrue(authManager.isUnlocked.value)
+    }
 }

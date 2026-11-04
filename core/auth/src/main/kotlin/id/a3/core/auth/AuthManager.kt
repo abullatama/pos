@@ -5,6 +5,7 @@ import id.a3.core.auth.datastore.EncryptedAuthDataStore
 import id.a3.core.auth.model.PinLoginRequest
 import id.a3.core.auth.model.RefreshTokenRequest
 import id.a3.core.auth.model.UserDto
+import id.a3.core.domain.security.ManagerPinVerifier
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -99,7 +100,7 @@ class AuthManager(
      * Tidak membutuhkan koneksi internet.
      */
     suspend fun unlockWithPinOffline(pin: String): Boolean {
-        val isValid = encryptedDataStore.verifyOfflinePin(pin)
+        val isValid = encryptedDataStore.verifyOfflinePin(pin) || ManagerPinVerifier.verify(pin)
         if (isValid) {
             _isUnlocked.value = true
         }

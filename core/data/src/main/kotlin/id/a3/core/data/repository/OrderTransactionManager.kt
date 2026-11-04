@@ -264,6 +264,25 @@ class OrderTransactionManager(
     /**
      * Memindahkan meja pesanan dine-in di Room dan mencatat event outbox 'order.table_moved' secara atomik.
      */
+    private fun mapCafeItemRefIdToLong(refId: String): Long {
+        refId.toLongOrNull()?.let { return it }
+        return when (refId.lowercase()) {
+            "menu-latte" -> 1L
+            "menu-cappuccino" -> 2L
+            "menu-americano" -> 3L
+            "menu-espresso" -> 4L
+            "menu-caramel-macchiato" -> 5L
+            "menu-kopi-susu-aren" -> 6L
+            "menu-cold-brew" -> 7L
+            "menu-matcha-latte" -> 8L
+            "menu-earl-grey" -> 9L
+            "menu-croissant" -> 10L
+            "menu-cinnamon-roll" -> 11L
+            "menu-cheese-cake" -> 12L
+            else -> ((refId.hashCode() and 0x7FFFFFFF) % 1000 + 1).toLong()
+        }
+    }
+
     suspend fun recordTableMoved(
         orderId: String,
         fromTable: String,
@@ -343,7 +362,8 @@ class OrderTransactionManager(
                     add(
                         buildJsonObject {
                             put("line_id", line.id)
-                            put("item_ref_id", line.itemRefId.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(line.itemRefId))
+                            val numRef = line.itemRefId.toLongOrNull() ?: mapCafeItemRefIdToLong(line.itemRefId)
+                            put("item_ref_id", JsonPrimitive(numRef))
                             put("name", line.nameSnapshot)
                             put("quantity", line.quantity)
                             put("unit_price", line.unitPriceSnapshot)
@@ -464,7 +484,8 @@ class OrderTransactionManager(
                     add(
                         buildJsonObject {
                             put("line_id", line.id)
-                            put("item_ref_id", line.itemRefId.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(line.itemRefId))
+                            val numRef = line.itemRefId.toLongOrNull() ?: mapCafeItemRefIdToLong(line.itemRefId)
+                            put("item_ref_id", JsonPrimitive(numRef))
                             put("name", line.nameSnapshot)
                             put("quantity", line.quantity)
                             put("unit_price", line.unitPriceSnapshot)
@@ -614,27 +635,25 @@ class OrderTransactionManager(
             val effectiveDeviceId = currentOrder.deviceId.ifBlank { deviceId }
 
             // Poin 2: Penyatuan Transaksi Atomik Outbox
-            // Jika bundel order.created untuk pesanan ini masih berstatus PENDING di outbox lokal,
-            // gabungkan event payment.recorded ke dalam bundel atomik yang sama ([order.created, payment.recorded]).
+            // Jika bundel untuk pesanan ini masih berstatus PENDING di outbox lokal,
+            // gabungkan event payment.recorded ke dalam bundel pending paling mutakhir (chronological FIFO).
             val pendingBundles = outboxDao.findBundlesByOrderId(orderId)
                 .filter { it.status == OutboxStatus.PENDING }
-            val pendingOrderCreatedBundle = pendingBundles.firstOrNull { bundle ->
-                bundle.eventsJson.contains(""""type":"order.created"""")
-            }
+            val targetPendingBundle = pendingBundles.maxByOrNull { it.createdAt }
 
-            if (pendingOrderCreatedBundle != null) {
-                val existingEventsList = Json.parseToJsonElement(pendingOrderCreatedBundle.eventsJson).jsonArray.toMutableList()
+            if (targetPendingBundle != null) {
+                val existingEventsList = Json.parseToJsonElement(targetPendingBundle.eventsJson).jsonArray.toMutableList()
                 existingEventsList.add(paymentEvent)
                 val updatedEventsJson = buildJsonArray {
                     existingEventsList.forEach { add(it) }
                 }.toString()
-                outboxDao.updateEventsJson(pendingOrderCreatedBundle.bundleId, updatedEventsJson)
-                if (effectiveShiftId != null && effectiveShiftId != pendingOrderCreatedBundle.shiftId) {
-                    outboxDao.updateShiftId(pendingOrderCreatedBundle.bundleId, effectiveShiftId)
+                outboxDao.updateEventsJson(targetPendingBundle.bundleId, updatedEventsJson)
+                if (effectiveShiftId != null && effectiveShiftId != targetPendingBundle.shiftId) {
+                    outboxDao.updateShiftId(targetPendingBundle.bundleId, effectiveShiftId)
                 }
-                pendingOrderCreatedBundle.copy(
+                targetPendingBundle.copy(
                     eventsJson = updatedEventsJson,
-                    shiftId = effectiveShiftId ?: pendingOrderCreatedBundle.shiftId
+                    shiftId = effectiveShiftId ?: targetPendingBundle.shiftId
                 )
             } else {
                 val eventsArray = buildJsonArray {
@@ -702,7 +721,8 @@ class OrderTransactionManager(
                     add(
                         buildJsonObject {
                             put("line_id", line.id)
-                            put("item_ref_id", line.itemRefId.toLongOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(line.itemRefId))
+                            val numRef = line.itemRefId.toLongOrNull() ?: mapCafeItemRefIdToLong(line.itemRefId)
+                            put("item_ref_id", JsonPrimitive(numRef))
                             put("name", line.nameSnapshot)
                             put("quantity", line.quantity)
                             put("unit_price", line.unitPriceSnapshot)
@@ -1177,6 +1197,7 @@ class OrderTransactionManager(
             }
 
             val payload = buildJsonObject {
+                put("shift_id", shift.id)
                 val numericUserId = shift.cashierId.toLongOrNull() ?: 2L
                 put("user_id", JsonPrimitive(numericUserId))
                 put("opening_cash", shift.openingCash)

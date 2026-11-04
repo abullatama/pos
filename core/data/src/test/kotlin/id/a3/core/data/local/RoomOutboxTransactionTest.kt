@@ -2044,4 +2044,97 @@ class RoomOutboxTransactionTest {
             assertTrue(e.message!!.contains("Manager"))
         }
     }
+
+    @Test
+    fun `openShift payload contains required shift_id and numeric user_id`() = runBlocking {
+        val shiftId = UUID.randomUUID().toString()
+        val shift = ShiftEntity(
+            id = shiftId,
+            businessUnitId = "bu-cafe-01",
+            deviceId = "dev-cafe-1",
+            cashierId = "3",
+            cashierName = "Budi Santoso",
+            status = "open",
+            openingCash = 200000L,
+            openingCashBreakdownJson = "{\"100000\":2}"
+        )
+
+        val outbox = transactionManager.openShift(
+            shift = shift,
+            breakdownMap = mapOf("100000" to 2)
+        )
+
+        val savedOutbox = database.outboxDao().getByBundleId(outbox.bundleId)
+        assertNotNull(savedOutbox)
+        assertTrue(savedOutbox!!.eventsJson.contains("\"type\":\"shift.opened\""))
+        assertTrue("shift_id wajib ada pada payload shift.opened", savedOutbox.eventsJson.contains("\"shift_id\":\"$shiftId\""))
+        assertTrue("user_id harus numeric", savedOutbox.eventsJson.contains("\"user_id\":3"))
+    }
+
+    @Test
+    fun `recordPayment appends payment event to the latest pending bundle of order preserving chronological execution`() = runBlocking {
+        val orderId = UUID.randomUUID().toString()
+        val order = OrderEntity(
+            id = orderId,
+            displayNumber = "C1-0020",
+            businessUnitId = "bu-cafe-01",
+            shiftId = "shift-001",
+            deviceId = "dev-cafe-1",
+            cashierId = "cashier-1",
+            orderType = "dine_in",
+            tableLabel = "Meja 01",
+            status = "open",
+            subtotal = 34000L,
+            total = 34000L
+        )
+        val line1 = OrderLineEntity(
+            id = UUID.randomUUID().toString(),
+            orderId = orderId,
+            itemRefId = "menu-latte",
+            nameSnapshot = "Caffe Latte",
+            quantity = 1,
+            unitPriceSnapshot = 34000L
+        )
+        val initialOutbox = transactionManager.createOpenOrderWithKitchenTicket(order, listOf(line1))
+
+        // Step 2: Tambah menu baru saat masih offline (Bundle 2)
+        val line2 = OrderLineEntity(
+            id = UUID.randomUUID().toString(),
+            orderId = orderId,
+            itemRefId = "menu-americano",
+            nameSnapshot = "Americano",
+            quantity = 1,
+            unitPriceSnapshot = 26000L
+        )
+        val addedOutbox = transactionManager.addItemsToOpenOrder(
+            orderId = orderId,
+            newLines = listOf(line2),
+            newSubtotal = 60000L,
+            newDiscount = 0L,
+            newServiceCharge = 0L,
+            newTax = 0L,
+            newRounding = 0L,
+            newTotal = 60000L
+        )
+
+        // Step 3: Bayar tagihan lunas saat masih offline
+        val paymentOutbox = transactionManager.recordPayment(
+            orderId = orderId,
+            method = "cash",
+            amount = 60000L,
+            tendered = 100000L
+        )
+
+        // Verifikasi payment.recorded digabungkan ke latest pending bundle (addedOutbox)
+        val latestBundle = database.outboxDao().getByBundleId(addedOutbox.bundleId)
+        assertNotNull(latestBundle)
+        assertTrue("Bundle 2 harus memuat items_added", latestBundle!!.eventsJson.contains("\"type\":\"order.items_added\""))
+        assertTrue("Bundle 2 harus memuat payment.recorded di urutan akhir", latestBundle.eventsJson.contains("\"type\":\"payment.recorded\""))
+        assertTrue("Nominal payment harus sesuai akumulasi total", latestBundle.eventsJson.contains("\"amount\":60000"))
+
+        // Verifikasi bundle 1 tetap utuh dengan order.created
+        val firstBundle = database.outboxDao().getByBundleId(initialOutbox.bundleId)
+        assertNotNull(firstBundle)
+        assertTrue(firstBundle!!.eventsJson.contains("\"type\":\"order.created\""))
+    }
 }

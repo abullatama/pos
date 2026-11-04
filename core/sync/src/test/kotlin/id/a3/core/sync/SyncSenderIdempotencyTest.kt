@@ -4546,4 +4546,150 @@ class SyncSenderIdempotencyTest {
         assertEquals(4L, payload["approved_by"]!!.jsonPrimitive.content.toLong())
         org.junit.Assert.assertTrue("line_ids harus array membawa lineId", payload["line_ids"]!!.jsonArray.any { it.jsonPrimitive.content == lineId })
     }
+
+    @Test
+    fun `sendPendingBundles sanitizes string item_ref_id in cafe order lines to numeric integer`(): Unit = runBlocking {
+        val bundleId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+        val lineId = UUID.randomUUID().toString()
+
+        val eventsJson = """
+            [
+                {
+                    "event_id": "${UUID.randomUUID()}",
+                    "type": "order.created",
+                    "occurred_at": "2026-11-04T10:00:00Z",
+                    "payload": {
+                        "order_id": "$orderId",
+                        "display_number": "C1-0005",
+                        "order_type": "dine_in",
+                        "table_label": "Meja 01",
+                        "lines": [
+                            {
+                                "line_id": "$lineId",
+                                "item_ref_id": "menu-latte",
+                                "name": "Caffe Latte",
+                                "quantity": 1,
+                                "unit_price": 34000
+                            }
+                        ],
+                        "subtotal": 34000,
+                        "discount": 0,
+                        "service_charge": 0,
+                        "tax": 0,
+                        "rounding": 0,
+                        "total": 34000
+                    }
+                }
+            ]
+        """.trimIndent()
+
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-cafe-1",
+            shiftId = "shift-001",
+            eventsJson = eventsJson,
+            status = OutboxStatus.PENDING
+        )
+        database.outboxDao().insert(outbox)
+
+        val recordedRequest = java.util.concurrent.atomic.AtomicReference<String>()
+        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                val bodyStr = request.body.readUtf8()
+                recordedRequest.set(bodyStr)
+                return MockResponse().setResponseCode(200).setBody("""
+                    {
+                        "results": [
+                            {
+                                "bundle_id": "$bundleId",
+                                "status": "ACCEPTED"
+                            }
+                        ],
+                        "server_time": "2026-11-04T10:01:00Z"
+                    }
+                """.trimIndent())
+            }
+        }
+
+        val summary = syncSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+
+        val sentPayload = recordedRequest.get()
+        assertNotNull(sentPayload)
+        val jsonBody = json.parseToJsonElement(sentPayload).jsonObject
+        val sentBundle = jsonBody["bundles"]!!.jsonArray[0].jsonObject
+        val orderCreated = sentBundle["events"]!!.jsonArray.first { it.jsonObject["type"]!!.jsonPrimitive.content == "order.created" }.jsonObject
+        val line = orderCreated["payload"]!!.jsonObject["lines"]!!.jsonArray[0].jsonObject
+
+        // Verifikasi item_ref_id terkonversi menjadi Long numeric (1L untuk menu-latte)
+        assertEquals(1L, line["item_ref_id"]!!.jsonPrimitive.content.toLong())
+        // Verifikasi options array kosong disertakan
+        assertNotNull(line["options"])
+    }
+
+    @Test
+    fun `autoRecoverFailedBundles automatically corrects CLOCK_SKEW future timestamp and retries bundle`(): Unit = runBlocking {
+        val bundleId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+
+        val eventsJson = """
+            [
+                {
+                    "event_id": "${UUID.randomUUID()}",
+                    "type": "order.created",
+                    "occurred_at": "2029-01-01T00:00:00Z",
+                    "payload": {
+                        "order_id": "$orderId",
+                        "display_number": "C1-0009",
+                        "order_type": "dine_in",
+                        "table_label": "Meja 01",
+                        "lines": [],
+                        "subtotal": 20000,
+                        "discount": 0,
+                        "service_charge": 0,
+                        "tax": 0,
+                        "rounding": 0,
+                        "total": 20000
+                    }
+                }
+            ]
+        """.trimIndent()
+
+        val outbox = OutboxEntity(
+            bundleId = bundleId,
+            deviceId = "dev-cafe-1",
+            shiftId = "shift-001",
+            eventsJson = eventsJson,
+            status = OutboxStatus.FAILED,
+            lastError = "occurred_at tidak boleh lebih dari 5 menit di masa depan (CLOCK_SKEW)",
+            reasonCode = "CLOCK_SKEW"
+        )
+        database.outboxDao().insert(outbox)
+
+        mockWebServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                val bodyStr = request.body.readUtf8()
+                val jsonBody = json.parseToJsonElement(bodyStr).jsonObject
+                val sentBundleId = jsonBody["bundles"]!!.jsonArray[0].jsonObject["bundle_id"]!!.jsonPrimitive.content
+                return MockResponse().setResponseCode(200).setBody("""
+                    {
+                        "results": [
+                            {
+                                "bundle_id": "$sentBundleId",
+                                "status": "ACCEPTED"
+                            }
+                        ],
+                        "server_time": "2026-11-04T10:00:00Z"
+                    }
+                """.trimIndent())
+            }
+        }
+
+        val summary = syncSender.sendPendingBundles()
+        assertEquals(1, summary.sent)
+
+        val failedList = database.outboxDao().getFailedOutbox()
+        org.junit.Assert.assertTrue("Antrean bermasalah harus bersih setelah CLOCK_SKEW dipulihkan", failedList.isEmpty())
+    }
 }

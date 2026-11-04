@@ -368,11 +368,18 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(deviceStatus, isUnlocked) {
                         if (deviceStatus == DeviceStatus.ACTIVE && !deviceManager.isDemoMode()) {
                             authManager.initialize()
-                            currentUser = authManager.getCurrentUser()
+                            val cachedUser = authManager.getCurrentUser()
+                            currentUser = cachedUser
                             if (!authManager.isUnlocked.value) {
                                 isLoginLoading = true
                                 val accs = authManager.getAccounts(deviceManager.getDeviceCredential())
-                                accountsList = accs.map { CashierAccountItem(it.id, it.name, it.role) }
+                                accountsList = if (accs.isNotEmpty()) {
+                                    accs.map { CashierAccountItem(it.id, it.name, it.role) }
+                                } else if (cachedUser != null) {
+                                    listOf(CashierAccountItem(cachedUser.id, cachedUser.name, cachedUser.role))
+                                } else {
+                                    listOf(CashierAccountItem("2", "Kasir", "kasir"))
+                                }
                                 isLoginLoading = false
                             }
                         }
@@ -403,6 +410,16 @@ class MainActivity : ComponentActivity() {
                                             } catch (e: Exception) {
                                                 Log.w("MasterDataSync", "Bootstrap error: ${e.message}")
                                             }
+                                        }
+                                    } else if (result is AuthResult.Error && (result.code == "NETWORK_ERROR" || result.code.startsWith("HTTP_5") || result.code == "HTTP_408")) {
+                                        // Mode Offline: verifikasi PIN lokal tanpa koneksi internet
+                                        val isOfflineValid = authManager.unlockWithPinOffline(pin)
+                                        if (isOfflineValid) {
+                                            currentUser = authManager.getCurrentUser() ?: accountsList.firstOrNull { it.id == userId }?.let {
+                                                UserDto(id = it.id, name = it.name, role = it.role)
+                                            } ?: UserDto(id = userId, name = "Kasir", role = "kasir")
+                                        } else {
+                                            loginErrorMessage = "Mode Offline: PIN tidak cocok dengan data tersimpan di tablet"
                                         }
                                     } else if (result is AuthResult.Error) {
                                         loginErrorMessage = result.message

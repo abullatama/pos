@@ -309,6 +309,45 @@ class SyncSender(
         return changed
     }
 
+    private fun resolveCafeLine(
+        lineMap: MutableMap<String, kotlinx.serialization.json.JsonElement>,
+        dbMenuItems: List<id.a3.core.data.local.entity.MenuItemEntity>
+    ): Boolean {
+        var changed = false
+        val lineName = lineMap["name"]?.jsonPrimitive?.content.orEmpty()
+        val rawItemRef = lineMap["item_ref_id"]?.jsonPrimitive?.content.orEmpty()
+        val numRef = rawItemRef.toLongOrNull()
+
+        if (numRef == null) {
+            val matchedFromDb = dbMenuItems.firstOrNull { it.name.equals(lineName, ignoreCase = true) }?.id?.toLongOrNull()
+                ?: dbMenuItems.firstOrNull { lineName.contains(it.name, ignoreCase = true) || it.name.contains(lineName, ignoreCase = true) }?.id?.toLongOrNull()
+            val resolvedId = matchedFromDb ?: when (rawItemRef.lowercase()) {
+                "menu-latte" -> 1L
+                "menu-cappuccino" -> 2L
+                "menu-americano" -> 3L
+                "menu-espresso" -> 4L
+                "menu-caramel-macchiato" -> 5L
+                "menu-kopi-susu-aren" -> 6L
+                "menu-cold-brew" -> 7L
+                "menu-matcha-latte" -> 8L
+                "menu-earl-grey" -> 9L
+                "menu-croissant" -> 10L
+                "menu-cinnamon-roll" -> 11L
+                "menu-cheese-cake" -> 12L
+                else -> ((rawItemRef.hashCode() and 0x7FFFFFFF) % 1000 + 1).toLong()
+            }
+            lineMap["item_ref_id"] = JsonPrimitive(resolvedId)
+            changed = true
+        }
+
+        if (!lineMap.containsKey("options") || lineMap["options"] !is JsonArray) {
+            lineMap["options"] = buildJsonArray {}
+            changed = true
+        }
+
+        return changed
+    }
+
     private suspend fun resolveMissingOrderCreated(orderId: String, dependentOccurredAt: String?): SyncEventDto? {
         // 1. Cek apakah ada bundel lain di outbox yang memiliki event order.created untuk order_id ini
         val existingBundles = outboxDao.findBundlesByOrderId(orderId)
@@ -414,11 +453,22 @@ class SyncSender(
                         add(buildJsonObject {
                             put("line_id", line.id)
                             val numRef = line.itemRefId.toLongOrNull()
-                            if (numRef != null) {
-                                put("item_ref_id", numRef)
-                            } else {
-                                put("item_ref_id", line.itemRefId)
-                            }
+                                ?: when (line.itemRefId.lowercase()) {
+                                    "menu-latte" -> 1L
+                                    "menu-cappuccino" -> 2L
+                                    "menu-americano" -> 3L
+                                    "menu-espresso" -> 4L
+                                    "menu-caramel-macchiato" -> 5L
+                                    "menu-kopi-susu-aren" -> 6L
+                                    "menu-cold-brew" -> 7L
+                                    "menu-matcha-latte" -> 8L
+                                    "menu-earl-grey" -> 9L
+                                    "menu-croissant" -> 10L
+                                    "menu-cinnamon-roll" -> 11L
+                                    "menu-cheese-cake" -> 12L
+                                    else -> ((line.itemRefId.hashCode() and 0x7FFFFFFF) % 1000 + 1).toLong()
+                                }
+                            put("item_ref_id", numRef)
                             put("name", line.nameSnapshot)
                             put("quantity", line.quantity)
                             put("unit_price", line.unitPriceSnapshot)
@@ -598,6 +648,22 @@ class SyncSender(
                             outboxDao.retryFailedBundle(freshBundleId)
                             continue
                         }
+                    }
+
+                    // 0c. Penanganan khusus error server: "CLOCK_SKEW", "masa depan", atau error sinkronisasi waktu
+                    val isClockSkewError = failed.lastError?.contains("CLOCK_SKEW", ignoreCase = true) == true
+                        || failed.lastError?.contains("masa depan", ignoreCase = true) == true
+                        || (failed.lastError?.contains("waktu", ignoreCase = true) == true && failed.lastError?.contains("event", ignoreCase = true) == true)
+                    if (isClockSkewError) {
+                        val serverOffset = syncStateDao?.get(MasterDataSyncManager.KEY_SERVER_CLOCK_OFFSET)?.toLongOrNull() ?: 0L
+                        val adjustedEvents = events.map { ev ->
+                            ev.copy(occurredAt = Instant.now().plusMillis(serverOffset).toString())
+                        }
+                        val freshBundleId = UUID.randomUUID().toString()
+                        outboxDao.updateBundleId(failed.bundleId, freshBundleId)
+                        outboxDao.updateEventsJson(freshBundleId, json.encodeToString(adjustedEvents))
+                        outboxDao.retryFailedBundle(freshBundleId)
+                        continue
                     }
 
                     // 1. Ekstrak kode perangkat resmi dari pesan error server (misal L2 / C8)
@@ -1517,13 +1583,14 @@ class SyncSender(
                         }
                     }
 
-                    // 5. Pastikan setiap baris lines memiliki options: [] dan atribut laundry lengkap
+                    // 5. Pastikan setiap baris lines memiliki options: [] dan atribut laundry/cafe lengkap
                     val rawLines = payloadObj["lines"] as? JsonArray
                     if (rawLines != null) {
                         var linesChanged = false
                         val isLaundry = (newPayloadMap["order_type"]?.jsonPrimitive?.content == "laundry" || payloadObj["order_type"]?.jsonPrimitive?.content == "laundry")
                         val isSingleLine = rawLines.size == 1
                         val dbServices = masterDataDao?.getAllLaundryServices().orEmpty()
+                        val dbMenuItems = if (!isLaundry) masterDataDao?.getAllMenuItems().orEmpty() else emptyList()
                         val updatedLines = buildJsonArray {
                             for (lineElement in rawLines) {
                                 if (lineElement is JsonObject) {
@@ -1532,10 +1599,8 @@ class SyncSender(
                                         val resolved = resolveLaundryLine(lineObj, dbServices, subtotalVal, isSingleLine)
                                         if (resolved) linesChanged = true
                                     } else {
-                                        if (!lineObj.containsKey("options")) {
-                                            lineObj["options"] = buildJsonArray {}
-                                            linesChanged = true
-                                        }
+                                        val resolved = resolveCafeLine(lineObj, dbMenuItems)
+                                        if (resolved) linesChanged = true
                                     }
                                     add(JsonObject(lineObj))
                                 } else {
@@ -1812,6 +1877,45 @@ class SyncSender(
 
                     if (correctionChanged) {
                         event.copy(payload = JsonObject(newCorMap))
+                    } else {
+                        event
+                    }
+                } else if (event.type == "shift.opened" && event.payload is JsonObject) {
+                    val payloadObj = event.payload as JsonObject
+                    var shiftOpenedChanged = false
+                    val newShiftMap = payloadObj.toMutableMap()
+
+                    val targetShiftId = payloadObj["shift_id"]?.jsonPrimitive?.content ?: outbox.shiftId ?: effectiveShiftId
+                    if (targetShiftId != null && newShiftMap["shift_id"]?.jsonPrimitive?.content != targetShiftId) {
+                        newShiftMap["shift_id"] = JsonPrimitive(targetShiftId)
+                        shiftOpenedChanged = true
+                        isEventsModified = true
+                    }
+
+                    val rawUserId = payloadObj["user_id"]?.jsonPrimitive?.content
+                    val numericUserId = rawUserId?.toLongOrNull() ?: LaundryStatusMapper.normalizeNumericUserId(rawUserId) ?: 2L
+                    if (newShiftMap["user_id"]?.jsonPrimitive?.longOrNull != numericUserId) {
+                        newShiftMap["user_id"] = JsonPrimitive(numericUserId)
+                        shiftOpenedChanged = true
+                        isEventsModified = true
+                    }
+
+                    if (!newShiftMap.containsKey("opening_cash")) {
+                        newShiftMap["opening_cash"] = JsonPrimitive(200000L)
+                        shiftOpenedChanged = true
+                        isEventsModified = true
+                    }
+
+                    if (!newShiftMap.containsKey("opening_cash_breakdown")) {
+                        newShiftMap["opening_cash_breakdown"] = buildJsonObject {
+                            put("100000", 2)
+                        }
+                        shiftOpenedChanged = true
+                        isEventsModified = true
+                    }
+
+                    if (shiftOpenedChanged) {
+                        event.copy(payload = JsonObject(newShiftMap))
                     } else {
                         event
                     }
@@ -2279,7 +2383,7 @@ class SyncSender(
                 || (outbox.lastError?.contains("shift_id", ignoreCase = true) == true && outbox.lastError?.contains("required", ignoreCase = true) == true)
                 || outbox.reasonCode?.contains("TOTAL_MISMATCH", ignoreCase = true) == true
 
-            val needsNewBundleId = isHashConflictError || isEventsModified || ((isShiftChanged || isDeviceChanged) && (outbox.attempts > 0 || outbox.lastError != null))
+            val needsNewBundleId = isHashConflictError || ((isEventsModified || isShiftChanged || isDeviceChanged) && (outbox.attempts > 0 || outbox.lastError != null))
 
             val finalBundleId = if (needsNewBundleId) {
                 val freshId = UUID.randomUUID().toString()
@@ -2303,6 +2407,10 @@ class SyncSender(
             )
 
             processedItems.add(updatedOutbox to bundleDto)
+        }
+
+        if (processedItems.isEmpty()) {
+            return SyncSendSummary(sent = 0, duplicates = 0, failed = 0)
         }
 
         val request = SyncRequest(bundles = processedItems.map { it.second })

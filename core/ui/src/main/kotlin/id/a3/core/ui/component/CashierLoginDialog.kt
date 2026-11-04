@@ -154,11 +154,22 @@ fun CashierLoginDialog(
                                         modifier = Modifier.size(32.dp)
                                     )
                                 } else {
-                                    Text(
-                                        text = "Memuat daftar akun...",
-                                        style = A3Theme.typography.body,
-                                        color = colors.inkMuted
-                                    )
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "Mode Masuk Offline",
+                                            style = A3Theme.typography.title,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = colors.ink
+                                        )
+                                        Text(
+                                            text = "Masukkan PIN untuk bertugas",
+                                            style = A3Theme.typography.bodySmall,
+                                            color = colors.inkMuted
+                                        )
+                                    }
                                 }
                             }
                         } else {
@@ -303,14 +314,12 @@ fun CashierLoginDialog(
                                 }
                             },
                             bottomSlot = {
-                                val isPinReady = pinInput.length in 4..6 && selectedUser != null
+                                val isPinReady = pinInput.length in 4..6 && (selectedUser != null || accounts.isEmpty())
                                 A3Button(
                                     label = if (isLoading) "Memverifikasi..." else "Masuk",
                                     onClick = {
-                                        val user = selectedUser
-                                        if (user == null) {
-                                            inlineError = "Pilih akun terlebih dahulu"
-                                        } else if (pinInput.length < 4) {
+                                        val user = selectedUser ?: accounts.firstOrNull() ?: CashierAccountItem("2", "Kasir", "kasir")
+                                        if (pinInput.length < 4) {
                                             inlineError = "PIN minimal 4 angka"
                                         } else {
                                             onLoginClick(user.id, pinInput)

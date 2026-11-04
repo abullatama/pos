@@ -95,11 +95,7 @@ object ApkInstallerHelper {
             }
 
             val filter = IntentFilter(ACTION_INSTALL_STATUS)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-            } else {
-                context.registerReceiver(receiver, filter)
-            }
+            ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
             val intent = Intent(ACTION_INSTALL_STATUS).apply {
                 setPackage(context.packageName)
