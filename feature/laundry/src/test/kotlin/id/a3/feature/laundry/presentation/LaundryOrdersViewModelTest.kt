@@ -501,6 +501,33 @@ class LaundryOrdersViewModelTest {
     }
 
     @Test
+    fun `antre tanpa percobaan dijelaskan belum pernah dicoba`() {
+        val r = id.a3.core.sync.model.OrderNotificationStatusResponse(
+            notifications = listOf(id.a3.core.sync.model.OrderNotificationItemDto("siap", "queued", 0))
+        )
+        assertEquals("belum pernah dicoba kirim", notificationDetailText(r))
+    }
+
+    @Test
+    fun `antre dengan percobaan menyebut jumlah dan waktu terakhir`() {
+        val r = id.a3.core.sync.model.OrderNotificationStatusResponse(
+            notifications = listOf(
+                id.a3.core.sync.model.OrderNotificationItemDto("siap", "queued", 3, "2026-11-05T03:15:00Z")
+            )
+        )
+        val text = notificationDetailText(r, java.time.ZoneId.of("Asia/Jakarta"))
+        assertEquals("3 percobaan, terakhir 5 Nov 10.15", text)
+    }
+
+    @Test
+    fun `terkirim tidak menampilkan keterangan percobaan`() {
+        val r = id.a3.core.sync.model.OrderNotificationStatusResponse(
+            notifications = listOf(id.a3.core.sync.model.OrderNotificationItemDto("siap", "sent", 1))
+        )
+        assertEquals(null, notificationDetailText(r))
+    }
+
+    @Test
     fun `server tanpa catatan pesan tetap none`() = runTest {
         val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
 

@@ -66,6 +66,7 @@ data class LaundryOrdersUiState(
     val errorMessage: String? = null,
     val notificationStatus: String = "none",
     val notificationError: String? = null,
+    val notificationDetail: String? = null,
     val isCheckingNotification: Boolean = false
 ) {
     val remainingBalance: Long
@@ -86,6 +87,27 @@ const val NOTIFICATION_STATUS_UNKNOWN = "unknown"
 internal fun notificationCheckFailureMessage(err: Throwable): String {
     val code = Regex("""^HTTP (\d{3})""").find(err.message.orEmpty())?.groupValues?.get(1)
     return if (code != null) "Gagal memeriksa status ke server (kode $code)" else "Gagal memeriksa status ke server"
+}
+
+/**
+ * Keterangan percobaan kirim untuk pesan antre atau gagal, agar kasir dan pengembang dapat membedakan
+ * "belum pernah dicoba" (pengirim di server tidak jalan) dari "sudah dicoba tapi gagal".
+ */
+internal fun notificationDetailText(
+    response: id.a3.core.sync.model.OrderNotificationStatusResponse,
+    zone: java.time.ZoneId = java.time.ZoneId.systemDefault()
+): String? {
+    val status = response.effectiveStatus.lowercase()
+    if (status != "queued" && status != "failed") return null
+    val latest = response.latestNotification() ?: return null
+    if (latest.attempts <= 0) return "belum pernah dicoba kirim"
+    val time = latest.lastAttemptAt?.let { raw ->
+        runCatching {
+            java.time.OffsetDateTime.parse(raw).atZoneSameInstant(zone)
+                .format(java.time.format.DateTimeFormatter.ofPattern("d MMM HH.mm", java.util.Locale("id", "ID")))
+        }.getOrNull()
+    }
+    return if (time != null) "${latest.attempts} percobaan, terakhir $time" else "${latest.attempts} percobaan"
 }
 
 class LaundryOrdersViewModel(
@@ -110,6 +132,7 @@ class LaundryOrdersViewModel(
     private val _notificationStatus = MutableStateFlow("none")
     private val _notificationError = MutableStateFlow<String?>(null)
     private val _isCheckingNotification = MutableStateFlow(false)
+    private val _notificationDetail = MutableStateFlow<String?>(null)
 
     // Pelacak PIN salah (COR-07: 3x salah terkunci 5 menit)
 
@@ -198,7 +221,8 @@ class LaundryOrdersViewModel(
         _errorMessage,
         _notificationStatus,
         _notificationError,
-        _isCheckingNotification
+        _isCheckingNotification,
+        _notificationDetail
     ) { args: Array<Any?> ->
         StatusMessageState(
             pinErrorMessage = args[0] as String?,
@@ -207,7 +231,8 @@ class LaundryOrdersViewModel(
             errorMessage = args[3] as String?,
             notificationStatus = args[4] as String,
             notificationError = args[5] as String?,
-            isCheckingNotification = args[6] as Boolean
+            isCheckingNotification = args[6] as Boolean,
+            notificationDetail = args[7] as String?
         )
     }
 
@@ -235,6 +260,7 @@ class LaundryOrdersViewModel(
             errorMessage = statusMsg.errorMessage,
             notificationStatus = statusMsg.notificationStatus,
             notificationError = statusMsg.notificationError,
+            notificationDetail = statusMsg.notificationDetail,
             isCheckingNotification = statusMsg.isCheckingNotification
         )
     }.stateIn(
@@ -258,7 +284,8 @@ class LaundryOrdersViewModel(
         val errorMessage: String?,
         val notificationStatus: String,
         val notificationError: String?,
-        val isCheckingNotification: Boolean
+        val isCheckingNotification: Boolean,
+        val notificationDetail: String?
     )
 
     fun setFilterStatus(filter: LaundryFilterStatus) {
@@ -356,7 +383,9 @@ class LaundryOrdersViewModel(
             result.onSuccess { response ->
                 _notificationStatus.value = response.effectiveStatus
                 _notificationError.value = response.effectiveError
+                _notificationDetail.value = notificationDetailText(response)
             }.onFailure { err ->
+                _notificationDetail.value = null
                 // Gagal bertanya ke server bukan berarti pesan belum ada: tampilkan sebagai "unknown".
                 _notificationStatus.value = NOTIFICATION_STATUS_UNKNOWN
                 _notificationError.value = notificationCheckFailureMessage(err)

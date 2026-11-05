@@ -67,7 +67,7 @@ data class OrderNotificationStatusResponse(
         get() = status ?: latestNotification()?.status ?: "none"
 
     /** Pesan paling baru: percobaan terakhir paling akhir; bila sama, yang terakhir dalam daftar. */
-    private fun latestNotification(): OrderNotificationItemDto? =
+    fun latestNotification(): OrderNotificationItemDto? =
         notifications.withIndex()
             .maxWithOrNull(compareBy({ it.value.lastAttemptAt ?: "" }, { it.index }))
             ?.value

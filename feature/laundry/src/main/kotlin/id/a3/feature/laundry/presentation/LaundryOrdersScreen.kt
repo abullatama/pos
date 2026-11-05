@@ -1341,6 +1341,16 @@ private fun WhatsAppNotificationCard(
                     }
                 }
 
+                if (!uiState.notificationDetail.isNullOrBlank()) {
+                    Text(
+                        text = uiState.notificationDetail,
+                        style = A3Theme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = colors.inkMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
                 if (uiState.notificationStatus.lowercase() in setOf("failed", NOTIFICATION_STATUS_UNKNOWN) &&
                     !uiState.notificationError.isNullOrBlank()
                 ) {
