@@ -295,17 +295,7 @@ class DefaultLaundryOrderRepository(
             try {
                 val response = api.searchCustomers(clean)
                 if (response.isSuccessful && response.body() != null) {
-                    val remoteList = response.body()!!.customers
-                    for (remote in remoteList) {
-                        val normPhone = PhoneNumberUtil.normalize(remote.phone)
-                        val customerId = remote.idString.ifBlank { UUID.randomUUID().toString() }
-                        val entity = CustomerEntity(
-                            id = customerId,
-                            name = remote.name,
-                            phone = normPhone
-                        )
-                        customerDao.insertCustomer(entity)
-                    }
+                    storeRemoteCustomers(customerDao, response.body()!!.customers)
                 }
             } catch (_: Exception) {
                 // Offline fallback: abaikan galat jaringan, tetap memancarkan data lokal dari Room
@@ -472,5 +462,26 @@ class DefaultLaundryOrderRepository(
     override suspend fun repairMissingOrderLines(orderId: String): List<OrderLineEntity> {
         val tm = transactionManager ?: return emptyList()
         return tm.repairMissingOrderLines(orderId)
+    }
+}
+
+/**
+ * Menyimpan hasil pencarian pelanggan dari server ke Room tanpa menimpa pelanggan lokal.
+ *
+ * Nomor HP bersifat unik dan penyimpanan memakai REPLACE: bila pelanggan dari server punya nomor yang sama
+ * dengan pelanggan lokal tetapi id berbeda, baris lokal terhapus dan pesanan lama kehilangan pelanggannya
+ * (tampil "Pelanggan Athia" tanpa nomor, tombol WhatsApp hilang). Karena itu pelanggan dengan nomor yang
+ * sudah ada secara lokal dengan id lain dilewati; id lokal tetap yang dipakai pesanan.
+ */
+internal suspend fun storeRemoteCustomers(
+    customerDao: CustomerDao,
+    remoteList: List<id.a3.core.sync.model.RemoteCustomerDto>
+) {
+    for (remote in remoteList) {
+        val normPhone = PhoneNumberUtil.normalize(remote.phone)
+        val customerId = remote.idString.ifBlank { UUID.randomUUID().toString() }
+        val existing = customerDao.findCustomerByPhone(normPhone)
+        if (existing != null && existing.id != customerId) continue
+        customerDao.insertCustomer(CustomerEntity(id = customerId, name = remote.name, phone = normPhone))
     }
 }
