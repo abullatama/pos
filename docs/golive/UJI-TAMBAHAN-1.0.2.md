@@ -3,7 +3,7 @@
 Untuk: uji di Redmi Pad 2 dengan APK rilis bertanda tangan. Melengkapi `UJI-TABLET-1.0.1.md`; skenario di sana tetap berlaku.
 APK laundry: `D:\Android\A3-releases\1.0.2-code10002\app-laundry-release.apk`.
 APK cafe: `D:\Android\A3-releases\1.0.3-code10003\app-cafe-release.apk` (cafe 1.0.2 digantikan 1.0.3 sebelum pernah dipasang; jangan pakai `app-cafe-release.apk` di folder 1.0.2).
-Kandidat terbaru: cafe 1.0.5 di `D:\Android\A3-releases\1.0.5-code10005\` (memperbaiki S3: offline dengan shift berjalan tidak lagi mengunci semua akun) dan laundry 1.0.3 di `D:\Android\A3-releases\1.0.4-code10004\`. Keduanya menambah pembaruan mandiri; skenario di sini tetap berlaku untuknya. Uji pembaruan: lihat `PANDUAN-UPDATE-MANDIRI.md` bagian D.
+Kandidat terbaru: cafe 1.0.5 di `D:\Android\A3-releases\1.0.5-code10005\` (memperbaiki S3: offline dengan shift berjalan tidak lagi mengunci semua akun) dan laundry 1.0.4 di `D:\Android\A3-releases\1.0.5-code10005\` (memperbaiki status WhatsApp yang selalu "Belum Dikirim"; lihat bagian 3b). Keduanya menambah pembaruan mandiri; skenario di sini tetap berlaku untuknya. Uji pembaruan: lihat `PANDUAN-UPDATE-MANDIRI.md` bagian D.
 Cek `SHA256SUMS.txt` di tiap folder. Tag git: `cafe-v1.0.3`, `laundry-v1.0.2`.
 
 Perubahan sejak 1.0.1: perbaikan tampilan POS cafe (UI-1), pesan PIN manager yang jelas (UI-2), jenis bayar di riwayat cafe dan laundry (UI-3), kunci layar otomatis saat idle (AUT-05), log diagnostik sesi. Rumus uang dan sinkron tidak berubah.
@@ -41,6 +41,18 @@ Jika muncul `INSTALL_FAILED_USER_RESTRICTED`, lihat layar tablet dan ketuk Insta
 | --- | --- | --- | --- |
 | T7 | Daftar pesanan: lunas tunai, DP, lunas QRIS | Label pembayaran menyebut jenis, mis. "Lunas · Tunai", "DP · QRIS" | |
 | T8 | Pesanan belum dibayar | Label "Belum Lunas" tanpa jenis | |
+
+## 3b. Status WhatsApp laundry (versi 1.0.4)
+
+Sebelum 1.0.4, layar pesanan membaca status tanpa token login, sehingga selalu tampil "Belum Dikirim". Perlu internet.
+
+| # | Skenario | Hasil yang diharapkan | Lulus? |
+| --- | --- | --- | --- |
+| W1 | Buka pesanan Siap atau Diambil, ketuk ikon segarkan di kartu WhatsApp | Status berubah sesuai server: WA Terkirim, WA Antrean, WA Gagal, atau Belum Dikirim (server memang tidak punya catatan) |  |
+| W2 | Matikan Wi-Fi, ketuk segarkan | "Status Tak Terbaca" dengan keterangan "Gagal memeriksa status ke server"; bukan "Belum Dikirim" |  |
+| W3 | Bandingkan W1 dengan kenyataan: tanyakan pelanggan apakah pesan WhatsApp masuk | Status di tablet sama dengan kenyataan. Bila server mengatakan terkirim tapi pelanggan tidak menerima, atau sebaliknya, catat nomor pesanan |  |
+| W4 | Jika masih "Status Tak Terbaca" saat online | Catat kode yang tampil (mis. kode 401, 403, 404, 500) dan foto layar; kode itu menunjukkan sisi mana yang bermasalah |  |
+| W5 | Cari pelanggan lewat pencarian di pesanan baru (online) | Hasil muncul (koneksi kini membawa token login) |  |
 
 ## 4. Kunci layar otomatis (cafe dan laundry)
 

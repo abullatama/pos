@@ -64,7 +64,13 @@ data class OrderNotificationStatusResponse(
     val serverTime: String? = null
 ) {
     val effectiveStatus: String
-        get() = status ?: notifications.firstOrNull()?.status ?: "none"
+        get() = status ?: latestNotification()?.status ?: "none"
+
+    /** Pesan paling baru: percobaan terakhir paling akhir; bila sama, yang terakhir dalam daftar. */
+    private fun latestNotification(): OrderNotificationItemDto? =
+        notifications.withIndex()
+            .maxWithOrNull(compareBy({ it.value.lastAttemptAt ?: "" }, { it.index }))
+            ?.value
 
     val effectiveError: String?
         get() = lastError

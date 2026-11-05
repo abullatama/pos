@@ -79,6 +79,15 @@ data class LaundryOrdersUiState(
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
+/** Status lokal: tablet gagal menanyakan status pesan ke server (berbeda dari "none" = server tidak punya catatan). */
+const val NOTIFICATION_STATUS_UNKNOWN = "unknown"
+
+/** Pesan untuk kasir saat status WhatsApp tidak bisa dibaca; menyertakan kode HTTP bila ada untuk bahan laporan. */
+internal fun notificationCheckFailureMessage(err: Throwable): String {
+    val code = Regex("""^HTTP (\d{3})""").find(err.message.orEmpty())?.groupValues?.get(1)
+    return if (code != null) "Gagal memeriksa status ke server (kode $code)" else "Gagal memeriksa status ke server"
+}
+
 class LaundryOrdersViewModel(
     private val repository: LaundryOrderRepository,
     private val printerService: PrinterService? = null,
@@ -348,8 +357,9 @@ class LaundryOrdersViewModel(
                 _notificationStatus.value = response.effectiveStatus
                 _notificationError.value = response.effectiveError
             }.onFailure { err ->
-                _notificationStatus.value = "none"
-                _notificationError.value = err.message
+                // Gagal bertanya ke server bukan berarti pesan belum ada: tampilkan sebagai "unknown".
+                _notificationStatus.value = NOTIFICATION_STATUS_UNKNOWN
+                _notificationError.value = notificationCheckFailureMessage(err)
             }
             _isCheckingNotification.value = false
         }

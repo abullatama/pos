@@ -108,12 +108,14 @@ fun LaundryNavHost(
     cashierId: String = "u-cashier-2",
     userRole: String? = null,
     onSwitchAccount: (() -> Unit)? = null,
-    onSyncMasterData: (() -> Unit)? = null
+    onSyncMasterData: (() -> Unit)? = null,
+    /** Koneksi server yang sudah memuat token login dan kredensial perangkat (dari MainActivity). */
+    authenticatedSyncApi: id.a3.core.sync.api.SyncApiService? = null
 ) {
     val context = LocalContext.current
 
-    val syncApiService = remember {
-        SyncApiServiceFactory.create(
+    val syncApiService = remember(authenticatedSyncApi) {
+        authenticatedSyncApi ?: SyncApiServiceFactory.create(
             appConfig = LaundryAppConfig
         )
     }

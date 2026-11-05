@@ -588,6 +588,7 @@ class MainActivity : ComponentActivity() {
                             cashierName = currentUser?.name ?: activeShift?.cashierName ?: "Kasir",
                             cashierId = currentUser?.id ?: activeShift?.cashierId ?: "2",
                             userRole = currentUser?.role,
+                            authenticatedSyncApi = syncApiService,
                             onSwitchAccount = {
                                 coroutineScope.launch {
                                     authManager.logout()

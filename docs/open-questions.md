@@ -44,3 +44,4 @@ Aturan untuk agent: kerjakan dengan **nilai sementara** di bawah, simpan sebagai
 - Sinkron WorkManager bertahan saat layar mati dan aplikasi di latar belakang selama beberapa jam.
 - Mode kios (device owner) di HyperOS 2.
 - Kamera tablet memindai QR tag di kertas roll.
+| OQ-34 | Notifikasi WhatsApp laundry otomatis sering tidak terkirim; penyebab di sisi server belum diketahui (kode backend tidak ada di repo ini). Sebelum laundry 1.0.4, layar pesanan membaca status tanpa token login sehingga selalu "Belum Dikirim", jadi kenyataan pengiriman tidak terlihat | Laundry 1.0.4: koneksi bertoken, status gagal-periksa dibedakan ("Status Tak Terbaca" dengan kode), pesan terbaru yang dibaca. Minta pengelola backend memeriksa: scheduler kasir:whatsapp-send berjalan tiap menit (/ready), isi tabel notifications (status, attempts, last_error), circuit breaker, sesi perangkat Fonnte. Teks pesan manual belum diubah (ditunda) | Go-live | Pengembang backend |

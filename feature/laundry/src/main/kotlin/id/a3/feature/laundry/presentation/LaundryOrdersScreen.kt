@@ -1294,7 +1294,8 @@ private fun WhatsAppNotificationCard(
         "sent" -> "WA Terkirim" to StatusToken.SUCCESS
         "queued" -> "WA Antrean" to StatusToken.WARNING
         "failed" -> "WA Gagal" to StatusToken.DANGER
-        else -> "Belum Dikirim" to StatusToken.NEUTRAL
+        NOTIFICATION_STATUS_UNKNOWN -> "Status Tak Terbaca" to StatusToken.WARNING
+        else ->"Belum Dikirim" to StatusToken.NEUTRAL
     }
 
     Box(
@@ -1340,7 +1341,9 @@ private fun WhatsAppNotificationCard(
                     }
                 }
 
-                if (uiState.notificationStatus.lowercase() == "failed" && !uiState.notificationError.isNullOrBlank()) {
+                if (uiState.notificationStatus.lowercase() in setOf("failed", NOTIFICATION_STATUS_UNKNOWN) &&
+                    !uiState.notificationError.isNullOrBlank()
+                ) {
                     Text(
                         text = uiState.notificationError,
                         style = A3Theme.typography.bodySmall.copy(fontSize = 11.sp),

@@ -166,7 +166,10 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
 
     var notificationStatusToReturn = id.a3.core.sync.model.OrderNotificationStatusResponse(status = "sent")
 
+    var notificationFailure: Throwable? = null
+
     override suspend fun getNotificationStatus(orderId: String): Result<id.a3.core.sync.model.OrderNotificationStatusResponse> {
+        notificationFailure?.let { return Result.failure(it) }
         return Result.success(notificationStatusToReturn)
     }
 
@@ -480,6 +483,31 @@ class LaundryOrdersViewModelTest {
         viewModel.fetchNotificationStatus("ord-1")
         assertEquals("failed", viewModel.uiState.value.notificationStatus)
         assertEquals("Fonnte API timeout", viewModel.uiState.value.notificationError)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `gagal bertanya ke server tidak ditampilkan sebagai belum ada pesan`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        fakeRepository.notificationFailure = Exception("HTTP 401: Unauthorized")
+        viewModel.fetchNotificationStatus("ord-1")
+
+        assertEquals(NOTIFICATION_STATUS_UNKNOWN, viewModel.uiState.value.notificationStatus)
+        assertEquals("Gagal memeriksa status ke server (kode 401)", viewModel.uiState.value.notificationError)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `server tanpa catatan pesan tetap none`() = runTest {
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        fakeRepository.notificationStatusToReturn = id.a3.core.sync.model.OrderNotificationStatusResponse()
+        viewModel.fetchNotificationStatus("ord-1")
+
+        assertEquals("none", viewModel.uiState.value.notificationStatus)
 
         collectJob.cancel()
     }

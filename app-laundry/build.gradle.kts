@@ -7,8 +7,8 @@ android {
 
     defaultConfig {
         applicationId = "id.athialoundry"
-        versionCode = 10003 // mayor*10000 + minor*100 + patch
-        versionName = "1.0.3"
+        versionCode = 10004 // mayor*10000 + minor*100 + patch
+        versionName = "1.0.4"
     }
 
     buildTypes {
