@@ -27,6 +27,17 @@ class ShiftLoginPolicyTest {
     }
 
     @Test
+    fun `pembatasan hanya bila daftar dari server dan ada shift`() {
+        assertTrue(ShiftLoginPolicy.shouldRestrict(accountsFromServer = true, shiftOwnerId = "5"))
+        assertFalse(ShiftLoginPolicy.shouldRestrict(accountsFromServer = true, shiftOwnerId = null))
+    }
+
+    @Test
+    fun `offline akun cadangan tidak disaring`() {
+        assertFalse(ShiftLoginPolicy.shouldRestrict(accountsFromServer = false, shiftOwnerId = "5"))
+    }
+
+    @Test
     fun `pesan menyebut pembuka shift`() {
         assertTrue(ShiftLoginPolicy.blockedMessage("Siti").contains("Siti"))
     }

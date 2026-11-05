@@ -435,7 +435,9 @@ class MainActivity : ComponentActivity() {
                                 // Transaksi tercatat atas nama pembuka shift: selama shift berjalan, hanya
                                 // pembuka shift atau manager/owner yang boleh membuka kunci.
                                 val activeShift = withContext(Dispatchers.IO) { database.shiftDao().getActiveShift() }
-                                if (activeShift != null) {
+                                if (activeShift != null &&
+                                    ShiftLoginPolicy.shouldRestrict(accs.isNotEmpty(), activeShift.cashierId)
+                                ) {
                                     val allowed = accountsList.filter {
                                         ShiftLoginPolicy.isAllowed(it.id, it.role, activeShift.cashierId)
                                     }

@@ -14,6 +14,14 @@ object ShiftLoginPolicy {
     ): Boolean =
         shiftOwnerId == null || userId == shiftOwnerId || role.lowercase() in approverRoles
 
+    /**
+     * Pembatasan hanya dipakai bila daftar akun datang dari server. Saat offline, daftar hanya berisi
+     * akun cadangan yang PIN-nya bisa dicocokkan secara lokal; menyaringnya akan membuat tak seorang pun
+     * bisa masuk, bahkan untuk menutup shift.
+     */
+    fun shouldRestrict(accountsFromServer: Boolean, shiftOwnerId: String?): Boolean =
+        accountsFromServer && shiftOwnerId != null
+
     /** Pesan untuk kasir bila tidak ada akun yang boleh dipilih. */
     fun blockedMessage(shiftOwnerName: String?): String =
         "Shift sedang dibuka oleh ${shiftOwnerName ?: "kasir lain"}. " +
