@@ -29,7 +29,7 @@ Gunakan checklist ini pada **H-1** (sehari sebelum pembukaan) dan **Hari-H Pagi*
 | 1 | **Status Perangkat di Web Owner** | Perangkat berstatus **ACTIVE** (bukan Pending atau Revoked) di backend Laravel. | [ ] SIAP |
 | 2 | **Koneksi Jaringan & Sinkronisasi** | Indikator sinkron di TopBar berwarna **Hijau (Tersinkron)** atau **Kuning (Menunggu)**, bukan Merah (Error). | [ ] SIAP |
 | 3 | **PIN Kasir & Manager** | • Seluruh kasir telah menghafal PIN 4-digit masing-masing.<br>• Manager On Duty memegang PIN Manager untuk otorisasi diskon/void/refund.<br>• PIN Owner tersimpan aman oleh pemilik usaha. | [ ] SIAP |
-| 3a | **Versi Aplikasi & Kunci Layar** | • Versi terpasang **cafe 1.0.5 / laundry 1.0.8** (cek di Info aplikasi).<br>• Layar terkunci setelah 2 menit tanpa sentuhan; PIN kasir membuka kembali dan keranjang tetap utuh.<br>• Kasir bertugas login saat **internet menyala** (syarat buka kunci saat internet mati). | [ ] SIAP |
+| 3a | **Versi Aplikasi & Kunci Layar** | • Versi terpasang **cafe 1.0.5 / laundry 1.0.9** (cek di Info aplikasi).<br>• Layar terkunci setelah 2 menit tanpa sentuhan; PIN kasir membuka kembali dan keranjang tetap utuh.<br>• Kasir bertugas login saat **internet menyala** (syarat buka kunci saat internet mati). | [ ] SIAP |
 | 4 | **Katalog Menu & Layanan** | Seluruh menu kopi/makanan (Cafe) atau tarif kiloan/satuan/express (Laundry) telah sesuai dengan harga jual toko. | [ ] SIAP |
 
 ---

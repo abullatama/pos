@@ -184,16 +184,59 @@ fun LaundryOrderScreen(
                     onFilterSelected = viewModel::setCategoryFilter
                 )
 
-                // 3. Carousel Kartu Layanan Tersedia
-                ServiceCatalogRow(
-                    services = uiState.filteredServices,
-                    selectedService = uiState.selectedServiceForInput,
-                    onServiceSelected = viewModel::selectServiceForInput,
-                    onSyncServices = {
-                        viewModel.refreshServices()
-                        onSyncServices?.invoke()
+                // 3. Pencarian layanan + carousel kartu layanan tersedia
+                var serviceQuery by remember { mutableStateOf("") }
+                val visibleServices = remember(uiState.filteredServices, serviceQuery) {
+                    filterServicesByQuery(uiState.filteredServices, serviceQuery)
+                }
+
+                if (uiState.filteredServices.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        A3TextField(
+                            value = serviceQuery,
+                            onValueChange = { serviceQuery = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = "Cari layanan, cth. bedcover atau sepatu",
+                            singleLine = true
+                        )
+                        if (serviceQuery.isNotBlank()) {
+                            A3Button(
+                                label = "Hapus",
+                                variant = ButtonVariant.GHOST,
+                                onClick = { serviceQuery = "" }
+                            )
+                        }
                     }
-                )
+                    if (serviceQuery.isNotBlank()) {
+                        Text(
+                            text = "${visibleServices.size} dari ${uiState.filteredServices.size} layanan",
+                            style = A3Theme.typography.bodySmall,
+                            color = A3Theme.colors.inkMuted
+                        )
+                    }
+                }
+
+                if (uiState.filteredServices.isNotEmpty() && visibleServices.isEmpty()) {
+                    Text(
+                        text = "Layanan \"${serviceQuery.trim()}\" tidak ditemukan. Coba kata lain atau ubah kategori.",
+                        style = A3Theme.typography.body,
+                        color = A3Theme.colors.inkMuted
+                    )
+                } else {
+                    ServiceCatalogRow(
+                        services = visibleServices,
+                        selectedService = uiState.selectedServiceForInput,
+                        onServiceSelected = viewModel::selectServiceForInput,
+                        onSyncServices = {
+                            viewModel.refreshServices()
+                            onSyncServices?.invoke()
+                        }
+                    )
+                }
 
                 // 4. Form Konfigurasi Layanan Terpilih
                 val currentService = uiState.selectedServiceForInput

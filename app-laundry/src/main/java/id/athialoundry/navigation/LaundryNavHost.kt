@@ -505,12 +505,12 @@ fun LaundryNavHost(
                 },
                 onFinishAndNewOrder = {
                     laundryViewModel.clearOrder()
-                    navController.navigate(LaundryDestinations.ORDER) {
-                        popUpTo(navController.graph.findStartDestination().id) {
-                            saveState = true
-                        }
-                        launchSingleTop = true
-                        restoreState = true
+                    // Kembali ke layar asal (Order atau Cucian) dengan membuang layar pembayaran dari tumpukan.
+                    // Sebelumnya navigasi ke Order dengan popUpTo + restoreState memulihkan tumpukan yang baru
+                    // disimpan, sehingga tombol Selesai kembali ke layar "Pembayaran Berhasil" yang sama.
+                    val popped = navController.popBackStack(LaundryDestinations.PEMBAYARAN, inclusive = true)
+                    if (!popped) {
+                        navController.navigate(LaundryDestinations.ORDER) { launchSingleTop = true }
                     }
                 }
             )

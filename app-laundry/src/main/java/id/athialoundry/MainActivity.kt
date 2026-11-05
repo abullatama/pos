@@ -573,6 +573,11 @@ class MainActivity : ComponentActivity() {
                                 if (currentRoute == LaundryDestinations.ADMIN) {
                                     navController.popBackStack(LaundryDestinations.ADMIN, inclusive = true)
                                 }
+                                // Layar pembayaran dikeluarkan dari tumpukan sebelum pindah tab; bila ikut
+                                // tersimpan, membuka tab itu lagi memulihkan layar "Pembayaran Berhasil".
+                                if (navController.currentDestination?.route == LaundryDestinations.PEMBAYARAN) {
+                                    navController.popBackStack(LaundryDestinations.PEMBAYARAN, inclusive = true)
+                                }
                                 if (navController.currentDestination?.route != item.id) {
                                     navController.navigate(item.id) {
                                         popUpTo(navController.graph.findStartDestination().id) {
