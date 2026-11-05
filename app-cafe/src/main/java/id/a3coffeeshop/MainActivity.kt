@@ -98,6 +98,13 @@ class MainActivity : ComponentActivity() {
     /** Lingkup untuk tulis status kunci; tidak ikut dibatalkan saat activity berhenti. */
     private val authScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
+    /** Izin Bluetooth belum diberikan; dibaca layar untuk menampilkan penjelasan, diperbarui saat aplikasi tampil. */
+    private var bluetoothPermissionMissing by mutableStateOf(false)
+
+    private fun refreshBluetoothPermission() {
+        bluetoothPermissionMissing = id.a3.core.ui.component.isBluetoothConnectMissing(this)
+    }
+
     override fun onStop() {
         super.onStop()
         authScope.launch { AuthManagerFactory.getOrCreate(applicationContext, CafeAppConfig).onEnterBackground() }
@@ -105,6 +112,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        refreshBluetoothPermission()
         authScope.launch { AuthManagerFactory.getOrCreate(applicationContext, CafeAppConfig).onEnterForeground() }
     }
 
@@ -310,6 +318,7 @@ class MainActivity : ComponentActivity() {
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) {
+                    refreshBluetoothPermission()
                     coroutineScope.launch(Dispatchers.IO) {
                         printerService.checkConnection()
                     }
@@ -328,6 +337,15 @@ class MainActivity : ComponentActivity() {
                             printerService.checkConnection()
                         }
                     }
+                }
+
+                var btPermissionDialogDismissed by remember { mutableStateOf(false) }
+                if (bluetoothPermissionMissing && !btPermissionDialogDismissed) {
+                    id.a3.core.ui.component.BluetoothPermissionDialog(onDismiss = { btPermissionDialogDismissed = true })
+                }
+                // Setelah izin diberikan (mis. kembali dari Pengaturan), periksa printer lagi.
+                LaunchedEffect(bluetoothPermissionMissing) {
+                    if (!bluetoothPermissionMissing) printerService.checkConnection()
                 }
 
                 var registeredDeviceId by remember { mutableStateOf("") }

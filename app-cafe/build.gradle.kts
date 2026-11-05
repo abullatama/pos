@@ -7,8 +7,8 @@ android {
 
     defaultConfig {
         applicationId = "id.a3coffeeshop"
-        versionCode = 10006 // mayor*10000 + minor*100 + patch
-        versionName = "1.0.6"
+        versionCode = 10007 // mayor*10000 + minor*100 + patch
+        versionName = "1.0.7"
     }
 
     buildTypes {

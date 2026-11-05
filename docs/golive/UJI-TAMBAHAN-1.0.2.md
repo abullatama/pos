@@ -6,6 +6,7 @@ APK cafe: `D:\Android\A3-releases\1.0.3-code10003\app-cafe-release.apk` (cafe 1.
 Kandidat terbaru: cafe 1.0.5 di `D:\Android\A3-releases\1.0.5-code10005\` (memperbaiki S3: offline dengan shift berjalan tidak lagi mengunci semua akun) dan laundry 1.0.9 di `D:\Android\A3-releases\laundry-1.0.9-code10009\` (memperbaiki status WhatsApp yang selalu "Belum Dikirim" dan menambah keterangan percobaan kirim; lihat bagian 3b). Keduanya menambah pembaruan mandiri; skenario di sini tetap berlaku untuknya. Uji pembaruan: lihat `PANDUAN-UPDATE-MANDIRI.md` bagian D.
 Cek `SHA256SUMS.txt` di tiap folder. Tag git: `cafe-v1.0.3`, `laundry-v1.0.2`.
 Kandidat berikutnya: cafe 1.0.6 di `D:\Android\A3-releases\cafe-1.0.6-code10006\` dan laundry 1.0.10 di `D:\Android\A3-releases\laundry-1.0.10-code10010\` (kas awal standar 0 didukung; lihat bagian 3c).
+Kandidat berikutnya: cafe 1.0.7 di `D:\Android\A3-releases\cafe-1.0.7-code10007\` dan laundry 1.0.11 di `D:\Android\A3-releases\laundry-1.0.11-code10011\` (izin printer; lihat bagian 3d).
 
 Perubahan sejak 1.0.1: perbaikan tampilan POS cafe (UI-1), pesan PIN manager yang jelas (UI-2), jenis bayar di riwayat cafe dan laundry (UI-3), kunci layar otomatis saat idle (AUT-05), log diagnostik sesi. Rumus uang dan sinkron tidak berubah.
 
@@ -73,6 +74,17 @@ Owner mengatur Kas awal standar = 0 di web (Pengaturan, Kas) untuk kedua usaha. 
 | KA2 | Dengan standar 0, isi pecahan lebih dari 0 | Diminta alasan selisih; setelah diisi shift bisa dibuka |  |
 | KA3 | Buka shift dengan kas awal 0, lakukan transaksi tunai, tutup shift | Kas seharusnya = penjualan tunai saja; sama dengan server dan Laporan Z |  |
 | KA4 | Kembalikan standar ke 200000 di web, sinkron, buka Buka Shift lalu kosongkan semua pecahan | Standar kembali Rp200.000; kas awal 0 ditolak |  |
+
+## 3d. Izin printer Bluetooth (cafe 1.0.7, laundry 1.0.11)
+
+Penyebab "Printer Putus" di laundry: izin Perangkat di sekitar ditolak permanen, dan tanpa izin SCAN koneksi gagal karena cancelDiscovery. Uji dengan mencabut izin lewat adb (aplikasi akan tertutup, buka lagi).
+
+| # | Skenario | Hasil yang diharapkan | Lulus? |
+| --- | --- | --- | --- |
+| PB1 | Cabut izin CONNECT: adb shell pm revoke <paket> android.permission.BLUETOOTH_CONNECT, buka aplikasi | Muncul dialog "Izin printer belum aktif" dengan Buka Pengaturan dan Nanti |  |
+| PB2 | Ketuk Buka Pengaturan, aktifkan Perangkat di sekitar, kembali ke aplikasi | Status printer berubah ke Printer Siap tanpa membuka ulang aplikasi |  |
+| PB3 | Beri CONNECT tetapi cabut SCAN (pm revoke ... BLUETOOTH_SCAN), buka aplikasi, ketuk status printer, cetak satu struk | Printer Siap dan struk tercetak (versi lama gagal di sini) |  |
+| PB4 | Ulangi PB1 sampai PB3 di cafe dan laundry (paket id.a3coffeeshop dan id.athialoundry) | Perilaku sama di keduanya |  |
 
 ## 4. Kunci layar otomatis (cafe dan laundry)
 

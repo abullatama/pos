@@ -105,6 +105,20 @@ class DefaultPrinterService(
     }
 
     /**
+     * Aplikasi tidak pernah memulai pencarian Bluetooth (hanya memakai printer yang sudah dipasangkan),
+     * jadi menghentikan pencarian hanya langkah kehati-hatian. Tanpa izin BLUETOOTH_SCAN, panggilan ini
+     * melempar SecurityException dan sebelumnya menggagalkan seluruh koneksi dan pencetakan.
+     */
+    @SuppressLint("MissingPermission")
+    private fun cancelDiscoverySafely() {
+        try {
+            bluetoothAdapter?.cancelDiscovery()
+        } catch (e: SecurityException) {
+            android.util.Log.d("DefaultPrinterService", "cancelDiscovery dilewati (izin SCAN tidak ada): ${e.message}")
+        }
+    }
+
+    /**
      * Memverifikasi konektivitas fisik nyata ke printer termal (Bluetooth handshake atau USB ready).
      * Jika printer mati atau tidak dapat dihubungi, status disetel ke Disconnected (Printer Putus).
      */
@@ -139,7 +153,7 @@ class DefaultPrinterService(
                 var socket: BluetoothSocket? = null
                 try {
                     _status.value = PrinterStatus.Connecting
-                    bluetoothAdapter.cancelDiscovery()
+                    cancelDiscoverySafely()
                     socket = try {
                         target.device.createRfcommSocketToServiceRecord(sppUuid)
                     } catch (_: Exception) {
@@ -205,7 +219,7 @@ class DefaultPrinterService(
             try {
                 android.util.Log.d("DefaultPrinterService", "Connecting to ${device.name} [${device.address}] via SPP...")
                 _status.value = PrinterStatus.Connecting
-                bluetoothAdapter?.cancelDiscovery()
+                cancelDiscoverySafely()
 
                 try {
                     socket = device.createRfcommSocketToServiceRecord(sppUuid)
