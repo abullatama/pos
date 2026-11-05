@@ -129,3 +129,9 @@ Payment gateway, QRIS Dinamis, webhook pembayaran, rekonsiliasi dinamis, antar-j
   4. **Touch Target Standard (Aksesibilitas Tablet):** Seluruh elemen interaktif tombol dan tab (seperti tombol "Pesanan Baru" dan tab "Meja Terbuka / Riwayat Selesai") wajib memiliki tinggi sentuh minimal 44–48 dp.
   5. **Soft Input Pan Mode:** `android:windowSoftInputMode="adjustPan"` diterapkan pada manifest kedua aplikasi agar keyboard virtual tidak menciutkan viewport layout split-screen atau mengangkat panel struk secara paksa saat kasir mengetik.
 - Berkas rujukan: `feature/cafe/src/main/kotlin/id/a3/feature/cafe/presentation/CafeMenuViewModel.kt`, `app-cafe/src/main/java/id/tenang/kasir/cafe/navigation/CafeNavHost.kt`, `app-cafe/src/main/java/id/tenang/kasir/cafe/MainActivity.kt`.
+
+## D-20
+- Keputusan (2026-11-05): notifikasi WhatsApp otomatis laundry hanya dikirim saat status **Siap**. Tidak ada pesan otomatis untuk Diterima (nota), Diproses, Diambil, maupun pengingat belum diambil kecuali pemilik dan pengelola backend menyepakati lain. Disepakati pemilik proyek dengan pengelola backend.
+- Alasan: mengurangi jumlah pesan dan risiko nomor Fonnte diblokir; pelanggan hanya perlu tahu kapan cucian siap.
+- Dampak: spek bagian 13 (tiga jenis pesan) dan PRT-08 menyebut nota saat pesanan dibuat serta pengingat; spek belum diubah, keputusan ini yang berlaku. Tablet tidak berubah: tablet tetap mengirim semua event laundry.status_changed dan server yang menentukan pesan. Tombol "Kirim via WA" manual tetap tersedia untuk status apa pun.
+- Catatan: penerapan di server dan perlakuan cuci ulang (Siap kedua kali) dikonfirmasi pengelola backend.
