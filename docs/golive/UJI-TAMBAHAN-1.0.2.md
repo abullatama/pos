@@ -3,7 +3,7 @@
 Untuk: uji di Redmi Pad 2 dengan APK rilis bertanda tangan. Melengkapi `UJI-TABLET-1.0.1.md`; skenario di sana tetap berlaku.
 APK laundry: `D:\Android\A3-releases\1.0.2-code10002\app-laundry-release.apk`.
 APK cafe: `D:\Android\A3-releases\1.0.3-code10003\app-cafe-release.apk` (cafe 1.0.2 digantikan 1.0.3 sebelum pernah dipasang; jangan pakai `app-cafe-release.apk` di folder 1.0.2).
-Kandidat terbaru: cafe 1.0.5 di `D:\Android\A3-releases\1.0.5-code10005\` (memperbaiki S3: offline dengan shift berjalan tidak lagi mengunci semua akun) dan laundry 1.0.6 di `D:\Android\A3-releases\laundry-1.0.6-code10006\` (memperbaiki status WhatsApp yang selalu "Belum Dikirim" dan menambah keterangan percobaan kirim; lihat bagian 3b). Keduanya menambah pembaruan mandiri; skenario di sini tetap berlaku untuknya. Uji pembaruan: lihat `PANDUAN-UPDATE-MANDIRI.md` bagian D.
+Kandidat terbaru: cafe 1.0.5 di `D:\Android\A3-releases\1.0.5-code10005\` (memperbaiki S3: offline dengan shift berjalan tidak lagi mengunci semua akun) dan laundry 1.0.7 di `D:\Android\A3-releases\laundry-1.0.7-code10007\` (memperbaiki status WhatsApp yang selalu "Belum Dikirim" dan menambah keterangan percobaan kirim; lihat bagian 3b). Keduanya menambah pembaruan mandiri; skenario di sini tetap berlaku untuknya. Uji pembaruan: lihat `PANDUAN-UPDATE-MANDIRI.md` bagian D.
 Cek `SHA256SUMS.txt` di tiap folder. Tag git: `cafe-v1.0.3`, `laundry-v1.0.2`.
 
 Perubahan sejak 1.0.1: perbaikan tampilan POS cafe (UI-1), pesan PIN manager yang jelas (UI-2), jenis bayar di riwayat cafe dan laundry (UI-3), kunci layar otomatis saat idle (AUT-05), log diagnostik sesi. Rumus uang dan sinkron tidak berubah.
@@ -54,6 +54,7 @@ Sebelum 1.0.4, layar pesanan membaca status tanpa token login, sehingga selalu t
 | W4 | Jika masih "Status Tak Terbaca" saat online | Catat kode yang tampil (mis. kode 401, 403, 404, 500) dan foto layar; kode itu menunjukkan sisi mana yang bermasalah |  |
 | W6 | (1.0.5) Pesan berstatus WA Antrean: lihat keterangan di samping status | "belum pernah dicoba kirim" (pengirim di server tidak jalan) atau "N percobaan, terakhir ..." (sudah dicoba, cek galat di server). Catat teks yang tampil dan tempel ke laporan untuk pengelola backend |  |
 | W7 | (1.0.6) Buat pesanan laundry untuk pelanggan A (nomor HP terisi). Lalu di pesanan baru, cari nama A lewat pencarian pelanggan (online) dan pilih. Buka lagi pesanan pertama | Nama dan nomor HP A di pesanan pertama tetap utuh; tombol "Kirim via WA" masih ada. Pada 1.0.5 ke bawah nama berubah jadi "Pelanggan Athia" dan nomor hilang |  |
+| W8 | (1.0.7) Pasang, buka laundry, tunggu beberapa detik, buka pesanan yang tadinya "Pelanggan Athia" (mis. L3-0002) | Nama dan nomor HP pelanggan kembali, tombol "Kirim via WA" muncul. Bila tetap "Pelanggan Athia", jalankan `adb logcat -d \| Select-String "OrderCustomerRepair"` dan lapor |  |
 | W5 | Cari pelanggan lewat pencarian di pesanan baru (online) | Hasil muncul (koneksi kini membawa token login) |  |
 
 ## 4. Kunci layar otomatis (cafe dan laundry)

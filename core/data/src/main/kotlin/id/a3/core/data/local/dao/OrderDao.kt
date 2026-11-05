@@ -33,6 +33,14 @@ interface OrderDao {
     @Query("SELECT * FROM orders WHERE id = :orderId")
     suspend fun getOrderById(orderId: String): OrderEntity?
 
+    /** Pesanan yang menunjuk pelanggan yang tidak ada lagi di tabel pelanggan (lihat OrderCustomerRepair). */
+    @Query("SELECT * FROM orders WHERE customerId IS NOT NULL AND customerId NOT IN (SELECT id FROM customers)")
+    suspend fun getOrdersWithMissingCustomer(): List<OrderEntity>
+
+    /** Hanya menyambung ulang penunjuk pelanggan; tidak menyentuh nilai uang atau status. */
+    @Query("UPDATE orders SET customerId = :customerId WHERE id = :orderId")
+    suspend fun updateOrderCustomerId(orderId: String, customerId: String)
+
     @Query("SELECT * FROM orders WHERE displayNumber = :displayNumber ORDER BY createdAt DESC LIMIT 1")
     suspend fun getOrderByDisplayNumber(displayNumber: String): OrderEntity?
 

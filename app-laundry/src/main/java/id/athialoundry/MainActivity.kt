@@ -142,6 +142,16 @@ class MainActivity : ComponentActivity() {
 
         val database = AppDatabase.getInstance(this)
 
+        // Pulihkan pesanan yang kehilangan pelanggannya (nama dan nomor diambil dari antrean sinkron).
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO).launch {
+            runCatching {
+                val n = id.a3.core.data.repository.OrderCustomerRepair.repair(
+                    database.orderDao(), database.customerDao(), database.outboxDao()
+                )
+                if (n > 0) android.util.Log.i("OrderCustomerRepair", "pesanan dipulihkan: $n")
+            }
+        }
+
         // 3. Inisialisasi manajer sinkronisasi outbox & master data (SYN-03, SYN-05, F12, F43)
         val authManager = AuthManagerFactory.getOrCreate(this, LaundryAppConfig)
 
