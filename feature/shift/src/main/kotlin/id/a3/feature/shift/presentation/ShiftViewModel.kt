@@ -41,8 +41,9 @@ data class ShiftUiState(
     val differenceAmount: Long
         get() = openingCashTotal - standardOpeningCash
 
+    /** Kas awal 0 hanya boleh bila standar dari pengaturan memang 0; selain itu 0 dianggap salah isi. */
     val canSubmitOpening: Boolean
-        get() = openingCashTotal > 0L && (!isDifferenceFromStandard || differenceReason.trim().isNotBlank()) && !isOpeningShift
+        get() = (openingCashTotal > 0L || standardOpeningCash == 0L) && (!isDifferenceFromStandard || differenceReason.trim().isNotBlank()) && !isOpeningShift
 }
 
 class ShiftViewModel(
@@ -57,6 +58,28 @@ class ShiftViewModel(
         viewModelScope.launch {
             repository.observeCurrentShift().collect { shift ->
                 _uiState.update { it.copy(currentShift = shift) }
+            }
+        }
+        viewModelScope.launch { loadStandardOpeningCash() }
+    }
+
+    /**
+     * Kas awal standar mengikuti pengaturan di database; bila belum ada, tetap memakai bawaan.
+     * Nilai 0 dari server sah (owner sengaja tidak menyediakan kas awal) dan tidak diabaikan.
+     */
+    private suspend fun loadStandardOpeningCash() {
+        val standard = repository.getStandardOpeningCash()?.takeIf { it >= 0L } ?: return
+        _uiState.update { current ->
+            val untouched = current.openingCashTotal == current.standardOpeningCash &&
+                current.denominations == StandardDenominations.presetFor(current.standardOpeningCash)
+            if (untouched) {
+                current.copy(
+                    standardOpeningCash = standard,
+                    openingCashTotal = standard,
+                    denominations = StandardDenominations.presetFor(standard)
+                )
+            } else {
+                current.copy(standardOpeningCash = standard)
             }
         }
     }
@@ -101,8 +124,8 @@ class ShiftViewModel(
     fun applyStandardPreset() {
         _uiState.update { current ->
             current.copy(
-                denominations = StandardDenominations.PRESET_200K,
-                openingCashTotal = StandardDenominations.STANDARD_OPENING_CASH,
+                denominations = StandardDenominations.presetFor(current.standardOpeningCash),
+                openingCashTotal = current.standardOpeningCash,
                 differenceReason = "",
                 error = null
             )

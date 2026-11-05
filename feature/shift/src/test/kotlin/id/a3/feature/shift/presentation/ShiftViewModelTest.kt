@@ -37,6 +37,9 @@ class FakeShiftRepository : ShiftRepository {
 
     override suspend fun getActiveShift(): ActiveShift? = currentShiftFlow.value
 
+    var standardOpeningCash: Long? = null
+    override suspend fun getStandardOpeningCash(): Long? = standardOpeningCash
+
     override suspend fun openShift(
         cashierId: String,
         cashierName: String,
@@ -185,6 +188,55 @@ class ShiftViewModelTest {
         assertFalse(state.isDifferenceFromStandard)
         assertEquals(0L, state.differenceAmount)
         assertTrue(state.canSubmitOpening)
+    }
+
+    @Test
+    fun `standard opening cash follows database setting`() = runTest {
+        val repo = FakeShiftRepository().apply { standardOpeningCash = 150000L }
+        val vm = ShiftViewModel(repo, FakeManagerApprover())
+
+        val state = vm.uiState.value
+        assertEquals(150000L, state.standardOpeningCash)
+        assertEquals(150000L, state.openingCashTotal)
+        assertEquals(150000L, StandardDenominations.calculateTotal(state.denominations))
+        assertFalse(state.isDifferenceFromStandard)
+    }
+
+    @Test
+    fun `standar kas awal 0 dari server dipakai dan shift boleh dibuka dengan 0`() = runTest {
+        val repo = FakeShiftRepository().apply { standardOpeningCash = 0L }
+        val vm = ShiftViewModel(repo, FakeManagerApprover())
+
+        val state = vm.uiState.value
+        assertEquals(0L, state.standardOpeningCash)
+        assertEquals(0L, state.openingCashTotal)
+        assertTrue(state.denominations.isEmpty())
+        assertFalse(state.isDifferenceFromStandard)
+        assertTrue(state.canSubmitOpening)
+    }
+
+    @Test
+    fun `dengan standar 0 kas awal lebih dari 0 butuh alasan selisih`() = runTest {
+        val repo = FakeShiftRepository().apply { standardOpeningCash = 0L }
+        val vm = ShiftViewModel(repo, FakeManagerApprover())
+
+        vm.adjustDenominationCount(50000L, 1)
+
+        val state = vm.uiState.value
+        assertEquals(50000L, state.openingCashTotal)
+        assertTrue(state.isDifferenceFromStandard)
+        assertFalse(state.canSubmitOpening)
+        vm.setDifferenceReason("Modal kembalian")
+        assertTrue(vm.uiState.value.canSubmitOpening)
+    }
+
+    @Test
+    fun `dengan standar bukan 0 kas awal 0 tetap ditolak`() = runTest {
+        viewModel.clearAllDenominations()
+
+        val state = viewModel.uiState.value
+        assertEquals(0L, state.openingCashTotal)
+        assertFalse(state.canSubmitOpening)
     }
 
     @Test

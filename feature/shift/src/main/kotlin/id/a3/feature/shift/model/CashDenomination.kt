@@ -36,6 +36,21 @@ object StandardDenominations {
         2000L to 5   // 10.000
     ) // Total: 200.000
 
+    /** Rincian pecahan untuk kas awal standar. Rp200.000 memakai preset tetap, selain itu dipecah dari pecahan terbesar. */
+    fun presetFor(total: Long): Map<Long, Int> {
+        if (total == STANDARD_OPENING_CASH) return PRESET_200K
+        var sisa = total.coerceAtLeast(0L)
+        val result = linkedMapOf<Long, Int>()
+        for (denom in ALL) {
+            val count = (sisa / denom.value).toInt()
+            if (count > 0) {
+                result[denom.value] = count
+                sisa -= denom.value * count
+            }
+        }
+        return result
+    }
+
     fun calculateTotal(breakdown: Map<Long, Int>): Long {
         return breakdown.entries.sumOf { (value, count) -> value * count.coerceAtLeast(0) }
     }

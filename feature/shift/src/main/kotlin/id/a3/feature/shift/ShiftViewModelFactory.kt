@@ -23,7 +23,8 @@ class ShiftViewModelFactory(
         val transactionManager = OrderTransactionManager(database)
         val repository = DefaultShiftRepository(
             shiftDao = database.shiftDao(),
-            transactionManager = transactionManager
+            transactionManager = transactionManager,
+            syncStateDao = database.syncStateDao()
         )
 
         return when {

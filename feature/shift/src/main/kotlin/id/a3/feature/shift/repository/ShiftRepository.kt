@@ -1,6 +1,7 @@
 package id.a3.feature.shift.repository
 
 import id.a3.core.data.local.dao.ShiftDao
+import id.a3.core.data.local.dao.SyncStateDao
 import id.a3.core.data.local.entity.CashOutEntity
 import id.a3.core.data.local.entity.PaymentEntity
 import id.a3.core.data.local.entity.ShiftEntity
@@ -45,6 +46,10 @@ data class ShiftSummary(
 interface ShiftRepository {
     fun observeCurrentShift(): Flow<ActiveShift?>
     suspend fun getActiveShift(): ActiveShift?
+
+    /** Kas awal standar dari pengaturan server (kunci `opening_cash_default`); null bila belum ada. */
+    suspend fun getStandardOpeningCash(): Long? = null
+
     suspend fun openShift(
         cashierId: String,
         cashierName: String,
@@ -84,8 +89,14 @@ interface ShiftRepository {
 
 class DefaultShiftRepository(
     private val shiftDao: ShiftDao,
-    private val transactionManager: OrderTransactionManager
+    private val transactionManager: OrderTransactionManager,
+    private val syncStateDao: SyncStateDao? = null
 ) : ShiftRepository {
+
+    override suspend fun getStandardOpeningCash(): Long? {
+        val raw = syncStateDao?.get(KEY_OPENING_CASH_DEFAULT)?.trim() ?: return null
+        return raw.toLongOrNull() ?: raw.toDoubleOrNull()?.toLong()
+    }
 
     override fun observeCurrentShift(): Flow<ActiveShift?> {
         return shiftDao.observeActiveShift().map { entity ->
@@ -263,6 +274,10 @@ class DefaultShiftRepository(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private companion object {
+        const val KEY_OPENING_CASH_DEFAULT = "opening_cash_default"
     }
 
     private fun ShiftEntity.toActiveShift(): ActiveShift {

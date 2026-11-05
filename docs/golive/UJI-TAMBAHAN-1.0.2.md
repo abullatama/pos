@@ -5,6 +5,7 @@ APK laundry: `D:\Android\A3-releases\1.0.2-code10002\app-laundry-release.apk`.
 APK cafe: `D:\Android\A3-releases\1.0.3-code10003\app-cafe-release.apk` (cafe 1.0.2 digantikan 1.0.3 sebelum pernah dipasang; jangan pakai `app-cafe-release.apk` di folder 1.0.2).
 Kandidat terbaru: cafe 1.0.5 di `D:\Android\A3-releases\1.0.5-code10005\` (memperbaiki S3: offline dengan shift berjalan tidak lagi mengunci semua akun) dan laundry 1.0.9 di `D:\Android\A3-releases\laundry-1.0.9-code10009\` (memperbaiki status WhatsApp yang selalu "Belum Dikirim" dan menambah keterangan percobaan kirim; lihat bagian 3b). Keduanya menambah pembaruan mandiri; skenario di sini tetap berlaku untuknya. Uji pembaruan: lihat `PANDUAN-UPDATE-MANDIRI.md` bagian D.
 Cek `SHA256SUMS.txt` di tiap folder. Tag git: `cafe-v1.0.3`, `laundry-v1.0.2`.
+Kandidat berikutnya: cafe 1.0.6 di `D:\Android\A3-releases\cafe-1.0.6-code10006\` dan laundry 1.0.10 di `D:\Android\A3-releases\laundry-1.0.10-code10010\` (kas awal standar 0 didukung; lihat bagian 3c).
 
 Perubahan sejak 1.0.1: perbaikan tampilan POS cafe (UI-1), pesan PIN manager yang jelas (UI-2), jenis bayar di riwayat cafe dan laundry (UI-3), kunci layar otomatis saat idle (AUT-05), log diagnostik sesi. Rumus uang dan sinkron tidak berubah.
 
@@ -61,6 +62,17 @@ Sebelum 1.0.4, layar pesanan membaca status tanpa token login, sehingga selalu t
 | W12 | (1.0.9) Di layar Pembayaran, ketuk tab menu lain (mis. Cucian) tanpa menekan Selesai, lalu buka tab Order dan Cucian bergantian | Tidak pernah muncul layar "Pembayaran Berhasil" yang lama |  |
 | W13 | (1.0.9) Menu Order, kolom "Cari layanan": ketik sebagian nama (mis. "bed"), lalu dua kata (mis. "cuci express"), lalu kata yang tidak ada | Daftar layanan menyempit, ada keterangan "N dari M layanan"; kata yang tidak ada menampilkan pesan "tidak ditemukan"; tombol Hapus mengembalikan semua layanan; layanan yang sudah dipilih tetap terpilih |  |
 | W5 | Cari pelanggan lewat pencarian di pesanan baru (online) | Hasil muncul (koneksi kini membawa token login) |  |
+
+## 3c. Kas awal standar 0 (cafe 1.0.6, laundry 1.0.10)
+
+Owner mengatur Kas awal standar = 0 di web (Pengaturan, Kas) untuk kedua usaha. Sebelum versi ini, tablet mengabaikan 0 dan memakai Rp200.000 bawaan.
+
+| # | Skenario | Hasil yang diharapkan | Lulus? |
+| --- | --- | --- | --- |
+| KA1 | Atur standar 0 di web, sinkronkan tablet, buka layar Buka Shift (cafe dan laundry) | "Standar Kas Awal" Rp0, total Rp0, tombol buka shift aktif tanpa mengisi pecahan |  |
+| KA2 | Dengan standar 0, isi pecahan lebih dari 0 | Diminta alasan selisih; setelah diisi shift bisa dibuka |  |
+| KA3 | Buka shift dengan kas awal 0, lakukan transaksi tunai, tutup shift | Kas seharusnya = penjualan tunai saja; sama dengan server dan Laporan Z |  |
+| KA4 | Kembalikan standar ke 200000 di web, sinkron, buka Buka Shift lalu kosongkan semua pecahan | Standar kembali Rp200.000; kas awal 0 ditolak |  |
 
 ## 4. Kunci layar otomatis (cafe dan laundry)
 
