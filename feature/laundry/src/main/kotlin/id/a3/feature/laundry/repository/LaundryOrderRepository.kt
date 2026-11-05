@@ -54,6 +54,8 @@ interface LaundryOrderRepository {
     fun searchCustomers(query: String): Flow<List<CustomerEntity>>
     fun observeRecentCustomers(limit: Int = 20): Flow<List<CustomerEntity>>
     suspend fun getCustomerById(id: String): CustomerEntity?
+    /** Pelanggan terdaftar dengan nomor HP ini (setelah dinormalisasi), atau null. */
+    suspend fun findCustomerByPhone(phone: String): CustomerEntity? = null
     suspend fun saveCustomerLocally(customer: CustomerEntity): Result<Unit>
     suspend fun createLaundryOrder(
         order: OrderEntity,
@@ -309,6 +311,10 @@ class DefaultLaundryOrderRepository(
 
     override suspend fun getCustomerById(id: String): CustomerEntity? {
         return customerDao.getCustomerById(id)
+    }
+
+    override suspend fun findCustomerByPhone(phone: String): CustomerEntity? {
+        return customerDao.findCustomerByPhone(PhoneNumberUtil.normalize(phone))
     }
 
     override suspend fun saveCustomerLocally(customer: CustomerEntity): Result<Unit> {

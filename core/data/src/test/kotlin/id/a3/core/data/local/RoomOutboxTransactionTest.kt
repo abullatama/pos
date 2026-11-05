@@ -920,6 +920,103 @@ class RoomOutboxTransactionTest {
         assertFalse("Order payload tidak boleh memiliki objek customer untuk pelanggan lama", orderCreatedPayload.containsKey("customer"))
     }
 
+    private fun laundryOrder(id: String, number: String, customerId: String?) = OrderEntity(
+        id = id,
+        displayNumber = number,
+        businessUnitId = "bu-laundry-01",
+        shiftId = null,
+        deviceId = "dev-laundry-1",
+        cashierId = "cashier-laundry-1",
+        orderType = "laundry",
+        customerId = customerId,
+        subtotal = 22000L,
+        total = 22000L
+    )
+
+    @Test
+    fun `pelanggan baru bernomor sama dengan pelanggan lama memakai pelanggan lama tanpa menimpa`() = runBlocking {
+        val oldId = UUID.randomUUID().toString()
+        database.customerDao().insertCustomer(CustomerEntity(id = oldId, name = "abul", phone = "081224921695"))
+        val oldOrderId = UUID.randomUUID().toString()
+        database.orderDao().insertOrder(laundryOrder(oldOrderId, "L3-0002", oldId))
+
+        val newId = UUID.randomUUID().toString()
+        val newOrderId = UUID.randomUUID().toString()
+        val outbox = transactionManager.createLaundryOrderWithCustomer(
+            order = laundryOrder(newOrderId, "L3-0003", newId),
+            lines = emptyList(),
+            customer = CustomerEntity(id = newId, name = "Abul", phone = "+6281224921695"),
+            isNewCustomer = true,
+            deviceId = "dev-laundry-1",
+            shiftId = null
+        )
+
+        assertNotNull("Pelanggan lama harus tetap ada", database.customerDao().getCustomerById(oldId))
+        assertEquals(null, database.customerDao().getCustomerById(newId))
+        assertEquals(oldId, database.orderDao().getOrderById(newOrderId)!!.customerId)
+        assertEquals(oldId, database.orderDao().getOrderById(oldOrderId)!!.customerId)
+        assertTrue(database.orderDao().getOrdersWithMissingCustomer().isEmpty())
+
+        val json = database.outboxDao().getByBundleId(outbox.bundleId)!!.eventsJson
+        assertFalse("Tidak boleh ada customer.created untuk nomor yang sudah terdaftar", json.contains("\"type\":\"customer.created\""))
+        assertTrue(json.contains("\"customer_id\":\"$oldId\""))
+    }
+
+    @Test
+    fun `pemulihan menyambung pesanan yang pelanggannya tertimpa ke pelanggan bernomor sama`() = runBlocking {
+        val originalId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+        val customer = CustomerEntity(id = originalId, name = "abul", phone = "081224921695")
+        transactionManager.createLaundryOrderWithCustomer(
+            order = laundryOrder(orderId, "L3-0002", originalId),
+            lines = emptyList(),
+            customer = customer,
+            isNewCustomer = true,
+            deviceId = "dev-laundry-1",
+            shiftId = null
+        )
+        // Meniru penimpaan: pelanggan dari server bernomor sama tetapi id lain menghapus baris lama.
+        database.customerDao().insertCustomer(CustomerEntity(id = "server-9", name = "Abul", phone = "081224921695"))
+        assertEquals(1, database.orderDao().getOrdersWithMissingCustomer().size)
+
+        val repaired = id.a3.core.data.repository.OrderCustomerRepair.repair(
+            database.orderDao(), database.customerDao(), database.outboxDao()
+        )
+
+        assertEquals(1, repaired)
+        assertEquals("server-9", database.orderDao().getOrderById(orderId)!!.customerId)
+        assertTrue(database.orderDao().getOrdersWithMissingCustomer().isEmpty())
+        assertEquals(0, id.a3.core.data.repository.OrderCustomerRepair.repair(
+            database.orderDao(), database.customerDao(), database.outboxDao()
+        ))
+    }
+
+    @Test
+    fun `pemulihan membuat ulang pelanggan yang terhapus bila tidak ada penggantinya`() = runBlocking {
+        val originalId = UUID.randomUUID().toString()
+        val orderId = UUID.randomUUID().toString()
+        transactionManager.createLaundryOrderWithCustomer(
+            order = laundryOrder(orderId, "L3-0002", originalId),
+            lines = emptyList(),
+            customer = CustomerEntity(id = originalId, name = "abul", phone = "081224921695"),
+            isNewCustomer = true,
+            deviceId = "dev-laundry-1",
+            shiftId = null
+        )
+        database.customerDao().deleteCustomer(originalId)
+
+        val repaired = id.a3.core.data.repository.OrderCustomerRepair.repair(
+            database.orderDao(), database.customerDao(), database.outboxDao()
+        )
+
+        assertEquals(1, repaired)
+        val restored = database.customerDao().getCustomerById(originalId)
+        assertNotNull(restored)
+        assertEquals("abul", restored!!.name)
+        assertEquals("081224921695", restored.phone)
+        assertEquals(originalId, database.orderDao().getOrderById(orderId)!!.customerId)
+    }
+
     @Test
     fun `advanceLaundryOrderStatus advances status one-way and creates laundry status_changed outbox event without shift`() = runBlocking {
         val orderId = UUID.randomUUID().toString()

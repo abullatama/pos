@@ -72,7 +72,9 @@ fun CustomerSelectionDialog(
     searchResults: List<CustomerEntity>,
     onSelectCustomer: (customer: CustomerEntity, isNew: Boolean) -> Unit,
     onCreateNewCustomer: (name: String, phone: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Mencari pelanggan terdaftar dengan nomor ini; dipakai agar nomor yang sama tidak didaftarkan dua kali. */
+    findCustomerByPhone: suspend (String) -> CustomerEntity? = { null }
 ) {
     if (!isOpen) return
 
@@ -86,6 +88,11 @@ fun CustomerSelectionDialog(
 
     val isPhoneValid = PhoneNumberUtil.isValid(newPhone)
     val isFormValid = newName.trim().isNotBlank() && isPhoneValid
+
+    var existingCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
+    androidx.compose.runtime.LaunchedEffect(newPhone, isPhoneValid) {
+        existingCustomer = if (isPhoneValid) findCustomerByPhone(newPhone) else null
+    }
 
     Dialog(
         onDismissRequest = onDismissRequest,
@@ -314,6 +321,15 @@ fun CustomerSelectionDialog(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                             )
 
+                            existingCustomer?.let { found ->
+                                Text(
+                                    text = "Nomor ini sudah terdaftar atas nama ${found.name}. " +
+                                        "Pakai pelanggan ini agar riwayat cuciannya tetap satu.",
+                                    style = A3Theme.typography.bodySmall,
+                                    color = colors.ink
+                                )
+                            }
+
                             Spacer(modifier = Modifier.height(6.dp))
 
                             Row(
@@ -328,11 +344,16 @@ fun CustomerSelectionDialog(
                                 )
 
                                 A3Button(
-                                    label = "Gunakan Pelanggan Ini",
+                                    label = if (existingCustomer != null) "Pakai Pelanggan Ini" else "Gunakan Pelanggan Ini",
                                     variant = ButtonVariant.PRIMARY,
                                     enabled = isFormValid,
                                     onClick = {
-                                        onCreateNewCustomer(newName, newPhone)
+                                        val found = existingCustomer
+                                        if (found != null) {
+                                            onSelectCustomer(found, false)
+                                        } else {
+                                            onCreateNewCustomer(newName, newPhone)
+                                        }
                                     },
                                     modifier = Modifier.weight(2f)
                                 )

@@ -265,7 +265,8 @@ fun LaundryOrderScreen(
         onSearchQueryChange = viewModel::onCustomerSearchQueryChange,
         searchResults = uiState.customerSearchResults,
         onSelectCustomer = viewModel::selectCustomer,
-        onCreateNewCustomer = viewModel::createAndSelectNewCustomer
+        onCreateNewCustomer = viewModel::createAndSelectNewCustomer,
+        findCustomerByPhone = viewModel::findCustomerByPhone
     )
 }
 

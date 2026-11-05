@@ -402,6 +402,8 @@ class LaundryOrderViewModel(
         _isCustomerDialogOpen.value = false
     }
 
+    suspend fun findCustomerByPhone(phone: String): CustomerEntity? = repository.findCustomerByPhone(phone)
+
     fun createAndSelectNewCustomer(name: String, phone: String) {
         val normalized = PhoneNumberUtil.normalize(phone)
         val customer = CustomerEntity(

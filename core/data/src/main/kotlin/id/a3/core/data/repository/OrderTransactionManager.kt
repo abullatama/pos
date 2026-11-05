@@ -909,6 +909,32 @@ class OrderTransactionManager(
         deviceId: String = "dev-laundry-1",
         shiftId: String? = null
     ): OutboxEntity {
+        // Nomor HP bersifat unik. Bila "pelanggan baru" ternyata bernomor sama dengan pelanggan yang sudah ada,
+        // pakai pelanggan lama (alur pelanggan lama: tanpa event customer.created, order.created memakai customer_id).
+        // Menyimpan pelanggan baru dengan REPLACE akan menghapus baris lama dan memutus pesanan-pesanan lamanya.
+        val existingByPhone = if (customer != null && isNewCustomer) {
+            customerDao.findCustomerByPhone(PhoneNumberUtil.normalize(customer.phone))
+        } else {
+            null
+        }
+        return createLaundryOrderResolved(
+            order = order,
+            lines = lines,
+            customer = existingByPhone ?: customer,
+            isNewCustomer = isNewCustomer && existingByPhone == null,
+            deviceId = deviceId,
+            shiftId = shiftId
+        )
+    }
+
+    private suspend fun createLaundryOrderResolved(
+        order: OrderEntity,
+        lines: List<OrderLineEntity>,
+        customer: CustomerEntity?,
+        isNewCustomer: Boolean,
+        deviceId: String,
+        shiftId: String?
+    ): OutboxEntity {
         return database.withTransaction {
             if (customer != null && isNewCustomer) {
                 customerDao.insertCustomer(customer)
