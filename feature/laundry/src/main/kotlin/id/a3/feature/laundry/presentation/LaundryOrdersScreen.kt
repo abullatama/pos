@@ -165,8 +165,8 @@ fun LaundryOrdersScreen(
                         A3TextField(
                             value = uiState.searchQuery,
                             onValueChange = viewModel::onSearchQueryChange,
-                            placeholder = "Cari nomor nota...",
-                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Number),
+                            placeholder = "Cari nomor nota atau nama pelanggan...",
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Text),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )

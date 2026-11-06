@@ -75,6 +75,28 @@ interface OrderDao {
     @Query("SELECT * FROM orders WHERE orderType = 'laundry' AND status = :status ORDER BY createdAt DESC")
     fun observeLaundryOrdersWithLinesByStatus(status: String): Flow<List<OrderWithLines>>
 
+    /**
+     * Daftar cucian dengan penyaringan di SQL: status tertentu, atau hanya yang belum selesai diambil,
+     * dan pencarian nomor nota, id, nama atau nomor HP pelanggan. [query] sudah di-escape untuk LIKE
+     * (karakter escape `\`); kosong = tanpa pencarian.
+     */
+    @Transaction
+    @Query(
+        "SELECT * FROM orders WHERE orderType = 'laundry' " +
+            "AND (:status IS NULL OR status = :status) " +
+            "AND (:unfinishedOnly = 0 OR status NOT IN ('picked_up', 'void', 'refunded', 'closed', 'force_closed')) " +
+            "AND (:query = '' OR displayNumber LIKE '%' || :query || '%' ESCAPE '\\' " +
+            "OR id LIKE '%' || :query || '%' ESCAPE '\\' " +
+            "OR customerId IN (SELECT id FROM customers WHERE name LIKE '%' || :query || '%' ESCAPE '\\' " +
+            "OR phone LIKE '%' || :query || '%' ESCAPE '\\')) " +
+            "ORDER BY createdAt DESC"
+    )
+    fun observeLaundryOrdersFiltered(
+        status: String?,
+        unfinishedOnly: Boolean,
+        query: String
+    ): Flow<List<OrderWithLines>>
+
     @Update
     suspend fun updateOrder(order: OrderEntity)
 

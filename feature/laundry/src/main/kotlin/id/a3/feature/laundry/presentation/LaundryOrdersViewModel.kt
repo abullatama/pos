@@ -35,6 +35,8 @@ import java.util.Date
 import java.util.Locale
 
 enum class LaundryFilterStatus(val displayName: String, val dbStatus: String?) {
+    /** Bawaan: semua cucian yang belum selesai diambil (Diterima, Diproses, Siap). */
+    UNFINISHED("Belum Diambil", null),
     ALL("Semua", null),
     RECEIVED("Diterima", "open"),
     PROCESSING("Diproses", "processing"),
@@ -49,7 +51,7 @@ sealed interface PendingManagerAction {
 }
 
 data class LaundryOrdersUiState(
-    val filterStatus: LaundryFilterStatus = LaundryFilterStatus.ALL,
+    val filterStatus: LaundryFilterStatus = LaundryFilterStatus.UNFINISHED,
     val orders: List<OrderWithLines> = emptyList(),
     val selectedOrder: OrderWithLines? = null,
     val customer: CustomerEntity? = null,
@@ -117,7 +119,7 @@ class LaundryOrdersViewModel(
     private val managerApprover: ManagerApprover? = null
 ) : ViewModel() {
 
-    private val _filterStatus = MutableStateFlow(LaundryFilterStatus.ALL)
+    private val _filterStatus = MutableStateFlow(LaundryFilterStatus.UNFINISHED)
     private val _searchQuery = MutableStateFlow("")
     private val _selectedOrderId = MutableStateFlow<String?>(null)
     private val _isPickupDialogOpen = MutableStateFlow(false)
@@ -145,29 +147,15 @@ class LaundryOrdersViewModel(
             initialValue = emptyMap()
         )
 
-    private val _rawOrdersFlow: StateFlow<List<OrderWithLines>> = _filterStatus
-        .flatMapLatest { filter ->
-            repository.observeLaundryOrders(filter.dbStatus)
-        }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
+    /** Penyaringan status dan pencarian (nota, nama, HP) dilakukan di database, bukan di memori. */
+    private val _ordersFlow: StateFlow<List<OrderWithLines>> = combine(_filterStatus, _searchQuery) { filter, query ->
+        filter to query.trim()
+    }.flatMapLatest { (filter, query) ->
+        repository.observeLaundryOrdersFiltered(
+            statusFilter = filter.dbStatus,
+            unfinishedOnly = filter == LaundryFilterStatus.UNFINISHED,
+            query = query
         )
-
-    private val _ordersFlow: StateFlow<List<OrderWithLines>> = combine(
-        _rawOrdersFlow,
-        _searchQuery
-    ) { orders, query ->
-        val q = query.trim()
-        if (q.isEmpty()) {
-            orders
-        } else {
-            orders.filter { item ->
-                item.order.displayNumber.contains(q, ignoreCase = true) ||
-                    item.order.id.contains(q, ignoreCase = true)
-            }
-        }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),

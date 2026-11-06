@@ -68,6 +68,16 @@ interface LaundryOrderRepository {
 
     // Operasional Daftar Cucian, Pengambilan (F22, F24) & Cuci Ulang (F23)
     fun observeLaundryOrders(statusFilter: String? = null): Flow<List<OrderWithLines>>
+
+    /**
+     * Daftar cucian yang disaring di database. [unfinishedOnly] menyembunyikan yang sudah diambil/batal;
+     * [query] mencocokkan nomor nota, nama atau nomor HP pelanggan. Bawaan: tanpa saringan tambahan.
+     */
+    fun observeLaundryOrdersFiltered(
+        statusFilter: String?,
+        unfinishedOnly: Boolean,
+        query: String
+    ): Flow<List<OrderWithLines>> = observeLaundryOrders(statusFilter)
     fun observePickups(orderId: String): Flow<List<LaundryPickupEntity>>
     suspend fun recordPickups(
         orderId: String,
@@ -353,6 +363,15 @@ class DefaultLaundryOrderRepository(
     override fun observeLaundryOrders(statusFilter: String?): Flow<List<OrderWithLines>> {
         val tm = transactionManager ?: return flowOf(emptyList())
         return tm.observeLaundryOrders(statusFilter)
+    }
+
+    override fun observeLaundryOrdersFiltered(
+        statusFilter: String?,
+        unfinishedOnly: Boolean,
+        query: String
+    ): Flow<List<OrderWithLines>> {
+        val tm = transactionManager ?: return flowOf(emptyList())
+        return tm.observeLaundryOrdersFiltered(statusFilter, unfinishedOnly, query)
     }
 
     override fun observePickups(orderId: String): Flow<List<LaundryPickupEntity>> {

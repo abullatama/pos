@@ -54,6 +54,27 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
         }
     }
 
+    /** Meniru penyaringan SQL di OrderDao.observeLaundryOrdersFiltered. */
+    override fun observeLaundryOrdersFiltered(
+        statusFilter: String?,
+        unfinishedOnly: Boolean,
+        query: String
+    ): Flow<List<OrderWithLines>> {
+        val finished = setOf("picked_up", "void", "refunded", "closed", "force_closed")
+        return ordersFlowInternal.onStart { emit(Unit) }.map {
+            orders.values.filter { item ->
+                val customer = item.order.customerId?.let { customers[it] }
+                (statusFilter == null || item.order.status == statusFilter) &&
+                    (!unfinishedOnly || item.order.status !in finished) &&
+                    (query.isEmpty() ||
+                        item.order.displayNumber.contains(query, ignoreCase = true) ||
+                        item.order.id.contains(query, ignoreCase = true) ||
+                        customer?.name?.contains(query, ignoreCase = true) == true ||
+                        customer?.phone?.contains(query) == true)
+            }
+        }
+    }
+
     fun notifyOrdersChanged() {
         ordersFlowInternal.tryEmit(Unit)
     }
@@ -257,6 +278,46 @@ class LaundryOrdersViewModelTest {
         assertEquals("Budi Santoso", state.customer?.name)
         assertTrue(state.isFullyPaid)
         assertEquals(0L, state.remainingBalance)
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `filter bawaan Belum Diambil menyembunyikan cucian yang sudah diambil`() = runTest {
+        val pickedUp = OrderWithLines(
+            unpaidOrder.copy(id = "ord-3", displayNumber = "L1-0003", status = "picked_up"),
+            listOf(line1.copy(id = "line-3", orderId = "ord-3"))
+        )
+        fakeRepository.orders["ord-3"] = pickedUp
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        assertEquals(LaundryFilterStatus.UNFINISHED, viewModel.uiState.value.filterStatus)
+        assertEquals(setOf("ord-1", "ord-2"), viewModel.uiState.value.orders.map { it.order.id }.toSet())
+
+        viewModel.setFilterStatus(LaundryFilterStatus.ALL)
+        assertEquals(3, viewModel.uiState.value.orders.size)
+
+        viewModel.setFilterStatus(LaundryFilterStatus.PICKED_UP)
+        assertEquals(listOf("ord-3"), viewModel.uiState.value.orders.map { it.order.id })
+
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `pencarian mencocokkan nama pelanggan tanpa membedakan huruf besar kecil`() = runTest {
+        fakeRepository.customers["cust-2"] = CustomerEntity(id = "cust-2", name = "Siti Aminah", phone = "081200000002")
+        fakeRepository.orders["ord-2"] = OrderWithLines(unpaidOrder.copy(customerId = "cust-2"), fakeRepository.orders["ord-2"]!!.lines)
+        val vm = LaundryOrdersViewModel(fakeRepository, fakePrinter, testDispatcher, FakeManagerApprover())
+        val collectJob = launch(testDispatcher) { vm.uiState.collect {} }
+
+        vm.onSearchQueryChange("siti")
+        assertEquals(listOf("ord-2"), vm.uiState.value.orders.map { it.order.id })
+
+        vm.onSearchQueryChange("budi")
+        assertEquals(listOf("ord-1"), vm.uiState.value.orders.map { it.order.id })
+
+        vm.onSearchQueryChange("zzz")
+        assertEquals(0, vm.uiState.value.orders.size)
 
         collectJob.cancel()
     }

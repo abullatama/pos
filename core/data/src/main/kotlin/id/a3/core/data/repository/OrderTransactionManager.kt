@@ -91,6 +91,26 @@ class OrderTransactionManager(
     }
 
     /**
+     * Daftar cucian yang disaring di database (status, hanya yang belum diambil, pencarian nota/nama/HP),
+     * agar jumlah pesanan lama tidak membebani layar.
+     */
+    fun observeLaundryOrdersFiltered(
+        statusFilter: String?,
+        unfinishedOnly: Boolean,
+        query: String
+    ): Flow<List<OrderWithLines>> {
+        val escaped = query.trim()
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
+        return orderDao.observeLaundryOrdersFiltered(
+            status = statusFilter?.takeIf { it.isNotBlank() }?.lowercase(),
+            unfinishedOnly = unfinishedOnly,
+            query = escaped
+        )
+    }
+
+    /**
      * Mengamati riwayat pengambilan per baris pakaian untuk suatu order.
      */
     fun observePickupsForOrder(orderId: String): Flow<List<LaundryPickupEntity>> =
