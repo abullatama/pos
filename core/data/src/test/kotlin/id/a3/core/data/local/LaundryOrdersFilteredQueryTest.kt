@@ -61,8 +61,15 @@ class LaundryOrdersFilteredQueryTest {
         database.close()
     }
 
-    private fun ids(status: String?, unfinished: Boolean, query: String): List<String> = runBlocking {
-        manager.observeLaundryOrdersFiltered(status, unfinished, query).first().map { it.order.id }
+    private fun ids(status: String?, unfinished: Boolean, query: String, limit: Int = -1): List<String> = runBlocking {
+        manager.observeLaundryOrdersFiltered(status, unfinished, query, limit).first().map { it.order.id }
+    }
+
+    @Test
+    fun `batas jumlah mengambil yang terbaru dulu dan negatif berarti tanpa batas`() {
+        assertEquals(listOf("o4", "o3"), ids(null, false, "", limit = 2))
+        assertEquals(listOf("o4", "o3", "o2", "o1"), ids(null, false, "", limit = 100))
+        assertEquals(listOf("o4", "o3", "o2", "o1"), ids(null, false, "", limit = -1))
     }
 
     @Test

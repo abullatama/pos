@@ -23,6 +23,9 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE id = :id")
     suspend fun getCustomerById(id: String): CustomerEntity?
 
+    @Query("SELECT * FROM customers WHERE id IN (:ids)")
+    fun observeCustomersByIds(ids: List<String>): Flow<List<CustomerEntity>>
+
     @Query("SELECT * FROM customers WHERE phone = :phone LIMIT 1")
     suspend fun findCustomerByPhone(phone: String): CustomerEntity?
 

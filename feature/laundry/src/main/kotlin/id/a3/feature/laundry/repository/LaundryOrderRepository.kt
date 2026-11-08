@@ -71,13 +71,17 @@ interface LaundryOrderRepository {
 
     /**
      * Daftar cucian yang disaring di database. [unfinishedOnly] menyembunyikan yang sudah diambil/batal;
-     * [query] mencocokkan nomor nota, nama atau nomor HP pelanggan. Bawaan: tanpa saringan tambahan.
+     * [query] mencocokkan nomor nota, nama atau nomor HP pelanggan; [limit] negatif = tanpa batas.
+     * Bawaan: tanpa saringan tambahan.
      */
     fun observeLaundryOrdersFiltered(
         statusFilter: String?,
         unfinishedOnly: Boolean,
-        query: String
+        query: String,
+        limit: Int
     ): Flow<List<OrderWithLines>> = observeLaundryOrders(statusFilter)
+    /** Pelanggan untuk id yang diberikan, untuk menampilkan nama di kartu daftar. */
+    fun observeCustomersByIds(ids: List<String>): Flow<List<CustomerEntity>> = flowOf(emptyList())
     fun observePickups(orderId: String): Flow<List<LaundryPickupEntity>>
     suspend fun recordPickups(
         orderId: String,
@@ -368,10 +372,16 @@ class DefaultLaundryOrderRepository(
     override fun observeLaundryOrdersFiltered(
         statusFilter: String?,
         unfinishedOnly: Boolean,
-        query: String
+        query: String,
+        limit: Int
     ): Flow<List<OrderWithLines>> {
         val tm = transactionManager ?: return flowOf(emptyList())
-        return tm.observeLaundryOrdersFiltered(statusFilter, unfinishedOnly, query)
+        return tm.observeLaundryOrdersFiltered(statusFilter, unfinishedOnly, query, limit)
+    }
+
+    override fun observeCustomersByIds(ids: List<String>): Flow<List<CustomerEntity>> {
+        val tm = transactionManager ?: return flowOf(emptyList())
+        return tm.observeCustomersByIds(ids)
     }
 
     override fun observePickups(orderId: String): Flow<List<LaundryPickupEntity>> {

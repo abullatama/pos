@@ -78,7 +78,7 @@ interface OrderDao {
     /**
      * Daftar cucian dengan penyaringan di SQL: status tertentu, atau hanya yang belum selesai diambil,
      * dan pencarian nomor nota, id, nama atau nomor HP pelanggan. [query] sudah di-escape untuk LIKE
-     * (karakter escape `\`); kosong = tanpa pencarian.
+     * (karakter escape `\`); kosong = tanpa pencarian. [limit] negatif = tanpa batas (SQLite LIMIT -1).
      */
     @Transaction
     @Query(
@@ -89,12 +89,13 @@ interface OrderDao {
             "OR id LIKE '%' || :query || '%' ESCAPE '\\' " +
             "OR customerId IN (SELECT id FROM customers WHERE name LIKE '%' || :query || '%' ESCAPE '\\' " +
             "OR phone LIKE '%' || :query || '%' ESCAPE '\\')) " +
-            "ORDER BY createdAt DESC"
+            "ORDER BY createdAt DESC LIMIT :limit"
     )
     fun observeLaundryOrdersFiltered(
         status: String?,
         unfinishedOnly: Boolean,
-        query: String
+        query: String,
+        limit: Int
     ): Flow<List<OrderWithLines>>
 
     @Update

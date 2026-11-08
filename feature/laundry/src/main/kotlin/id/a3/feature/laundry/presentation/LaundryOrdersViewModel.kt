@@ -34,14 +34,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-enum class LaundryFilterStatus(val displayName: String, val dbStatus: String?) {
+/** Jumlah cucian per halaman di tombol Semua dan Diambil, yang daftarnya terus bertambah. */
+internal const val ORDERS_PAGE_SIZE = 100
+
+/** Tanpa batas jumlah (nilai LIMIT -1 di SQLite). */
+internal const val NO_LIMIT = -1
+
+enum class LaundryFilterStatus(val displayName: String, val dbStatus: String?, val isPaged: Boolean = false) {
     /** Bawaan: semua cucian yang belum selesai diambil (Diterima, Diproses, Siap). */
     UNFINISHED("Belum Diambil", null),
-    ALL("Semua", null),
+    ALL("Semua", null, isPaged = true),
     RECEIVED("Diterima", "open"),
     PROCESSING("Diproses", "processing"),
     READY("Siap", "ready"),
-    PICKED_UP("Diambil", "picked_up")
+    PICKED_UP("Diambil", "picked_up", isPaged = true)
 }
 
 sealed interface PendingManagerAction {
@@ -53,6 +59,8 @@ sealed interface PendingManagerAction {
 data class LaundryOrdersUiState(
     val filterStatus: LaundryFilterStatus = LaundryFilterStatus.UNFINISHED,
     val orders: List<OrderWithLines> = emptyList(),
+    /** True bila masih ada cucian lama yang belum dimuat (tombol "Tampilkan lebih banyak"). */
+    val canLoadMore: Boolean = false,
     val selectedOrder: OrderWithLines? = null,
     val customer: CustomerEntity? = null,
     val pickups: List<LaundryPickupEntity> = emptyList(),
@@ -147,20 +155,40 @@ class LaundryOrdersViewModel(
             initialValue = emptyMap()
         )
 
+    /** Batas jumlah kartu yang dimuat untuk tombol Semua dan Diambil; bertambah lewat "Tampilkan lebih banyak". */
+    private val _pageLimit = MutableStateFlow(ORDERS_PAGE_SIZE)
+
     /** Penyaringan status dan pencarian (nota, nama, HP) dilakukan di database, bukan di memori. */
-    private val _ordersFlow: StateFlow<List<OrderWithLines>> = combine(_filterStatus, _searchQuery) { filter, query ->
-        filter to query.trim()
-    }.flatMapLatest { (filter, query) ->
+    private val _ordersFlow: StateFlow<List<OrderWithLines>> = combine(
+        _filterStatus,
+        _searchQuery,
+        _pageLimit
+    ) { filter, query, limit ->
+        Triple(filter, query.trim(), if (filter.isPaged) limit else NO_LIMIT)
+    }.flatMapLatest { (filter, query, limit) ->
         repository.observeLaundryOrdersFiltered(
             statusFilter = filter.dbStatus,
             unfinishedOnly = filter == LaundryFilterStatus.UNFINISHED,
-            query = query
+            query = query,
+            limit = limit
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+
+    /** Pelanggan hanya untuk kartu yang sedang dimuat (id pelanggan ke data pelanggan), untuk nama di kartu. */
+    val customersById: StateFlow<Map<String, CustomerEntity>> = _ordersFlow
+        .flatMapLatest { orders ->
+            repository.observeCustomersByIds(orders.mapNotNull { it.order.customerId })
+        }
+        .map { list -> list.associateBy { it.id } }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyMap()
+        )
 
     private val _selectedOrderAndCustomerFlow = combine(
         _ordersFlow,
@@ -225,14 +253,17 @@ class LaundryOrdersViewModel(
     }
 
     val uiState: StateFlow<LaundryOrdersUiState> = combine(
-        combine(_filterStatus, _ordersFlow) { filter, orders -> filter to orders },
+        combine(_filterStatus, _ordersFlow, _pageLimit) { filter, orders, limit ->
+            Triple(filter, orders, filter.isPaged && orders.size >= limit)
+        },
         _selectedOrderAndCustomerFlow,
         _pickupsFlow,
         combine(_dialogFlow, _statusMsgFlow) { dialogs, statusMsg -> dialogs to statusMsg }
-    ) { (filter, orders), (selectedOrder, customer), pickups, (dialogs, statusMsg) ->
+    ) { (filter, orders, canLoadMore), (selectedOrder, customer), pickups, (dialogs, statusMsg) ->
         LaundryOrdersUiState(
             filterStatus = filter,
             orders = orders,
+            canLoadMore = canLoadMore,
             selectedOrder = selectedOrder,
             customer = customer,
             pickups = pickups,
@@ -277,10 +308,17 @@ class LaundryOrdersViewModel(
     )
 
     fun setFilterStatus(filter: LaundryFilterStatus) {
+        _pageLimit.value = ORDERS_PAGE_SIZE
         _filterStatus.value = filter
     }
 
+    /** Memuat [ORDERS_PAGE_SIZE] cucian lebih lama lagi (hanya berlaku di tombol Semua dan Diambil). */
+    fun loadMoreOrders() {
+        _pageLimit.update { it + ORDERS_PAGE_SIZE }
+    }
+
     fun onSearchQueryChange(query: String) {
+        _pageLimit.value = ORDERS_PAGE_SIZE
         _searchQuery.value = query
         val q = query.trim()
         if (q.isNotEmpty()) {

@@ -60,6 +60,9 @@ class CustomerSearchSyncTest {
         override fun observeRecentCustomers(limit: Int): Flow<List<CustomerEntity>> =
             customersFlow
 
+        override fun observeCustomersByIds(ids: List<String>): Flow<List<CustomerEntity>> =
+            customersFlow.map { list -> list.filter { it.id in ids } }
+
         override suspend fun deleteCustomer(id: String) {
             localCustomerList.removeAll { it.id == id }
             customersFlow.value = localCustomerList.toList()

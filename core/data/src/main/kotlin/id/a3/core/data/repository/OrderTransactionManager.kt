@@ -91,13 +91,25 @@ class OrderTransactionManager(
     }
 
     /**
+     * Pelanggan untuk sekumpulan id (nama di kartu daftar cucian). Dipecah per 500 id agar tidak melewati
+     * batas variabel SQLite.
+     */
+    fun observeCustomersByIds(ids: List<String>): Flow<List<id.a3.core.data.local.entity.CustomerEntity>> {
+        val distinct = ids.distinct()
+        if (distinct.isEmpty()) return kotlinx.coroutines.flow.flowOf(emptyList())
+        val flows = distinct.chunked(500).map { customerDao.observeCustomersByIds(it) }
+        return kotlinx.coroutines.flow.combine(flows) { parts -> parts.flatMap { it } }
+    }
+
+    /**
      * Daftar cucian yang disaring di database (status, hanya yang belum diambil, pencarian nota/nama/HP),
      * agar jumlah pesanan lama tidak membebani layar.
      */
     fun observeLaundryOrdersFiltered(
         statusFilter: String?,
         unfinishedOnly: Boolean,
-        query: String
+        query: String,
+        limit: Int = -1
     ): Flow<List<OrderWithLines>> {
         val escaped = query.trim()
             .replace("\\", "\\\\")
@@ -106,7 +118,8 @@ class OrderTransactionManager(
         return orderDao.observeLaundryOrdersFiltered(
             status = statusFilter?.takeIf { it.isNotBlank() }?.lowercase(),
             unfinishedOnly = unfinishedOnly,
-            query = escaped
+            query = escaped,
+            limit = if (limit < 0) -1 else limit
         )
     }
 

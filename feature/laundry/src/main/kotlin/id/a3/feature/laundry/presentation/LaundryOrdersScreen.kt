@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,9 +87,6 @@ import id.a3.core.ui.component.ButtonVariant
 import id.a3.core.ui.component.StatusToken
 import id.a3.core.ui.component.formatRupiah
 import id.a3.core.ui.theme.A3Theme
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Layar L05 (Daftar Cucian) & L06 (Detail Cucian) - Athia Laundry House.
@@ -111,6 +109,7 @@ fun LaundryOrdersScreen(
     val shapes = A3Theme.shapes
     val uiState by viewModel.uiState.collectAsState()
     val paymentLabels by viewModel.paymentLabels.collectAsState()
+    val customersById by viewModel.customersById.collectAsState()
     var showShiftRequiredDialog by remember { mutableStateOf(false) }
 
     Box(
@@ -143,7 +142,7 @@ fun LaundryOrdersScreen(
                         color = colors.ink
                     )
                     Text(
-                        text = "${uiState.orders.size} Pesanan",
+                        text = if (uiState.canLoadMore) "${uiState.orders.size}+ Pesanan" else "${uiState.orders.size} Pesanan",
                         style = A3Theme.typography.bodySmall,
                         color = colors.inkMuted
                     )
@@ -217,7 +216,13 @@ fun LaundryOrdersScreen(
                                 color = colors.ink
                             )
                             Text(
-                                text = "Tidak ada pesanan pada kategori ${uiState.filterStatus.displayName}",
+                                text = when {
+                                    uiState.searchQuery.isNotBlank() ->
+                                        "Tidak ada cucian yang cocok dengan \"${uiState.searchQuery.trim()}\" pada tombol ${uiState.filterStatus.displayName}. Coba tombol Semua."
+                                    uiState.filterStatus == LaundryFilterStatus.UNFINISHED ->
+                                        "Semua cucian sudah diambil pelanggan."
+                                    else -> "Tidak ada pesanan pada kategori ${uiState.filterStatus.displayName}"
+                                },
                                 style = A3Theme.typography.bodySmall,
                                 color = colors.inkMuted,
                                 textAlign = TextAlign.Center
@@ -234,9 +239,20 @@ fun LaundryOrdersScreen(
                             LaundryOrderCardItem(
                                 orderWithLines = orderWithLines,
                                 isSelected = isSelected,
+                                customerName = orderWithLines.order.customerId?.let { customersById[it]?.name },
                                 paymentMethodLabel = paymentLabels[orderWithLines.order.id],
                                 onClick = { viewModel.selectOrder(orderWithLines) }
                             )
+                        }
+                        if (uiState.canLoadMore) {
+                            item(key = "load-more") {
+                                A3Button(
+                                    label = "Tampilkan Lebih Banyak",
+                                    variant = ButtonVariant.SECONDARY,
+                                    onClick = viewModel::loadMoreOrders,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
                         }
                     }
                 }
@@ -392,13 +408,15 @@ private fun FilterStatusTabs(
     val colors = A3Theme.colors
     val shapes = A3Theme.shapes
 
+    // Enam tombol tidak muat sejajar pada ukuran huruf standar (14 sp), jadi baris dapat digeser ke samping.
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(44.dp)
+            .height(48.dp)
             .clip(shapes.buttonShape)
             .background(colors.surface)
             .border(1.dp, colors.border, shapes.buttonShape)
+            .horizontalScroll(rememberScrollState())
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp)
     ) {
@@ -406,20 +424,19 @@ private fun FilterStatusTabs(
             val isActive = activeFilter == filter
             Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(38.dp)
+                    .height(42.dp)
                     .clip(shapes.buttonShape)
                     .background(if (isActive) colors.accent else Color.Transparent)
-                    .clickable { onFilterSelected(filter) },
+                    .clickable { onFilterSelected(filter) }
+                    .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = filter.displayName,
                     style = A3Theme.typography.button,
                     color = if (isActive) colors.onAccent else colors.inkMuted,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    fontSize = 14.sp,
+                    maxLines = 1
                 )
             }
         }
@@ -430,6 +447,7 @@ private fun FilterStatusTabs(
 private fun LaundryOrderCardItem(
     orderWithLines: OrderWithLines,
     isSelected: Boolean,
+    customerName: String?,
     paymentMethodLabel: String? = null,
     onClick: () -> Unit
 ) {
@@ -454,8 +472,12 @@ private fun LaundryOrderCardItem(
         else -> "Belum Lunas" to StatusToken.DANGER
     }
 
-    val dateFormat = remember { SimpleDateFormat("d MMM · HH.mm", Locale.forLanguageTag("id-ID")) }
-    val timeStr = remember(order.createdAt) { dateFormat.format(Date(order.createdAt)) }
+    val isUnfinished = order.status.lowercase() in setOf("open", "received", "processing", "ready")
+    val timeStr = remember(order.createdAt, isUnfinished) {
+        orderAgeLabel(order.createdAt, System.currentTimeMillis(), isUnfinished)
+    }
+    val hasExpress = orderWithLines.lines.any { isExpressLineName(it.nameSnapshot) }
+    val remaining = (order.total - order.paidAmount).coerceAtLeast(0L)
 
     Box(
         modifier = Modifier
@@ -478,29 +500,45 @@ private fun LaundryOrderCardItem(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Yang dicari kasir saat pelanggan datang: nama, lalu nomor nota
                 Text(
-                    text = order.displayNumber,
+                    text = customerName ?: "Pelanggan Athia",
                     style = A3Theme.typography.title,
                     fontWeight = FontWeight.Bold,
-                    color = colors.ink
+                    color = colors.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = timeStr,
-                    style = A3Theme.typography.bodySmall,
+                    text = order.displayNumber,
+                    style = A3Theme.typography.body,
+                    fontWeight = FontWeight.SemiBold,
                     color = colors.inkMuted
                 )
             }
 
-            // Baris Layanan Singkat
+            // Layanan singkat; berat untuk kiloan, jumlah untuk satuan
             Text(
-                text = orderWithLines.lines.joinToString(", ") { "${it.quantity}x ${it.nameSnapshot}" },
+                text = orderWithLines.lines.joinToString(", ") { line ->
+                    val amount = line.weight?.let { formatWeightKg(it) } ?: "${line.quantity}x"
+                    "$amount ${plainServiceName(line.nameSnapshot)}"
+                },
                 style = A3Theme.typography.bodySmall,
                 color = colors.ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Dua Status Chips: Cucian & Pembayaran
+            // Umur cucian
+            Text(
+                text = timeStr,
+                style = A3Theme.typography.bodySmall,
+                color = colors.inkMuted
+            )
+
+            // Status cucian, status bayar, ekspres, dan sisa tagihan bila belum lunas
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -510,6 +548,18 @@ private fun LaundryOrderCardItem(
                     label = if (paymentMethodLabel != null) "$paymentLabel · $paymentMethodLabel" else paymentLabel,
                     token = paymentToken
                 )
+                if (hasExpress) {
+                    A3StatusChip(label = "Ekspres", token = StatusToken.NEUTRAL)
+                }
+                if (remaining > 0L) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = "Sisa ${formatRupiah(remaining)}",
+                        style = A3Theme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.status.danger.text
+                    )
+                }
             }
         }
     }
@@ -566,7 +616,7 @@ private fun OrderDetailPanel(
                         color = colors.ink
                     )
                     Text(
-                        text = "ID: ${order.id}",
+                        text = "Masuk ${orderAgeLabel(order.createdAt, System.currentTimeMillis(), unfinished = false)}",
                         style = A3Theme.typography.bodySmall,
                         color = colors.inkMuted
                     )
@@ -577,6 +627,21 @@ private fun OrderDetailPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     A3StatusChip(label = statusLabel, token = statusToken)
+                    A3StatusChip(
+                        label = when {
+                            isPaid -> "Lunas"
+                            order.paidAmount > 0L -> "DP"
+                            else -> "Belum Lunas"
+                        },
+                        token = when {
+                            isPaid -> StatusToken.SUCCESS
+                            order.paidAmount > 0L -> StatusToken.WARNING
+                            else -> StatusToken.DANGER
+                        }
+                    )
+                    if (orderWithLines.lines.any { isExpressLineName(it.nameSnapshot) }) {
+                        A3StatusChip(label = "Ekspres", token = StatusToken.NEUTRAL)
+                    }
                     IconButton(
                         onClick = viewModel::printLaundryTag,
                         modifier = Modifier.size(44.dp)
@@ -594,39 +659,47 @@ private fun OrderDetailPanel(
 
             // 2. Data Pelanggan
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(colors.surfaceAlt),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = customer?.name?.firstOrNull()?.uppercaseChar()?.toString() ?: "P",
-                        color = colors.accent,
-                        style = A3Theme.typography.title,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = customer?.name ?: "Pelanggan Athia",
                         style = A3Theme.typography.title,
                         fontWeight = FontWeight.Bold,
                         color = colors.ink
                     )
-                        customer?.phone?.let { phone ->
-                            Text(
-                                text = PhoneNumberUtil.formatDisplay(phone),
-                                style = A3Theme.typography.body,
-                                color = colors.inkMuted
-                            )
-                        }
+                    customer?.phone?.let { phone ->
+                        Text(
+                            text = PhoneNumberUtil.formatDisplay(phone),
+                            style = A3Theme.typography.body,
+                            color = colors.inkMuted
+                        )
                     }
                 }
+                customer?.phone?.let { phone ->
+                    Box(
+                        modifier = Modifier
+                            .height(44.dp)
+                            .clip(shapes.buttonShape)
+                            .border(1.dp, colors.border, shapes.buttonShape)
+                            .clickable {
+                                clipboardManager.setText(AnnotatedString(PhoneNumberUtil.formatDisplay(phone)))
+                                Toast.makeText(context, "Nomor HP disalin", Toast.LENGTH_SHORT).show()
+                            }
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Salin Nomor",
+                            style = A3Theme.typography.button,
+                            color = colors.accent,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+            }
 
             // 2b. Status Notifikasi WhatsApp & Tombol Kirim Manual (F42 & DESIGN-laundry.md)
             WhatsAppNotificationCard(
@@ -656,40 +729,49 @@ private fun OrderDetailPanel(
                     .background(colors.canvas)
                     .padding(14.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(text = "Total Biaya", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                if (isPaid) {
+                    // Lunas: cukup satu baris, tanpa "Sisa Rp0" yang berulang
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = "Total Biaya", style = A3Theme.typography.body, color = colors.inkMuted)
                         Text(text = formatRupiah(order.total), style = A3Theme.typography.title, fontWeight = FontWeight.Bold, color = colors.ink)
                     }
-                    Column {
-                        Text(text = "Telah Dibayar", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
-                        Text(text = formatRupiah(order.paidAmount), style = A3Theme.typography.title, fontWeight = FontWeight.Bold, color = colors.status.success.text)
-                    }
-                    Column {
-                        Text(text = "Sisa Tagihan", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
-                        Text(
-                            text = formatRupiah(remaining),
-                            style = A3Theme.typography.title,
-                            fontWeight = FontWeight.Bold,
-                            color = if (remaining > 0) colors.status.danger.text else colors.inkMuted
-                        )
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(text = "Total Biaya", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                            Text(text = formatRupiah(order.total), style = A3Theme.typography.title, fontWeight = FontWeight.Bold, color = colors.ink)
+                        }
+                        Column {
+                            Text(text = "Telah Dibayar", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                            Text(text = formatRupiah(order.paidAmount), style = A3Theme.typography.title, fontWeight = FontWeight.Bold, color = colors.status.success.text)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(text = "Sisa Tagihan", style = A3Theme.typography.bodySmall, color = colors.inkMuted)
+                            Text(
+                                text = formatRupiah(remaining),
+                                style = A3Theme.typography.title,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.status.danger.text
+                            )
+                        }
                     }
                 }
             }
 
-            // 4. Garis Waktu Status (Status Timeline)
-            StatusTimelineRow(currentStatus = order.status.lowercase())
-
-            // 5. Rincian Pakaian & Pengambilan Per Baris
+            // 4. Rincian Pakaian & Pengambilan Per Baris
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "Rincian Pakaian & Pengambilan:",
+                    text = "Rincian Pakaian",
                     style = A3Theme.typography.label,
                     fontWeight = FontWeight.Bold,
                     color = colors.ink
@@ -713,14 +795,26 @@ private fun OrderDetailPanel(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = plainServiceName(line.nameSnapshot),
+                                        style = A3Theme.typography.body,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = colors.ink,
+                                        modifier = Modifier.weight(1f, fill = false)
+                                    )
+                                    if (isExpressLineName(line.nameSnapshot)) {
+                                        A3StatusChip(label = "Ekspres", token = StatusToken.NEUTRAL)
+                                    }
+                                }
+                                // Kiloan menyimpan berat (kg); satuan menyimpan jumlah (pcs)
+                                val amount = line.weight?.let { formatWeightKg(it) } ?: "${line.quantity} item"
                                 Text(
-                                    text = line.nameSnapshot,
-                                    style = A3Theme.typography.body,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = colors.ink
-                                )
-                                Text(
-                                    text = "${line.quantity} item · ${formatRupiah(line.unitPriceSnapshot)}",
+                                    text = "$amount · ${formatRupiah(line.unitPriceSnapshot)}" +
+                                        if (line.weight != null) " per kg" else "",
                                     style = A3Theme.typography.bodySmall,
                                     color = colors.inkMuted
                                 )
@@ -728,16 +822,15 @@ private fun OrderDetailPanel(
                                     Text(
                                         text = "Catatan: ${line.note}",
                                         style = A3Theme.typography.bodySmall,
-                                        color = colors.status.warning.text,
-                                        fontSize = 11.sp
+                                        color = colors.status.warning.text
                                     )
                                 }
                             }
 
-                            A3StatusChip(
-                                label = if (isLinePickedUp) "Sudah Diambil" else "Belum Diambil",
-                                token = if (isLinePickedUp) StatusToken.SUCCESS else StatusToken.WARNING
-                            )
+                            // Hanya baris yang sudah diambil yang diberi penanda; selebihnya belum diambil
+                            if (isLinePickedUp) {
+                                A3StatusChip(label = "Sudah Diambil", token = StatusToken.SUCCESS)
+                            }
                         }
                     }
                 }
@@ -842,78 +935,6 @@ private fun OrderDetailPanel(
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatusTimelineRow(currentStatus: String) {
-    val colors = A3Theme.colors
-    val shapes = A3Theme.shapes
-
-    val steps = listOf("Diterima", "Diproses", "Siap", "Diambil")
-    val currentIndex = when (currentStatus) {
-        "open", "received" -> 0
-        "processing" -> 1
-        "ready" -> 2
-        "picked_up" -> 3
-        else -> 0
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shapes.cardShape)
-            .background(colors.canvas)
-            .padding(vertical = 10.dp, horizontal = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        steps.forEachIndexed { index, stepName ->
-            val isDone = index <= currentIndex
-            val isCurrent = index == currentIndex
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isCurrent -> colors.accent
-                                isDone -> colors.status.success.background
-                                else -> colors.border
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isDone && !isCurrent) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = colors.status.success.text,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    } else {
-                        Text(
-                            text = "${index + 1}",
-                            style = A3Theme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isCurrent) colors.onAccent else colors.inkMuted,
-                            fontSize = 11.sp
-                        )
-                    }
-                }
-                Text(
-                    text = stepName,
-                    style = A3Theme.typography.bodySmall,
-                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isCurrent) colors.ink else colors.inkMuted
                 )
             }
         }

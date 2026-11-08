@@ -26,6 +26,8 @@ private class FakeCustomerDao : CustomerDao {
     override suspend fun findCustomerByPhone(phone: String): CustomerEntity? = rows.firstOrNull { it.phone == phone }
     override fun searchCustomers(query: String): Flow<List<CustomerEntity>> = flowOf(rows.toList())
     override fun observeRecentCustomers(limit: Int): Flow<List<CustomerEntity>> = flowOf(rows.toList())
+    override fun observeCustomersByIds(ids: List<String>): Flow<List<CustomerEntity>> =
+        flowOf(rows.filter { it.id in ids })
     override suspend fun deleteCustomer(id: String) { rows.removeAll { it.id == id } }
     override suspend fun clearCustomers() { rows.clear() }
 }

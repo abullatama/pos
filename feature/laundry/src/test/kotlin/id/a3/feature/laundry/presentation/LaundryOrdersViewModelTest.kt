@@ -58,7 +58,8 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
     override fun observeLaundryOrdersFiltered(
         statusFilter: String?,
         unfinishedOnly: Boolean,
-        query: String
+        query: String,
+        limit: Int
     ): Flow<List<OrderWithLines>> {
         val finished = setOf("picked_up", "void", "refunded", "closed", "force_closed")
         return ordersFlowInternal.onStart { emit(Unit) }.map {
@@ -71,7 +72,7 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
                         item.order.id.contains(query, ignoreCase = true) ||
                         customer?.name?.contains(query, ignoreCase = true) == true ||
                         customer?.phone?.contains(query) == true)
-            }
+            }.let { list -> if (limit < 0) list else list.take(limit) }
         }
     }
 
@@ -168,6 +169,8 @@ class FakeLaundryOrdersRepository : LaundryOrderRepository {
     override suspend fun saveOrderWithOutbox(order: OrderEntity, lines: List<OrderLineEntity>, eventsJson: String): Result<Unit> = Result.success(Unit)
     override fun searchCustomers(query: String): Flow<List<CustomerEntity>> = flowOf(emptyList())
     override fun observeRecentCustomers(limit: Int): Flow<List<CustomerEntity>> = flowOf(emptyList())
+    override fun observeCustomersByIds(ids: List<String>): Flow<List<CustomerEntity>> =
+        flowOf(ids.mapNotNull { customers[it] })
     override suspend fun getCustomerById(id: String): CustomerEntity? = customers[id]
     override suspend fun saveCustomerLocally(customer: CustomerEntity): Result<Unit> = Result.success(Unit)
     override suspend fun createLaundryOrder(
@@ -304,6 +307,37 @@ class LaundryOrdersViewModelTest {
     }
 
     @Test
+    fun `Semua dimuat bertahap dan Tampilkan Lebih Banyak menambah halaman`() = runTest {
+        repeat(ORDERS_PAGE_SIZE + 20) { i ->
+            val id = "bulk-$i"
+            fakeRepository.orders[id] = OrderWithLines(
+                unpaidOrder.copy(id = id, displayNumber = "L1-1%03d".format(i), status = "picked_up"),
+                emptyList()
+            )
+        }
+        val collectJob = launch(testDispatcher) { viewModel.uiState.collect {} }
+
+        // Belum Diambil tidak dibatasi dan tidak menampilkan tombol
+        assertEquals(2, viewModel.uiState.value.orders.size)
+        assertFalse(viewModel.uiState.value.canLoadMore)
+
+        viewModel.setFilterStatus(LaundryFilterStatus.ALL)
+        assertEquals(ORDERS_PAGE_SIZE, viewModel.uiState.value.orders.size)
+        assertTrue(viewModel.uiState.value.canLoadMore)
+
+        viewModel.loadMoreOrders()
+        assertEquals(ORDERS_PAGE_SIZE + 22, viewModel.uiState.value.orders.size)
+        assertFalse(viewModel.uiState.value.canLoadMore)
+
+        // Pindah tombol mengembalikan ke halaman pertama
+        viewModel.setFilterStatus(LaundryFilterStatus.PICKED_UP)
+        assertEquals(ORDERS_PAGE_SIZE, viewModel.uiState.value.orders.size)
+        assertTrue(viewModel.uiState.value.canLoadMore)
+
+        collectJob.cancel()
+    }
+
+    @Test
     fun `pencarian mencocokkan nama pelanggan tanpa membedakan huruf besar kecil`() = runTest {
         fakeRepository.customers["cust-2"] = CustomerEntity(id = "cust-2", name = "Siti Aminah", phone = "081200000002")
         fakeRepository.orders["ord-2"] = OrderWithLines(unpaidOrder.copy(customerId = "cust-2"), fakeRepository.orders["ord-2"]!!.lines)
@@ -320,6 +354,19 @@ class LaundryOrdersViewModelTest {
         assertEquals(0, vm.uiState.value.orders.size)
 
         collectJob.cancel()
+    }
+
+    @Test
+    fun `customersById memuat pelanggan untuk kartu yang tampil`() = runTest {
+        val collectJob = launch(testDispatcher) {
+            viewModel.uiState.collect {}
+        }
+        val mapJob = launch(testDispatcher) { viewModel.customersById.collect {} }
+
+        assertEquals("Budi Santoso", viewModel.customersById.value["cust-1"]?.name)
+
+        collectJob.cancel()
+        mapJob.cancel()
     }
 
     @Test
